@@ -58,6 +58,24 @@ void Canvas::blit_gray8(const Rect& dst, const uint8_t* src, int32_t src_stride)
     }
 }
 
+void Canvas::blend_mask(int32_t x, int32_t y, const uint8_t* mask, int32_t w, int32_t h, uint8_t gray,
+                        const Rect& clip)
+{
+    if (!mask || w <= 0 || h <= 0) return;
+    Rect c = Rect{x, y, w, h}.clipped(bounds()).clipped(clip);
+    for (int32_t py = c.y; py < c.bottom(); ++py) {
+        const uint8_t* m = mask + static_cast<size_t>(py - y) * static_cast<size_t>(w);
+        uint8_t* d = row(py);
+        for (int32_t px = c.x; px < c.right(); ++px) {
+            int a = m[px - x];
+            if (a == 0) continue;
+            int dst = inverted_ ? 255 - d[px] : d[px];
+            int out = dst + ((gray - dst) * a + (gray >= dst ? 127 : -127)) / 255;
+            d[px] = to_panel(static_cast<uint8_t>(out));
+        }
+    }
+}
+
 void Canvas::quantize_rect(const Rect& r, int levels)
 {
     Rect c = r.clipped(bounds());

@@ -19,6 +19,10 @@ public:
     // Copies src (logical gray, dst.w x dst.h, rows src_stride apart) into dst.
     void blit_gray8(const Rect& dst, const uint8_t* src, int32_t src_stride);
 
+    // Blend `gray` over the canvas through an 8-bit coverage mask (w x h, top-left at x,y):
+    // dst = dst + (gray - dst) * coverage / 255. Only pixels inside `clip` change.
+    void blend_mask(int32_t x, int32_t y, const uint8_t* mask, int32_t w, int32_t h, uint8_t gray, const Rect& clip);
+
     // Quantize a rect's contents to N levels (2..256). Used before A2 refreshes,
     // which require true B&W content to avoid artifacts.
     void quantize_rect(const Rect& r, int levels);

@@ -45,6 +45,13 @@ endif()
 target_include_directories(sumi_core PUBLIC src)
 target_link_libraries(sumi_core PUBLIC sumi_warnings)
 
+# Text: fonts, glyph cache, shaping/layout/drawing (M2 S3).
+add_library(sumi_text STATIC
+  src/text/fonts.cpp
+  src/text/glyph_cache.cpp
+  src/text/text.cpp)
+target_link_libraries(sumi_text PUBLIC sumi_core harfbuzz)
+
 if(NOT CMAKE_CROSSCOMPILING)
   # Host: unit tests, plus the SDL simulator backend (§10) when SDL2 is available.
   enable_testing()
@@ -53,6 +60,12 @@ if(NOT CMAKE_CROSSCOMPILING)
   target_compile_definitions(test_text_smoke PRIVATE SUMI_ASSETS_DIR="${SUMI_ASSETS_DIR}")
   target_link_libraries(test_text_smoke PRIVATE sumi_warnings harfbuzz)
   add_test(NAME text_smoke COMMAND test_text_smoke)
+
+  add_executable(test_text tests/unit/test_text.cpp)
+  target_include_directories(test_text PRIVATE assets/fonts)
+  target_compile_definitions(test_text PRIVATE SUMI_ASSETS_DIR="${SUMI_ASSETS_DIR}")
+  target_link_libraries(test_text PRIVATE sumi_text)
+  add_test(NAME text COMMAND test_text)
 
   foreach(name canvas dirty gesture refresh_policy loop frame)
     add_executable(test_${name} tests/unit/test_${name}.cpp)
