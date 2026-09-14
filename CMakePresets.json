@@ -1,0 +1,24 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "kindle",
+      "displayName": "Kindle (kindlehf cross)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/kindle",
+      "toolchainFile": "${sourceDir}/cmake/kindle-toolchain.cmake",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "host",
+      "displayName": "Host (unit tests, later SDL simulator)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/host",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "kindle", "configurePreset": "kindle" },
+    { "name": "host",   "configurePreset": "host" }
+  ]
+}

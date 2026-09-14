@@ -1,0 +1,3 @@
+[submodule "third_party/fbink"]
+	path = third_party/fbink
+	url = https://github.com/NiLuJe/FBInk.git
