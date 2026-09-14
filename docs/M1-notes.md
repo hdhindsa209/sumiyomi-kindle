@@ -4,8 +4,11 @@ Running log of surprises and resolved unknowns (spec §13).
 
 ## T01
 
-- FBInk submodule pinned to `v1.25.0`. The device's own fbink binary reports `84bfe3b`,
-  which isn't an upstream commit (probably a libkh build), so it can't be pinned exactly.
+- FBInk submodule: first pinned to `v1.25.0`, then **re-pinned in T03 to master `886f25f1`**
+  (2026-08-06). v1.25.0 dates from Dec 2022 and lacks `fbink_refresh_rect`, `fbink_input_scan`
+  and the `touch_*` fields in `FBInkState`, which the spec (checked against master) relies on. There
+  is no newer tag. The device's own fbink reports `84bfe3b`, which isn't an upstream commit
+  (probably a libkh build), so it can't be matched exactly.
 - Toolchain flags: `-mcpu=cortex-a9 -mfpu=neon-vfpv3 -mfloat-abi=hard` (U1, see DEVICE_FACTS).
 - Device glibc is 2.20 (`ld-2.20.so`): the cross sysroot's glibc must not be newer,
   or binaries fail with `GLIBC_2.xx not found`.
@@ -61,3 +64,26 @@ Running log of surprises and resolved unknowns (spec §13).
 - Side effect: the `appmgrd start app://com.lab126.booklet.home` relaunch closes KUAL and
   returns to home. Acceptable. Relevant for T13 (launched from KUAL, you exit to home, not KUAL).
 - Still to do: SIGTERM / abort() device tests (deferred).
+
+## T03
+
+- `libfbink.a` is built by CMake via FBInk's own Makefile: `make staticlib CROSS_TC=arm-kindlehf-linux-gnueabihf KINDLE=true`.
+  (The spec's `KINDLE=1 static` also builds the CLI, which we don't need.) Output is `third_party/fbink/Release/libfbink.a`,
+  and the default full feature set includes OpenType and input scan (checked with nm).
+- Uses `fbink_refresh_rect` everywhere, as the spec asks.
+- The bpp switch is not implemented. `open()` refuses anything other than 8bpp instead of guessing
+  (DEVICE_FACTS: the device boots at 8bpp). So there's no bpp restore in `close()` either.
+- `Rect` methods are defined inline in `display.h` (the spec only declares them).
+- Signal handler now calls `display->clear_screen()` before `restore()` (U10). Untested until the
+  deferred crash tests.
+- Host preset builds no app until T11 (SDL backend); `power_stub.cpp` is kept for then.
+- Test pattern includes a 150×150 black square at the top-left, to check orientation (DEVICE_FACTS rotate=3).
+
+### T03 device run — PASSED
+- `display open:` matched DEVICE_FACTS in every field: 'PaperWhite 4' 1072x1448 stride=1088 bpp=8
+  dpi=300 inverted=0 legacy=0 unreliable_wait=0 touch_swap/mirror=0 rota=3 fb_size=6782976.
+- The top-left marker appeared top-left. **Display orientation resolved:** FBInk's reported
+  dimensions are already screen-correct, so no rotation math is needed when drawing.
+  (Touch orientation is a separate question, still open until T05.)
+- First measured refresh: GC16 full screen, 480 ms (FBInk documents ~450 ms). Wait-for-complete works.
+- Even gray, nothing drew over it; one flash on clear; rc=0; home screen usable afterward.

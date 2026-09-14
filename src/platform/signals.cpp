@@ -1,6 +1,7 @@
 #include "platform/signals.h"
 
 #include "core/log.h"
+#include "platform/display.h"
 #include "platform/power.h"
 
 #include <cerrno>
@@ -13,7 +14,8 @@ namespace {
 
 constexpr int kSignals[] = {SIGTERM, SIGINT, SIGHUP, SIGSEGV, SIGBUS, SIGABRT, SIGILL, SIGFPE};
 
-PowerGuard* guard_ = nullptr;
+PowerGuard* guard_   = nullptr;
+Display*    display_ = nullptr;
 
 // Separate stack so a stack-overflow SIGSEGV can still run the handler.
 char alt_stack_[32768];
@@ -34,16 +36,19 @@ void on_signal(int sig)
     msg[len] = '\0';
     log_raw(LogLevel::E, "signal", msg);
 
-    // T03 adds the FBInk full clear here, before restore.
+    // U10 (spec §8): FBInk is not async-signal-safe, but a stranded framebuffer is worse.
+    // If this is ever seen to deadlock, drop it and accept a dirty screen.
+    if (display_) display_->clear_screen();
     if (guard_) guard_->restore();
     _exit(128 + sig);
 }
 
 } // namespace
 
-bool install_signal_handlers(PowerGuard* guard, std::string& err)
+bool install_signal_handlers(PowerGuard* guard, Display* display, std::string& err)
 {
-    guard_ = guard;
+    guard_   = guard;
+    display_ = display;
 
     stack_t ss{};
     ss.ss_sp    = alt_stack_;
