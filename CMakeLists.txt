@@ -12,10 +12,21 @@ target_compile_options(sumi_warnings INTERFACE
   -Wall -Wextra -Wshadow -Wconversion -Werror
   $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>)
 
+# Backend-independent core: builds for host and device.
+add_library(sumi_core STATIC
+  src/core/log.cpp
+  src/core/canvas.cpp)
+target_include_directories(sumi_core PUBLIC src)
+target_link_libraries(sumi_core PUBLIC sumi_warnings)
+
 if(NOT CMAKE_CROSSCOMPILING)
-  # The app needs a display backend; the host one is SDL (T11). Until then the
-  # host preset only builds host-side tests (T07/T08).
-  message(STATUS "Host build: sumiyomi app skipped until the SDL backend lands (T11)")
+  # Host: unit tests. The app itself needs the SDL backend (T11).
+  enable_testing()
+  foreach(name canvas)
+    add_executable(test_${name} tests/unit/test_${name}.cpp)
+    target_link_libraries(test_${name} PRIVATE sumi_core)
+    add_test(NAME ${name} COMMAND test_${name})
+  endforeach()
   return()
 endif()
 
@@ -35,13 +46,11 @@ set_target_properties(fbink PROPERTIES
 add_dependencies(fbink fbink_build)
 
 add_library(sumi_platform STATIC
-  src/core/log.cpp
   src/platform/signals.cpp
   src/platform/power_kindle.cpp
   src/platform/display_fbink.cpp
   src/platform/input_evdev.cpp)
-target_include_directories(sumi_platform PUBLIC src)
-target_link_libraries(sumi_platform PUBLIC sumi_warnings fbink)
+target_link_libraries(sumi_platform PUBLIC sumi_core fbink)
 
 add_executable(sumiyomi src/main.cpp)
 target_link_libraries(sumiyomi PRIVATE sumi_platform)
