@@ -1,5 +1,7 @@
 // Sumiyomi M1: platform setup + the test card app. Same code for both backends:
 // Kindle (FBInk + evdev + epoll) and the host simulator (SDL).
+//   --crash=abort|segv   test only: fault deliberately right after the test card is up
+//                        (§2 criterion 6 / tools/crash-tests.sh)
 #include "app/m1_testcard.h"
 #include "core/log.h"
 #include "core/loop.h"
@@ -8,6 +10,8 @@
 #include "platform/power.h"
 #include "platform/signals.h"
 
+#include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <unistd.h>
@@ -20,8 +24,17 @@ constexpr uint32_t kSdlPollMs = 10;    // fd-less input (simulator only)
 
 } // namespace
 
-int main()
+int main(int argc, char** argv)
 {
+    const char* crash = nullptr;
+    for (int i = 1; i < argc; ++i) {
+        if (std::strncmp(argv[i], "--crash=", 8) == 0) {
+            crash = argv[i] + 8;
+        } else {
+            SUMI_LOGE("main", "unknown argument: %s", argv[i]);
+            return 2;
+        }
+    }
     SUMI_LOGI("main", "sumiyomi M1 start, pid=%d", static_cast<int>(getpid()));
 
     sumi::PowerGuard power;
@@ -54,6 +67,15 @@ int main()
 
     sumi::M1TestCard app(*display);
     app.start();
+
+    if (crash && std::strcmp(crash, "abort") == 0) {
+        SUMI_LOGW("main", "--crash=abort");
+        std::abort();
+    } else if (crash && std::strcmp(crash, "segv") == 0) {
+        SUMI_LOGW("main", "--crash=segv");
+        int* volatile p = nullptr;   // volatile: keep the compiler from folding the fault away
+        *p = 1;
+    }
 
     std::vector<sumi::RawEvent> events;
     events.reserve(64);

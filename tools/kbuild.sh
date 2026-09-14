@@ -14,4 +14,11 @@ if [ $# -eq 0 ]; then
     set -- sh -c 'cmake --preset kindle && cmake --build --preset kindle'
 fi
 
+# Colima only shares $HOME with its VM by default: a checkout elsewhere mounts as an empty /src.
+if ! docker run --rm --platform linux/amd64 -v "$ROOT:/src" "$IMAGE" test -f /src/CMakeLists.txt; then
+    echo "kbuild: $ROOT is not visible inside the container." >&2
+    echo "        Keep the checkout under \$HOME, or add its path to Colima's mounts (colima start --edit)." >&2
+    exit 1
+fi
+
 exec docker run --rm --platform linux/amd64 -v "$ROOT:/src" "$IMAGE" "$@"

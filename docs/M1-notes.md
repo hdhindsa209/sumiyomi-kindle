@@ -303,3 +303,70 @@ Open interpretation: DU full-screen refreshes count toward the flash and can be 
 - Deployed; "Sumiyomi → Start Sumiyomi" appeared in KUAL and launched the test card. Box taps worked, long-press exited,
   and the home screen came back normally.
 - Not reported: deploy timing (<10 s target), the log tail, and the optional SIGKILL-fallback test (rc=137 path).
+
+## T14 — crash tests + M1 wrap-up (2026-09-14)
+
+### Crash tests (`tools/crash-tests.sh`, run by the user)
+- **SIGTERM: PASS.** rc=143, "caught signal 15", screen clear, power restored 264 ms later; awesome running, statusbar running,
+  preventScreenSaver 0.
+- **abort(): PASS.** rc=134, "caught signal 6", power restored 249 ms later; same state checks pass.
+- The black flash / return to home on screen wasn't reported for these runs (the script checks state, not pixels).
+- Deploy took 3 s (T13's < 10 s target confirmed).
+- SIGSEGV was not run on device. It uses the same handler (verified on host in T02).
+
+### Clean-checkout build
+Fresh `git clone --recursive` → host build + 5/5 test suites, Kindle build, and package all succeed.
+Found and fixed: a checkout outside `$HOME` mounts as an empty `/src` under Colima. `kbuild.sh` now detects this and
+explains, and the README says so.
+
+## M1 status
+
+### Definition of done (spec §2)
+| # | Criterion | Status |
+|---|---|---|
+| 1 | Launches from KUAL, takes over the screen | ✅ T13 |
+| 2 | Test pattern: 16 gray steps, centered rect, FBInk OpenType text line | ✅ pattern · ⚠️ text: font load + `fbink_print_ot` succeeded (no warning), **not yet visually confirmed** |
+| 3 | Rect inverts ≤150 ms, measured, A2 | ✅ median **125 ms** event→panel complete (max 126 ms), T12 |
+| 4 | Outside tap cycles GC16/GL16/DU, latency logged | ✅ 482 / 482 / 294 ms, T12 |
+| 5 | Long-press exits cleanly | ✅ T10, T12, T13 |
+| 6 | Clean screen + native UI restored on normal exit, SIGTERM, crash | ✅ normal (T12/T13), SIGTERM + abort (T14). No persistent state exists yet to flush |
+| 7 | Same code on desktop with SDL: quantization + latency | ✅ T11, T12 (`build/host/sumiyomi`) |
+| 8 | `m1_bench` CSV of latencies per mode | ✅ T04, `docs/m1_bench.csv` |
+| 9 | DEVICE_FACTS filled in and committed | ✅ (hotfix field blank, non-blocking) |
+
+### Known-unknowns register (spec §13)
+| ID | Resolution |
+|---|---|
+| U1 | ✅ `kindlehf`, `-mcpu=cortex-a9 -mfpu=neon-vfpv3 -mfloat-abi=hard` (single-core i.MX6 SoloLite, glibc 2.20) |
+| U2 | ✅ Boots at 8 bpp; standard polarity (0 = black) |
+| U3 | ✅ **Superseded:** stopping the framework broke the UI until reboot. Sumiyomi coexists (pillow off, awesome SIGSTOP, statusbar stop); verified T02, T10, T12, T13, T14 |
+| U4 | ✅ `lipc-set-prop` present and working |
+| U5 | ✅ MT protocol B |
+| U6 | ✅ Digitizer 0..1072 × 0..1448, 1:1 with panel, no swap/mirror |
+| U7 | ✅ `unreliable_wait_for = 0`; wait-for-complete works |
+| U8 | ✅ Measured: A2 121–148, DU 262–290, 16-gray 450–494 ms (+≤27 ms for size). Design doc §10.1 revised |
+| U9 | ⏳ **Open.** REAGL row invalid (sent PARTIAL; fixed). Latency won't decide it: needs a visual ghosting comparison on real pages (M4) |
+| U10 | ✅ FBInk screen clear inside the fatal handler did not deadlock for SIGTERM or SIGABRT on device |
+| U11 | ✅ ~200 MB available with the framework running (coexist); budget peak ~108 MB |
+| U12 | ✅ KUAL (not KPM) |
+| U13 | ⏳ **Open.** GL16 and GC16 time identically on this panel; whether they're distinct waveforms needs a visual check |
+
+### Every 🔴 VERIFY in the M1 spec
+| Spec location | Answer |
+|---|---|
+| §3.1 koxtoolchain target | `kindlehf` (U1) |
+| §3.2 `-mcpu` | `cortex-a9`, `neon-vfpv3` (U1) |
+| §5.4 device already 8 bpp? | Yes, so no bpp switch (U2) |
+| §5.4 grayscale polarity | Standard (U2) |
+| §6.2 touch ABS maxima | 1072 / 1448 = panel (U6) |
+| §6.3 MT protocol | B (U5) |
+| §8 lipc + framework commands | lipc present; framework is no longer stopped (U3/U4, coexist) |
+| §8 run.sh framework paths | Superseded by the coexist sequence (spec §8 rewritten in T02) |
+
+### Carried into M2 (in priority order)
+1. **M1-F1 (must fix first):** full repaints block the loop on wait-for-complete; rapid input queues up for seconds.
+   Needs non-blocking refresh scheduling, coalescing of queued input and refreshes, and dropping of stale events.
+2. Visual confirmation of the FBInk text line (criterion 2), at the next device check.
+3. T12 question: did the user really tap outside ~29 times? If not, there's a spurious-Tap bug.
+4. Single core (DEVICE_FACTS): design doc §3.1's "two workers because two cores" rationale doesn't hold here.
+5. U9 (REAGL, M4) and U13 (GL16 vs GC16 visual). The SIGKILL fallback path in `run.sh` is untested on device.
