@@ -46,8 +46,13 @@ Size Node::child_size(Node& c, Text& text, Fonts& fonts, int32_t main_avail, int
     Dim main_dim  = row ? c.width : c.height;
     Dim cross_dim = row ? c.height : c.width;
     Size natural;
-    if (main_dim.kind == Dim::Wrap || cross_dim.kind == Dim::Wrap)
-        natural = row ? c.measure(text, fonts, main_avail, cross_avail) : c.measure(text, fonts, cross_avail, main_avail);
+    if (main_dim.kind == Dim::Wrap || cross_dim.kind == Dim::Wrap) {
+        // Measure within the child's own fixed size where it has one: a fixed-width column of
+        // wrapping text must wrap at its width, not at the parent's remaining space.
+        int32_t mw = main_dim.kind == Dim::Fixed ? std::min(main_dim.value, main_avail) : main_avail;
+        int32_t cw = cross_dim.kind == Dim::Fixed ? std::min(cross_dim.value, cross_avail) : cross_avail;
+        natural = row ? c.measure(text, fonts, mw, cw) : c.measure(text, fonts, cw, mw);
+    }
 
     int32_t m = main_dim.kind == Dim::Fixed ? main_dim.value : main_of(natural, row);   // Fill resolved by caller
     int32_t x = cross_dim.kind == Dim::Fixed ? cross_dim.value
@@ -66,7 +71,8 @@ Size Node::measure(Text& text, Fonts& fonts, int32_t max_w, int32_t max_h)
     for (auto& cp : children_) {
         Node& c = *cp;
         if (!c.visible) continue;
-        Size natural = c.measure(text, fonts, inner_w, inner_h);
+        Size natural = c.measure(text, fonts, c.width.kind == Dim::Fixed ? std::min(c.width.value, inner_w) : inner_w,
+                                 c.height.kind == Dim::Fixed ? std::min(c.height.value, inner_h) : inner_h);
         Size s{c.width.kind == Dim::Fixed ? c.width.value : natural.w,
                c.height.kind == Dim::Fixed ? c.height.value : natural.h};
         if (layout == Layout::Stack) {
@@ -92,7 +98,8 @@ void Node::layout_in(Text& text, Fonts& fonts, const Rect& frame)
         for (auto& cp : children_) {
             Node& c = *cp;
             if (!c.visible) continue;
-            Size natural = c.measure(text, fonts, inner.w, inner.h);
+            Size natural = c.measure(text, fonts, c.width.kind == Dim::Fixed ? std::min(c.width.value, inner.w) : inner.w,
+                                     c.height.kind == Dim::Fixed ? std::min(c.height.value, inner.h) : inner.h);
             int32_t w = c.width.kind == Dim::Fixed ? c.width.value : c.width.kind == Dim::Fill ? inner.w : natural.w;
             int32_t h = c.height.kind == Dim::Fixed ? c.height.value : c.height.kind == Dim::Fill ? inner.h : natural.h;
             auto place = [](Align a, int32_t start, int32_t avail, int32_t size) {
@@ -175,6 +182,7 @@ void Node::paint(PaintCtx& ctx)
 
     paint_content(local);
     for (auto& c : children_) c->paint(local);
+    paint_overlay(local);
 
     if (pressed_) {
         // A2 press feedback (§5.4): make the region strictly B&W, then invert. Valid A2 content.

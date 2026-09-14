@@ -55,7 +55,8 @@ target_link_libraries(sumi_text PUBLIC sumi_core harfbuzz)
 # UI: tone scale, node tree + layout, screen host (M2 S4).
 add_library(sumi_ui STATIC
   src/ui/node.cpp
-  src/ui/screen.cpp)
+  src/ui/screen.cpp
+  src/ui/widgets.cpp)
 target_include_directories(sumi_ui PUBLIC assets/fonts)
 target_link_libraries(sumi_ui PUBLIC sumi_text)
 
@@ -79,6 +80,12 @@ if(NOT CMAKE_CROSSCOMPILING)
                                              SUMI_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/tests/golden")
   target_link_libraries(test_ui PRIVATE sumi_ui)
   add_test(NAME ui COMMAND test_ui)
+
+  add_executable(test_widgets tests/unit/test_widgets.cpp)
+  target_compile_definitions(test_widgets PRIVATE SUMI_ASSETS_DIR="${SUMI_ASSETS_DIR}"
+                                                 SUMI_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/tests/golden")
+  target_link_libraries(test_widgets PRIVATE sumi_ui)
+  add_test(NAME widgets COMMAND test_widgets)
 
   foreach(name canvas dirty gesture refresh_policy loop frame)
     add_executable(test_${name} tests/unit/test_${name}.cpp)

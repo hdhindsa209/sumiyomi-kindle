@@ -1,0 +1,82 @@
+#pragma once
+#include <functional>
+#include <memory>
+#include <string>
+#include <vector>
+
+#include "ui/node.h"
+
+namespace sumi::ui {
+
+// Core widgets (design doc §8). Frame heights the doc specifies for the 300 ppi layout are px
+// (app bar 112, nav bar 128, list row 112); Material dp sizes (touch targets, icon glyphs) go
+// through Fonts::sp so they stay physically sized.
+
+struct Action {
+    char32_t icon;
+    std::function<void()> on_tap;
+};
+
+// Top app bar (§8.1): optional back chevron, title, up to 3 actions.
+// `scrolled` switches to SURFACE_2 with a bottom divider.
+std::unique_ptr<Node> app_bar(const std::string& title, std::function<void()> on_back,
+                              const std::vector<Action>& actions, bool scrolled = false);
+
+struct NavItem {
+    char32_t    icon;
+    std::string label;
+};
+
+// Bottom navigation (§8.1): active item = filled PRIMARY icon on a SURFACE_3 pill + PRIMARY label;
+// inactive = outlined icon and label in ON_SURFACE_VARIANT.
+std::unique_ptr<Node> nav_bar(const std::vector<NavItem>& items, int active, std::function<void(int)> on_select);
+
+struct RowSpec {
+    std::string primary;
+    std::string secondary;          // empty: single-line row
+    bool        unread_dot = false; // 16 px PRIMARY dot at the start (§8.3)
+    bool        dimmed     = false; // read: text drops to ON_SURFACE_VARIANT
+    char32_t    trailing   = 0;     // trailing icon, 0 = none
+    std::function<void()> on_tap;
+};
+
+// List row (§8.3): 112 px, bottom divider, DU refresh hint.
+std::unique_ptr<Node> list_row(const RowSpec& spec);
+
+struct CoverSpec {
+    std::string title;
+    int         unread = 0;         // badge count, 0 = no badge
+    std::function<void()> on_tap;
+};
+
+// Library grid (§8.2): `columns` cover cells (2:3 cover placeholder with initials, caption strip
+// below with up to 2 lines, unread badge top-right), 32 px side padding, 24 px gutters.
+std::unique_ptr<Node> cover_grid(const std::vector<CoverSpec>& covers, int columns, int32_t width);
+
+// Toggle switch (§8.5): 88x48 pill. On = PRIMARY fill with a SURFACE knob; off = OUTLINE stroke/knob.
+class Switch : public Node {
+public:
+    Switch(bool on, std::function<void(bool)> on_change);
+    bool on() const { return on_; }
+    void toggle();
+
+protected:
+    void paint_content(PaintCtx& ctx) override;
+
+private:
+    bool on_;
+    std::function<void(bool)> on_change_;
+};
+
+// A settings row with a trailing switch; tapping anywhere on the row toggles it.
+std::unique_ptr<Node> switch_row(const std::string& title, const std::string& subtitle, bool on,
+                                 std::function<void(bool)> on_change);
+
+// Chip (§8.3 genre chips): SURFACE_2 rounded, 11 sp Medium label. Selected = PRIMARY outline.
+std::unique_ptr<Node> chip(const std::string& label, bool selected = false, std::function<void()> on_tap = nullptr);
+
+// Bottom sheet (§5.4): SURFACE_1 with a 1 px OUTLINE top border, optional title, content below.
+// Shown via Screen::show_overlay.
+std::unique_ptr<Node> sheet(const std::string& title, std::vector<std::unique_ptr<Node>> content);
+
+} // namespace sumi::ui

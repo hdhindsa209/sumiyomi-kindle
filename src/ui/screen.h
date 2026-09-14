@@ -27,6 +27,12 @@ public:
     void set_root(std::unique_ptr<Node> root);
     Node* root() const { return root_.get(); }
 
+    // A bottom sheet over the current root (§5.4): appears in place with one refresh of its own
+    // rect; a tap outside it dismisses it. Only one overlay at a time.
+    void show_overlay(std::unique_ptr<Node> overlay);
+    void hide_overlay();
+    Node* overlay() const { return overlay_.get(); }
+
     // Re-run layout and repaint everything next frame, with `mode` (structure changed in place).
     void invalidate_layout(Wave mode = Wave::GL16);
 
@@ -42,7 +48,9 @@ public:
 
 private:
     void release_press(bool cancelled);
+    void layout_overlay();
     Node* paint_root_for(Node* n) const;
+    static bool is_in(const Node* tree, const Node* n);
 
     Canvas&         canvas_;
     Text&           text_;
@@ -52,6 +60,10 @@ private:
 
     std::unique_ptr<Node> root_;
     std::unique_ptr<Node> retired_;      // previous root, kept alive until the frame that replaces it
+    std::unique_ptr<Node> overlay_;
+    std::unique_ptr<Node> retired_overlay_;
+    bool overlay_shown_  = false;        // needs its entry refresh
+    Rect overlay_hidden_;                // area to restore after hide_overlay
     bool  needs_layout_ = false;
     Wave  full_mode_    = Wave::GC16_FLASH;
 

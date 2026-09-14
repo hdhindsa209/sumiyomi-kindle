@@ -114,6 +114,28 @@ void test_wrap_container_measures_children()
     CHECK_EQ(s.h, 25 + 8);
 }
 
+void test_fixed_width_child_wraps_text_at_its_own_width()
+{
+    // Regression (S5 cover grid): a fixed-width, wrap-height column inside a wide row must
+    // measure its multi-line label at its own width.
+    Env env;
+    Node row;
+    row.layout = Layout::Row;
+    row.align_cross = Align::Start;
+    auto* cell = row.emplace<Node>();
+    cell->layout = Layout::Column;
+    cell->width = Dim::px(320);
+    cell->height = Dim::wrap();
+    auto* label = cell->emplace<Label>("Frieren: Beyond Journey's End", type::GRID_CAPTION, FontId::InterMedium,
+                                       tone::ON_SURFACE, 2);
+    label->width = Dim::fill();
+    env.layout(row, {0, 0, 1072, 1000});
+    int32_t two_lines = g_fonts->sp(type::GRID_CAPTION.line_sp) * 2;
+    CHECK_EQ(cell->frame().w, 320);
+    CHECK_EQ(label->frame().h, two_lines);
+    CHECK_EQ(cell->frame().h, two_lines);
+}
+
 void test_label_and_icon_measure()
 {
     Env env;
@@ -350,6 +372,7 @@ int main()
     RUN(test_cross_alignment_and_main_alignment);
     RUN(test_stack_alignment);
     RUN(test_wrap_container_measures_children);
+    RUN(test_fixed_width_child_wraps_text_at_its_own_width);
     RUN(test_label_and_icon_measure);
     RUN(test_hit_test_prefers_deepest_pressable);
     RUN(test_golden_sample_layout);

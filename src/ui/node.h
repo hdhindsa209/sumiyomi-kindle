@@ -104,7 +104,8 @@ public:
     void collect_dirty(std::vector<Node*>& out);     // and clears the flags
 
 protected:
-    virtual void paint_content(PaintCtx&) {}
+    virtual void paint_content(PaintCtx&) {}   // before children
+    virtual void paint_overlay(PaintCtx&) {}   // after children (badges, decorations)
 
 private:
     Size child_size(Node& c, Text& text, Fonts& fonts, int32_t main_avail, int32_t cross_avail, bool row) const;

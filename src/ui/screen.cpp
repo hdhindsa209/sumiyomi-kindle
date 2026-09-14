@@ -11,14 +11,40 @@ Screen::Screen(Canvas& canvas, Text& text, Fonts& fonts, FrameScheduler& frames,
 
 void Screen::set_root(std::unique_ptr<Node> root)
 {
-    if (pressed_) {
-        pressed_ = nullptr;
-    }
+    pressed_ = nullptr;
+    retired_overlay_ = std::move(overlay_);
+    overlay_shown_ = false;
+    overlay_hidden_ = {};
     released_.clear();
     retired_      = std::move(root_);
     root_         = std::move(root);
     needs_layout_ = true;
     full_mode_    = Wave::GC16_FLASH;
+}
+
+void Screen::show_overlay(std::unique_ptr<Node> overlay)
+{
+    if (overlay_) hide_overlay();
+    retired_overlay_.reset();
+    overlay_ = std::move(overlay);
+    overlay_->width = Dim::fill();
+    layout_overlay();
+    overlay_shown_ = true;
+}
+
+void Screen::hide_overlay()
+{
+    if (!overlay_) return;
+    if (pressed_) pressed_ = nullptr;
+    overlay_hidden_ = overlay_hidden_.united(overlay_->frame());
+    retired_overlay_ = std::move(overlay_);   // may be the caller of this (a tap inside the sheet)
+    overlay_shown_ = false;
+}
+
+void Screen::layout_overlay()
+{
+    Size s = overlay_->measure(text_, fonts_, screen_.w, screen_.h);
+    overlay_->layout_in(text_, fonts_, {0, screen_.h - s.h, screen_.w, s.h});
 }
 
 void Screen::invalidate_layout(Wave mode)
@@ -31,8 +57,19 @@ void Screen::on_event(const RawEvent& e)
 {
     if (!root_) return;
 
+    if (e.kind == RawKind::Down && overlay_) {
+        Rect f = overlay_->frame();
+        bool inside = e.pos.x >= f.x && e.pos.x < f.right() && e.pos.y >= f.y && e.pos.y < f.bottom();
+        if (!inside) {
+            hide_overlay();   // tap outside the sheet dismisses it; the touch goes no further
+            gestures_.feed(RawEvent{RawKind::Cancel, e.pos, Key::None, false, e.t_ms});
+            return;
+        }
+    }
+
     if (e.kind == RawKind::Down) {
-        if (Node* hit = root_->hit_test(e.pos)) {
+        Node* hit = overlay_ ? overlay_->hit_test(e.pos) : root_->hit_test(e.pos);
+        if (hit) {
             pressed_  = hit;
             press_at_ = e.pos;
             hit->set_pressed(true);
@@ -67,13 +104,20 @@ void Screen::release_press(bool /*cancelled*/)
     released_.push_back(n);
 }
 
+bool Screen::is_in(const Node* tree, const Node* n)
+{
+    for (const Node* p = n; p; p = p->parent())
+        if (p == tree) return true;
+    return false;
+}
+
 Node* Screen::paint_root_for(Node* n) const
 {
     // Repainting a node must repaint what's under its transparent (or rounded) parts:
     // start from the nearest ancestor that fully covers its own frame.
     for (Node* p = n; p; p = p->parent())
         if (p->opaque && p->radius == 0) return p;
-    return root_.get();
+    return is_in(overlay_.get(), n) ? overlay_.get() : root_.get();
 }
 
 void Screen::paint_all()
@@ -83,6 +127,10 @@ void Screen::paint_all()
     PaintCtx ctx{canvas_, text_, fonts_, screen_};
     canvas_.fill_rect(screen_, tone::SURFACE);
     root_->paint(ctx);
+    if (overlay_) {
+        layout_overlay();
+        overlay_->paint(ctx);
+    }
 }
 
 void Screen::frame()
@@ -98,11 +146,33 @@ void Screen::frame()
         frames_.damage(screen_, full_mode_);
         full_mode_ = Wave::GC16_FLASH;
     } else {
+        if (!overlay_hidden_.empty()) {
+            // Sheet dismissed: repaint what was under it.
+            PaintCtx ctx{canvas_, text_, fonts_, overlay_hidden_};
+            root_->paint(ctx);
+            frames_.damage(overlay_hidden_, Wave::GL16);
+            overlay_hidden_ = {};
+        }
+        if (overlay_ && overlay_shown_) {
+            overlay_shown_ = false;
+            PaintCtx ctx{canvas_, text_, fonts_, overlay_->frame()};
+            overlay_->paint(ctx);
+            overlay_->collect_dirty(dirty_);
+            dirty_.clear();
+            frames_.damage(overlay_->frame(), overlay_->refresh, overlay_->bw);
+        }
+
         dirty_.clear();
         root_->collect_dirty(dirty_);
+        if (overlay_) overlay_->collect_dirty(dirty_);
         for (Node* n : dirty_) {
             PaintCtx ctx{canvas_, text_, fonts_, n->frame()};
             paint_root_for(n)->paint(ctx);
+            // A root node under the sheet must not paint over it.
+            if (overlay_ && !is_in(overlay_.get(), n) && n->frame().intersects(overlay_->frame())) {
+                PaintCtx oc{canvas_, text_, fonts_, n->frame().clipped(overlay_->frame())};
+                overlay_->paint(oc);
+            }
 
             bool released = std::find(released_.begin(), released_.end(), n) != released_.end();
             if (n->pressed())  frames_.damage(n->frame(), Wave::A2, true);
@@ -113,6 +183,7 @@ void Screen::frame()
     }
     frames_.flush();
     retired_.reset();
+    retired_overlay_.reset();
 
     if (pending_tap_) {
         // Run the tap after its feedback has been submitted. It may replace the root.
