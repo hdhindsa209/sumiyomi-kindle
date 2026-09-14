@@ -12,6 +12,23 @@ target_compile_options(sumi_warnings INTERFACE
   -Wall -Wextra -Wshadow -Wconversion -Werror
   $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>)
 
+# Third-party text stack (design doc §3.2): FreeType + HarfBuzz, static, for host and device.
+set(FT_DISABLE_ZLIB     ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_BZIP2    ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_PNG      ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_HARFBUZZ ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_BROTLI   ON CACHE BOOL "" FORCE)
+add_subdirectory(third_party/freetype EXCLUDE_FROM_ALL SYSTEM)
+
+# HarfBuzz as its single-file amalgamation, with the FreeType integration (hb-ft).
+add_library(harfbuzz STATIC third_party/harfbuzz/src/harfbuzz.cc)
+target_compile_definitions(harfbuzz PUBLIC HAVE_FREETYPE=1)
+target_include_directories(harfbuzz SYSTEM PUBLIC third_party/harfbuzz/src)
+target_compile_options(harfbuzz PRIVATE -fno-exceptions -fno-rtti -w)
+target_link_libraries(harfbuzz PUBLIC freetype)
+
+set(SUMI_ASSETS_DIR "${CMAKE_SOURCE_DIR}/assets")
+
 # Backend-independent core: builds for host and device.
 add_library(sumi_core STATIC
   src/core/log.cpp
@@ -31,6 +48,12 @@ target_link_libraries(sumi_core PUBLIC sumi_warnings)
 if(NOT CMAKE_CROSSCOMPILING)
   # Host: unit tests, plus the SDL simulator backend (§10) when SDL2 is available.
   enable_testing()
+  add_executable(test_text_smoke tests/unit/test_text_smoke.cpp)
+  target_include_directories(test_text_smoke PRIVATE assets/fonts)
+  target_compile_definitions(test_text_smoke PRIVATE SUMI_ASSETS_DIR="${SUMI_ASSETS_DIR}")
+  target_link_libraries(test_text_smoke PRIVATE sumi_warnings harfbuzz)
+  add_test(NAME text_smoke COMMAND test_text_smoke)
+
   foreach(name canvas dirty gesture refresh_policy loop frame)
     add_executable(test_${name} tests/unit/test_${name}.cpp)
     target_link_libraries(test_${name} PRIVATE sumi_core)
@@ -95,5 +118,11 @@ target_link_libraries(sumiyomi PRIVATE sumi_platform)
 add_executable(m1_bench tools/bench/m1_bench.cpp)
 target_link_libraries(m1_bench PRIVATE sumi_platform)
 
-set_target_properties(sumiyomi m1_bench PROPERTIES
+# Device-side S2 smoke test: SUMI_ASSETS=/path/to/assets ./text_smoke
+add_executable(text_smoke tests/unit/test_text_smoke.cpp)
+target_include_directories(text_smoke PRIVATE assets/fonts tests/unit)
+target_compile_definitions(text_smoke PRIVATE SUMI_ASSETS_DIR="/mnt/us/extensions/sumiyomi/assets")
+target_link_libraries(text_smoke PRIVATE sumi_warnings harfbuzz)
+
+set_target_properties(sumiyomi m1_bench text_smoke PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

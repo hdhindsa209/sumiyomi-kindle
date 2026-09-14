@@ -26,6 +26,8 @@ else
     # rsync isn't on the device: copy the (small) package with scp instead.
     scp $SSH_OPTS -q -r "$PKG/config.xml" "$PKG/menu.json" "$PKG/run.sh" "root@$HOST:$DEST/"
     scp $SSH_OPTS -q "$PKG/bin/sumiyomi" "root@$HOST:$DEST/bin/sumiyomi"
+    ssh $SSH_OPTS "root@$HOST" "mkdir -p $DEST/assets/fonts"
+    scp $SSH_OPTS -q "$PKG"/assets/fonts/* "root@$HOST:$DEST/assets/fonts/"
 fi
 ssh $SSH_OPTS "root@$HOST" "chmod +x $DEST/run.sh $DEST/bin/sumiyomi; ls -l $DEST $DEST/bin"
 echo "deployed to $HOST:$DEST in $(( $(date +%s) - start ))s (excluding build)"

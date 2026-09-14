@@ -1,0 +1,41 @@
+# Material Symbols used by the UI (design doc §5.2: subset to the codepoints actually used).
+# One icon name per line; names from the font's .codepoints file. Re-run tools/fonts/build_fonts.sh after edits.
+# Bottom navigation
+collections_bookmark
+new_releases
+history
+explore
+more_horiz
+# App bar actions
+arrow_back
+search
+tune
+more_vert
+close
+refresh
+filter_list
+sort
+open_in_new
+# Rows, badges, states
+check
+check_circle
+download
+download_done
+error
+chevron_right
+expand_more
+expand_less
+favorite
+add
+delete
+bookmark
+schedule
+sync
+play_arrow
+language
+extension
+settings
+info
+bar_chart
+storage
+label
