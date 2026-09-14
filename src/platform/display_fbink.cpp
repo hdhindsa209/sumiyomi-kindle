@@ -118,7 +118,9 @@ public:
         fr.height = static_cast<unsigned short>(c.h);
 
         cfg_.wfm_mode    = to_wfm(mode);
-        cfg_.is_flashing = mode == Wave::GC16_FLASH;
+        // fbink.h: on Kindle, REAGL expects to always be paired with a FULL (flashing) update;
+        // REAGL itself suppresses the visible flash.
+        cfg_.is_flashing = mode == Wave::GC16_FLASH || mode == Wave::REAGL;
         cfg_.no_refresh  = false;
 
         if (int rc = fbink_refresh_rect(fd_, &fr, &cfg_); rc < 0) {

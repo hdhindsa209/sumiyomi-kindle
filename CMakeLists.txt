@@ -34,13 +34,19 @@ set_target_properties(fbink PROPERTIES
   INTERFACE_LINK_LIBRARIES      m)
 add_dependencies(fbink fbink_build)
 
-add_executable(sumiyomi
-  src/main.cpp
+add_library(sumi_platform STATIC
   src/core/log.cpp
   src/platform/signals.cpp
   src/platform/power_kindle.cpp
   src/platform/display_fbink.cpp)
-target_include_directories(sumiyomi PRIVATE src)
-target_link_libraries(sumiyomi PRIVATE sumi_warnings fbink)
-set_target_properties(sumiyomi PROPERTIES
+target_include_directories(sumi_platform PUBLIC src)
+target_link_libraries(sumi_platform PUBLIC sumi_warnings fbink)
+
+add_executable(sumiyomi src/main.cpp)
+target_link_libraries(sumiyomi PRIVATE sumi_platform)
+
+add_executable(m1_bench tools/bench/m1_bench.cpp)
+target_link_libraries(m1_bench PRIVATE sumi_platform)
+
+set_target_properties(sumiyomi m1_bench PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

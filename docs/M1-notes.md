@@ -87,3 +87,72 @@ Running log of surprises and resolved unknowns (spec §13).
   (Touch orientation is a separate question, still open until T05.)
 - First measured refresh: GC16 full screen, 480 ms (FBInk documents ~450 ms). Wait-for-complete works.
 - Even gray, nothing drew over it; one flash on clear; rc=0; home screen usable afterward.
+
+## T04 — waveform benchmark (2026-09-14)
+
+Raw data: `docs/m1_bench.csv` (20 timed refreshes per case, after one warm-up). Latency is measured from
+`fbink_refresh_rect` to the return of `fbink_wait_for_complete`.
+Two stray `statusbar …` lines from upstart were removed from the CSV. Since then, PowerGuard's helper processes send stdout to stderr.
+
+| Mode | full 1072×1448 | half 1072×724 | 200×200 | FBInk doc |
+|---|---|---|---|---|
+| A2 | 148.4 | 134.1 | 120.9 | ~120 |
+| DU | 289.5 | 275.2 | 262.0 | ~260 |
+| GL16 | 477.7 | 463.4 | 450.1 | ~450 |
+| REAGL ⚠️ invalid | 493.8 | 471.5 | 450.7 | ~450 |
+| GC16 | 477.7 | 463.4 | 450.2 | ~450 |
+| GC16_FLASH | 477.7 | 463.4 | 450.2 | — |
+
+Median ms. Spread is tiny: min is within 0.3 ms of the median, and max is up to ~40 ms higher on a few cases.
+
+### Does wait_for_complete really tell the modes apart? Yes, but only across tiers
+- **Evidence that it does:**
+  - There are three clearly separate tiers: A2 ~120–150, DU ~260–290, and the 16-gray modes ~450–495. A timer, or a completion signal that ignores the mode, couldn't produce that.
+  - REAGL also differed from GL16 at full size (+16 ms).
+- **GC16 == GC16_FLASH is expected, not a measurement artifact.** In FBInk's Kindle path (`refresh_kindle_rex`),
+  both send `WAVEFORM_MODE_GC16`. `is_flashing` only switches `update_mode` from PARTIAL to FULL, which changes
+  *which pixels* get driven, not the waveform's length. Also, the benchmark changes nearly every pixel on each refresh,
+  so FULL vs PARTIAL drives almost the same pixels here.
+- **GL16 == GC16 (within 0.2 ms at every size) is NOT explained.** FBInk sends different mode numbers
+  (`WAVEFORM_MODE_ZELDA_GL16` vs `WAVEFORM_MODE_GC16`). Either this panel's waveform file gives both the same
+  frame count, or the kernel substitutes one for the other. Timing alone can't tell which → **U13, open.** Deciding it
+  needs a visual check: GL16 should leave visible ghosting on gray→gray changes, and GC16 should not.
+- FBInk's "auto-upgrade to REAGL" (`fbink_mtk_toggle_auto_reagl`) is MediaTek-only, and this device has `isMTK=0`.
+  So it can't be merging modes here.
+
+### REAGL (U9): measurement invalid, still open
+fbink.h: "On … all Kindle … REAGL & REAGLD generally expect to *always* be flashing". `display_fbink.cpp` sent
+REAGL as a PARTIAL update. **Fixed:** REAGL now always sets `is_flashing` (REAGL itself suppresses the visible flash).
+Re-measure with `m1_bench --mode=REAGL`. Even then, latency won't settle U9: REAGL vs GL16 is a quality question
+(ghosting on real manga pages), so it belongs in M4 with real content.
+
+### Does refresh size matter? Barely
+- Going from 200×200 to full screen adds ~27 ms in every mode (about 14 ms per size step), whatever the waveform.
+- Very low variance → deterministic EPDC timing. The size cost looks like per-pixel preparation on the single-core A9
+  (a hypothesis, not verified).
+- **For DirtyTracker / RefreshPolicy (§7.2/§7.3):**
+  - Merging rects or promoting to full screen costs ≤ ~30 ms of latency. Rect size matters for *what visibly
+    flashes/ghosts*, not for speed.
+  - The "cap at 6 refresh calls because of per-ioctl overhead" rationale is untested: every refresh here was
+    waited on in sequence, and concurrent submission wasn't measured.
+
+### What this means for the §7.3 refresh policy
+- "Pick the fastest mode the content allows" holds **across tiers**: B&W content → A2/DU buys 2–4× speed.
+- **Within the 16-gray tier, latency is flat.** GL16 vs GC16 vs flash vs (probably) REAGL is purely a
+  ghosting/flash trade-off. So the periodic GC16 flash (kFlashEvery) costs no extra latency, only the visible flash.
+  The policy should reason about gray content by ghosting, not speed.
+
+### Against design doc §10.1 budgets (panel time only; input, paint and I/O come on top)
+| Budget | Refresh used | Measured | Verdict |
+|---|---|---|---|
+| Tap feedback 150 ms | A2, element-sized | 121 (200×200) … 148 (full) | ✅ for small elements, ~29 ms left for input+paint; tight. T12 measures end-to-end |
+| Library tab switch 400 ms | DU, content area | ~275–290 | ✅ ~110 ms left |
+| Library scroll page 400 ms | DU | ~275–290 | ✅ |
+| Open manga detail 600 ms | GC16 full | 478 | ✅ ~120 ms left, tight |
+| **Page turn, RAM cache 350 ms** | GL16 full | **478** | ❌ **physically infeasible**. Design doc §7.2 already says "under 500 ms, dominated by the panel" and the risk register calls the ~450 ms floor physics; §10.1 contradicts both |
+| **Page turn, disk cache 500 ms** | ~25 ms read + GL16 | ~503 | ❌ marginal |
+| **Reader menu open 350 ms** | 2× GL16 bars | ≥450 | ❌ with GL16. ✅ if menu chrome uses DU (~262 small) |
+| Cold start 2500 ms | GC16 | 478 | ✅ |
+
+**Proposed §10.1 revisions (not applied yet):** page turn RAM ≈ 500 ms, page turn disk ≈ 550 ms,
+reader menu 350 ms kept but with DU for the menu bars. Spec §13 says to revise §10.1 before M2 when U8 differs materially.

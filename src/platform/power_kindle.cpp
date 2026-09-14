@@ -69,6 +69,9 @@ int run(const char* exe, const char* const argv[]) noexcept
     pid_t pid = fork();
     if (pid < 0) return -1;
     if (pid == 0) {
+        // Keep helper chatter (e.g. upstart's "statusbar stop/waiting") out of our stdout,
+        // which carries data such as m1_bench's CSV.
+        dup2(STDERR_FILENO, STDOUT_FILENO);
         execve(exe, const_cast<char* const*>(argv), environ);
         _exit(127);
     }
