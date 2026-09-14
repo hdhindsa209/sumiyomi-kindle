@@ -193,3 +193,25 @@ I checked that it really reports failures.
 | T09 RefreshPolicy | 12 | The Nth non-flashing full-screen refresh becomes GC16_FLASH (N=6 by default, so every 6th flashes). Rects promoted to full screen count too; partial refreshes don't. **The flash is deferred past A2** full-screen requests, so tap feedback is never turned into a 478 ms flash. An explicit GC16_FLASH resets the count |
 
 Open interpretation: DU full-screen refreshes count toward the flash and can be upgraded. Revisit in M2 if flashing on a list scroll feels wrong.
+
+## T11 — SDL simulator backend (2026-09-14)
+
+- `display_sdl.cpp` / `input_sdl.cpp`, built on the host when SDL2 is found (Homebrew `sdl2` is now `sdl2-compat`,
+  the SDL2 API on top of SDL3). Device geometry is 1072×1448 with **stride 1088**, as on the device, so stride bugs show up on desktop.
+- **Latency uses the T04 measurements, not FBInk's documented values:** A2 121 / DU 262 / 16-gray 450 ms
+  at 200×200, plus up to +27 ms at full screen.
+- **Ghosting:**
+  - A shadow panel buffer keeps 8% of the previous value per non-flashing refresh.
+  - GC16_FLASH shows black for a third of its duration, then resets the residual.
+  - Pixels outside the refreshed rect never change.
+- **A2 and DU drive pixels to pure black/white.** A2 over more than 2 distinct values logs `A2 MISUSE` and draws diagonal stripes.
+- **Input:** SDL has no pollable fd, so `Input::fds()` is empty and the owner must call `drain(Input::kNoFd, …)` periodically
+  (documented in input.h). **T10's EventLoop needs a polling fallback when there are no fds.** The host simulator
+  therefore won't be idle-silent; that requirement is device-only.
+- `tools/sim/sim_testcard --selftest=DIR` runs a scripted pass headless (`SDL_VIDEODRIVER=dummy`) and saves BMP
+  snapshots. Verified: quantization banding, DU binarization, ghost after a GL16 move, A2 misuse stripes + warning,
+  policy A2→DU downgrade, clean exit.
+- Not covered by the self-test: **SDL mouse→device coordinate mapping** (pushed mouse events are rescaled by SDL, so
+  the script injects RawEvents instead). Needs one interactive click check.
+- T12 note: the spec's test card has an FBInk OpenType text line. That has no SDL equivalent, so the simulator
+  test card will have to skip it or draw a placeholder.

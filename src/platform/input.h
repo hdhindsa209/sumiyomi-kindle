@@ -29,10 +29,14 @@ public:
     virtual void close() = 0;
 
     // Non-blocking fds for epoll registration.
+    // May be empty for backends with nothing pollable (SDL): those must be drained
+    // periodically with fd = kNoFd instead.
     virtual const std::vector<int>& fds() const = 0;
 
     // Drain one ready fd, appending decoded events. Call when epoll says ready.
     virtual void drain(int fd, std::vector<RawEvent>& out) = 0;
+
+    static constexpr int kNoFd = -1;
 };
 
 Input* make_input();

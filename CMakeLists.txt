@@ -23,13 +23,27 @@ target_include_directories(sumi_core PUBLIC src)
 target_link_libraries(sumi_core PUBLIC sumi_warnings)
 
 if(NOT CMAKE_CROSSCOMPILING)
-  # Host: unit tests. The app itself needs the SDL backend (T11).
+  # Host: unit tests, plus the SDL simulator backend (§10) when SDL2 is available.
   enable_testing()
   foreach(name canvas dirty gesture refresh_policy)
     add_executable(test_${name} tests/unit/test_${name}.cpp)
     target_link_libraries(test_${name} PRIVATE sumi_core)
     add_test(NAME ${name} COMMAND test_${name})
   endforeach()
+
+  find_package(SDL2 CONFIG)
+  if(SDL2_FOUND)
+    add_library(sumi_sim STATIC
+      src/platform/display_sdl.cpp
+      src/platform/input_sdl.cpp
+      src/platform/power_stub.cpp)
+    target_link_libraries(sumi_sim PUBLIC sumi_core SDL2::SDL2)
+
+    add_executable(sim_testcard tools/sim/sim_testcard.cpp)
+    target_link_libraries(sim_testcard PRIVATE sumi_sim)
+  else()
+    message(STATUS "SDL2 not found: simulator not built (brew install sdl2)")
+  endif()
   return()
 endif()
 
