@@ -19,15 +19,24 @@ add_library(sumi_core STATIC
   src/core/dirty.cpp
   src/core/gesture.cpp
   src/core/refresh_policy.cpp)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  target_sources(sumi_core PRIVATE src/core/loop_linux.cpp)
+else()
+  target_sources(sumi_core PRIVATE src/core/loop_posix.cpp)
+endif()
 target_include_directories(sumi_core PUBLIC src)
 target_link_libraries(sumi_core PUBLIC sumi_warnings)
 
 if(NOT CMAKE_CROSSCOMPILING)
   # Host: unit tests, plus the SDL simulator backend (§10) when SDL2 is available.
   enable_testing()
-  foreach(name canvas dirty gesture refresh_policy)
+  foreach(name canvas dirty gesture refresh_policy loop)
     add_executable(test_${name} tests/unit/test_${name}.cpp)
     target_link_libraries(test_${name} PRIVATE sumi_core)
+    if(name STREQUAL "loop")
+      find_package(Threads REQUIRED)
+      target_link_libraries(test_${name} PRIVATE Threads::Threads)
+    endif()
     add_test(NAME ${name} COMMAND test_${name})
   endforeach()
 

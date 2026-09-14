@@ -216,3 +216,31 @@ Open interpretation: DU full-screen refreshes count toward the flash and can be 
   the A2 misuse stripes + warning, and clean exit all matched.
 - T12 note: the spec's test card has an FBInk OpenType text line. That has no SDL equivalent, so the simulator
   test card will have to skip it or draw a placeholder.
+
+## T10 — EventLoop (code notes, pending device verification)
+
+- **Two implementations of `core/loop.h`** (the spec names a single `loop.cpp`):
+  - `loop_linux.cpp` is the spec's design: epoll with no timeout, eventfd for `stop()`, timerfd for the tick. Used on the device.
+  - `loop_posix.cpp` uses poll() + self-pipe with the same behavior, because macOS (the SDL simulator host) has no epoll/eventfd/timerfd.
+    CMake picks by `CMAKE_SYSTEM_NAME`.
+- **API additions to §9:**
+  - `init()` (fallible setup, no exceptions).
+  - `arm_tick(bool)`: the tick starts disarmed, and the owner arms it from `GestureRecognizer::wants_tick()`.
+    Only a state change costs a `timerfd_settime`.
+  - `add_poll(fn, ms)`: the fallback for fd-less input (SDL, T11). Device code never calls it.
+  - The spec's unused `InputFn` alias is dropped.
+- `stop()` is a single `write(2)` to the eventfd, so it's safe in a signal handler (tested with SIGALRM).
+  The existing handlers still restore + `_exit`. Graceful SIGTERM-via-loop can come in T12 if wanted.
+- test_loop (7 tests): fd dispatch, stop from a callback / another thread / a signal handler, tick only while armed,
+  disarmed by default, poll fallback. **All tests (35 + 7) pass on macOS, and natively on Linux arm64 with GCC**
+  in a throwaway Debian container, which exercises the real epoll/eventfd/timerfd code.
+- Idle check: the `/proc/<pid>/status` context-switch counters, per the spec change (strace isn't on the device).
+
+### T10 device run — PASSED
+- **Idle check:** `voluntary_ctxt_switches` 31 → 31 and `nonvoluntary_ctxt_switches` 26 → 26 over 10 s with no input.
+  The process never woke while idle.
+- Touch-down dots appeared on every tap. Log: 5× Tap, SwipeL, SwipeR, LongPress, and the long-press exited as designed.
+- rc=0, "power restored", "clean exit"; home screen normal afterward.
+- **Not verified on device:** step 4 (tick disarms after a gesture) was skipped, because the long-press had already ended the run.
+  Covered by `test_tick_only_while_armed` on macOS and natively on Linux (the real timerfd path). T12's own
+  idle behavior will cover it on device again.
