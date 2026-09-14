@@ -134,6 +134,12 @@ void Text::draw(Canvas& c, std::string_view utf8, const TextStyle& s, int32_t x,
 
 void Text::draw_icon(Canvas& c, char32_t codepoint, int32_t px, bool filled, uint8_t gray, const Rect& box)
 {
+    draw_icon(c, codepoint, px, filled, gray, box, box);
+}
+
+void Text::draw_icon(Canvas& c, char32_t codepoint, int32_t px, bool filled, uint8_t gray, const Rect& box,
+                     const Rect& clip)
+{
     Fonts::Sized f = fonts_.sized(FontId::Icons, px);
     if (!f.face) return;
     FT_UInt glyph = FT_Get_Char_Index(f.face, codepoint);
@@ -141,7 +147,7 @@ void Text::draw_icon(Canvas& c, char32_t codepoint, int32_t px, bool filled, uin
     const GlyphBitmap* bm = cache_.get(fonts_, FontId::Icons, px, glyph, filled);
     if (!bm || bm->width == 0) return;
     c.blend_mask(box.x + (box.w - bm->width) / 2, box.y + (box.h - bm->height) / 2, bm->alpha.data(), bm->width,
-                 bm->height, gray, box);
+                 bm->height, gray, box.clipped(clip));
 }
 
 } // namespace sumi

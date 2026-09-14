@@ -15,6 +15,8 @@ public:
     // Polarity inversion is applied here if the panel needs it.
     void fill_rect(const Rect& r, uint8_t gray);
     void stroke_rect(const Rect& r, uint8_t gray, int32_t thickness);   // drawn inside r
+    // Rounded rectangle, antialiased corners (4x4 supersampled coverage). Only `clip` changes.
+    void fill_rounded_rect(const Rect& r, int32_t radius, uint8_t gray, const Rect& clip);
     void invert_rect(const Rect& r);          // for A2 tap feedback
     // Copies src (logical gray, dst.w x dst.h, rows src_stride apart) into dst.
     void blit_gray8(const Rect& dst, const uint8_t* src, int32_t src_stride);

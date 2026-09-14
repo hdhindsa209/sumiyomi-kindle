@@ -52,6 +52,13 @@ add_library(sumi_text STATIC
   src/text/text.cpp)
 target_link_libraries(sumi_text PUBLIC sumi_core harfbuzz)
 
+# UI: tone scale, node tree + layout, screen host (M2 S4).
+add_library(sumi_ui STATIC
+  src/ui/node.cpp
+  src/ui/screen.cpp)
+target_include_directories(sumi_ui PUBLIC assets/fonts)
+target_link_libraries(sumi_ui PUBLIC sumi_text)
+
 if(NOT CMAKE_CROSSCOMPILING)
   # Host: unit tests, plus the SDL simulator backend (§10) when SDL2 is available.
   enable_testing()
@@ -66,6 +73,12 @@ if(NOT CMAKE_CROSSCOMPILING)
   target_compile_definitions(test_text PRIVATE SUMI_ASSETS_DIR="${SUMI_ASSETS_DIR}")
   target_link_libraries(test_text PRIVATE sumi_text)
   add_test(NAME text COMMAND test_text)
+
+  add_executable(test_ui tests/unit/test_ui.cpp)
+  target_compile_definitions(test_ui PRIVATE SUMI_ASSETS_DIR="${SUMI_ASSETS_DIR}"
+                                             SUMI_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/tests/golden")
+  target_link_libraries(test_ui PRIVATE sumi_ui)
+  add_test(NAME ui COMMAND test_ui)
 
   foreach(name canvas dirty gesture refresh_policy loop frame)
     add_executable(test_${name} tests/unit/test_${name}.cpp)

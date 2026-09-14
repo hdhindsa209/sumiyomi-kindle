@@ -42,7 +42,10 @@ public:
     void draw(Canvas& c, std::string_view utf8, const TextStyle& s, int32_t x, int32_t baseline, const Rect& clip);
 
     // A Material Symbols icon, its ink centered in `box`. `filled` selects the FILL axis.
+    // Only pixels inside `clip` (default: `box`) change.
     void draw_icon(Canvas& c, char32_t codepoint, int32_t px, bool filled, uint8_t gray, const Rect& box);
+    void draw_icon(Canvas& c, char32_t codepoint, int32_t px, bool filled, uint8_t gray, const Rect& box,
+                   const Rect& clip);
 
 private:
     struct Glyph { uint32_t id; int32_t x_advance, x_offset, y_offset; uint32_t cluster; };
