@@ -15,14 +15,15 @@ target_compile_options(sumi_warnings INTERFACE
 # Backend-independent core: builds for host and device.
 add_library(sumi_core STATIC
   src/core/log.cpp
-  src/core/canvas.cpp)
+  src/core/canvas.cpp
+  src/core/dirty.cpp)
 target_include_directories(sumi_core PUBLIC src)
 target_link_libraries(sumi_core PUBLIC sumi_warnings)
 
 if(NOT CMAKE_CROSSCOMPILING)
   # Host: unit tests. The app itself needs the SDL backend (T11).
   enable_testing()
-  foreach(name canvas)
+  foreach(name canvas dirty)
     add_executable(test_${name} tests/unit/test_${name}.cpp)
     target_link_libraries(test_${name} PRIVATE sumi_core)
     add_test(NAME ${name} COMMAND test_${name})
