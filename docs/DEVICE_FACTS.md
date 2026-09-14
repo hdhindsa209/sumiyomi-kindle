@@ -5,7 +5,7 @@ Recorded by: user, via SSH over USBNet (RNDIS/Ethernet Gadget)
 
 **Network (USBNet):** Kindle = **`192.168.15.244`** (use this for ssh/scp/deploy). Mac side of the RNDIS link = `192.168.15.201/24` (manual IP) — not a device address.
 
-**STATUS: complete for M1.** Block 2 (framework stop/start) is done. Remaining: "Hotfix installed" (non-blocking) and the touch-transform question (open until T05). See "Outstanding" at the end.
+**STATUS: complete for M1.** Block 2 (framework stop/start) is done. Remaining: "Hotfix installed" (non-blocking). Touch transform and digitizer range resolved in T05. See "Outstanding" at the end.
 
 ---
 
@@ -146,7 +146,7 @@ canWaitForSubmission=1
 ### U2 (grayscale polarity) — RESOLVED
 `invertedGrayscale=0`, `penFGColor=0` (black), `penBGColor=255` (white). **Standard polarity: 0=black, 255=white, matching the Canvas layer's assumption in the M1 spec exactly.** The polarity-normalization branch described in §5.4 of the M1 spec (`display_fbink.cpp` implementation requirements, point 8) is **not needed on this device** — but keep the flag in the code path anyway, since other Kindle models do report inverted. Just don't spend time debugging it here if it's never triggering.
 
-### U6 (touch digitizer range vs panel range) — partially resolved
+### U6 (touch digitizer range vs panel range) — RESOLVED (T05): X 0..1072, Y 0..1448, 1:1 with panel; no swap/mirror
 `touchSwapAxes=0`, `touchMirrorX=0`, `touchMirrorY=0` — **all false**. The transform in M1 spec §6.2 degenerates to a straight passthrough (no swap, no mirror) on this device; only the min/max scaling term remains relevant, and only if the digitizer's `ABS_MT_POSITION_X/Y` range differs from 1072×1448. Still confirm the actual `EVIOCGABS` min/max in T05 — don't assume 1:1 without checking, but the swap/mirror complexity the spec worried about does not apply here.
 
 ### U7 (unreliable_wait_for) — RESOLVED
@@ -166,7 +166,7 @@ rotate: 3
 ```
 `virtual_size` of 1088×6144 is almost certainly a multi-buffer/virtual allocation, not the visible panel resolution — this is exactly the situation `sumiyomi-M1-implementation-spec.md` §5.1 warns about, which is why `fbink -e`'s `screen_width`/`screen_height` (from `FBInkState`) is the value the code must use, never raw sysfs. `bits_per_pixel: 8` suggests the device may already be in 8bpp mode — worth confirming via `fbink -e`'s `bpp` field, which would let T03 skip the `fbink_set_fb_info` bpp-switch call entirely. `rotate: 3` (non-zero native rotation) *may* mean the touch coordinate transform in §6.2 of the M1 spec is not a pure passthrough here, which conflicts with the `touchSwapAxes/MirrorX/MirrorY=0` reading in the U6 section above.
 
-**OPEN QUESTION (touch transform) — do not resolve by inference.** Whether taps need any rotation/swap/mirror beyond range scaling is settled empirically by T05's corner-tap test. Budget real testing time for T05.
+**RESOLVED in T05 (corner-tap test):** no rotation, swap or mirror is needed for touch. FBInk's touch flags (all 0) are correct despite `rotate: 3`.
 
 ## Input devices
 
@@ -251,7 +251,7 @@ Ample room for the app, extensions, and cache budgets in the design doc.
 ## Outstanding
 
 - **Hotfix installed (y/n)** — unrecorded, non-blocking for now.
-- **Touch transform** (passthrough vs. rotation-aware, given `rotate: 3`) — open until T05's corner-tap test.
-- **Touch digitizer range** (`ABS_MT_POSITION_X/Y` min/max) — measured in T05.
+- ~~Touch transform~~ — resolved in T05: passthrough.
+- ~~Touch digitizer range~~ — resolved in T05: X 0..1072, Y 0..1448, 1:1 with the 1072×1448 panel.
 
 Everything else needed by `sumiyomi-M1-implementation-spec.md` §13's 🔴 list is resolved above.

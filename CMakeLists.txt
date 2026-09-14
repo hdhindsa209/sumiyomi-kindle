@@ -38,7 +38,8 @@ add_library(sumi_platform STATIC
   src/core/log.cpp
   src/platform/signals.cpp
   src/platform/power_kindle.cpp
-  src/platform/display_fbink.cpp)
+  src/platform/display_fbink.cpp
+  src/platform/input_evdev.cpp)
 target_include_directories(sumi_platform PUBLIC src)
 target_link_libraries(sumi_platform PUBLIC sumi_warnings fbink)
 

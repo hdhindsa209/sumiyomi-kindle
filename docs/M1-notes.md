@@ -156,3 +156,25 @@ Re-measure with `m1_bench --mode=REAGL`. Even then, latency won't settle U9: REA
 
 **§10.1 revisions (applied to the design doc 2026-09-14):** page turn RAM ≈ 500 ms, page turn disk ≈ 550 ms,
 reader menu 350 ms kept but with DU for the menu bars. Spec §13 says to revise §10.1 before M2 when U8 differs materially.
+
+## T05 — input (code notes, pending device verification)
+
+- Devices come from `fbink_input_scan(TOUCHSCREEN | PAGINATION_BUTTONS | POWER_BUTTON)`. The fds of unmatched
+  devices are closed.
+- Protocol B only. If there's no `ABS_MT_SLOT`, `open()` fails instead of guessing.
+  Single-touch: the first contact's slot is tracked. `SYN_DROPPED` → Cancel, then ignore events until the next `SYN_REPORT`.
+- Transform per §6.2, with one correction: it subtracts `absinfo.minimum` before scaling. The spec's formula assumes min=0.
+  Digitizer X/Y ranges are logged at open (U6).
+- `EVIOCSCLOCKID(CLOCK_MONOTONIC)`, so `RawEvent::t_ms` shares a clock with `mono_ms()` (needed for T12's 150 ms target).
+- **Touchscreen is EVIOCGRAB'd.** Since we coexist, the framework is still running and would otherwise act on our
+  taps (e.g. open things on the hidden home screen). The kernel releases the grab automatically on exit or crash.
+  Power button is *not* grabbed, so system sleep keeps working.
+- `main.cpp` is now the T05 corner-tap harness. The T02/T03 `--crash=` flags are gone; they'll be re-added for the
+  deferred crash tests.
+
+### T05 device run — PASSED
+- Digitizer `ABS_MT_POSITION_X 0..1072, Y 0..1448`: 1:1 with the panel. No swap, mirror or real scaling
+  (the formula's max+1 divisor costs at most 1 px).
+- Corner and center taps landed under the finger. The two "FAR" logs were finger imprecision (repeat taps nearby were OK).
+- A drag produces exactly one down/up pair, with no stray events. Home screen fine afterward.
+- U5 (protocol B) and U6 (range) confirmed; the touch-transform open question is closed.
