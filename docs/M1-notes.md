@@ -178,3 +178,18 @@ reader menu 350 ms kept but with DU for the menu bars. Spec §13 says to revise 
 - Corner and center taps landed under the finger. The two "FAR" logs were finger imprecision (repeat taps nearby were OK).
 - A drag produces exactly one down/up pair, with no stray events. Home screen fine afterward.
 - U5 (protocol B) and U6 (range) confirmed; the touch-transform open question is closed.
+
+## T06–T09 — host-only core (2026-09-14)
+
+All four built and tested on the host (`cmake --preset host && cmake --build --preset host && ctest --test-dir build/host`).
+The core library also builds cleanly with the Kindle GCC. Test harness: `tests/unit/check.h`, no dependencies.
+I checked that it really reports failures.
+
+| Task | Tests | Decisions worth knowing |
+|---|---|---|
+| T06 Canvas | 14 | Polarity is converted when pixels are written (the fb holds panel values). `invert_rect` needs no conversion. `quantize_rect` uses a nearest-level LUT with exact endpoints; levels are clamped to 2..256, and 256 = no-op. `stroke_rect` draws inside the rect, and becomes a solid fill once 2×thickness ≥ w or h |
+| T07 DirtyTracker | 14 | "Within 16 px" means the gap on **both** axes is ≤ 16 (touching or overlapping included). Gap merges repeat until nothing changes, and run again after every cap merge, so output rects never overlap. The 60% check sums the areas of those disjoint rects |
+| T08 GestureRecognizer | 17 | Leaving the slop at any point disqualifies Tap/LongPress. LongPress fires on release if `tick()` missed it. Swipe boundaries are inclusive (≥ 90 px, ≤ 600 ms), and a diagonal tie counts as horizontal. **Added `wants_tick()`** (not in spec) so T10 can arm its timerfd only while a long-press is still possible |
+| T09 RefreshPolicy | 12 | The Nth non-flashing full-screen refresh becomes GC16_FLASH (N=6 by default, so every 6th flashes). Rects promoted to full screen count too; partial refreshes don't. **The flash is deferred past A2** full-screen requests, so tap feedback is never turned into a 478 ms flash. An explicit GC16_FLASH resets the count |
+
+Open interpretation: DU full-screen refreshes count toward the flash and can be upgraded. Revisit in M2 if flashing on a list scroll feels wrong.
