@@ -238,6 +238,11 @@ Present and working:
 
 **Action for T13:** use the `menu.json` KUAL packaging path in the M1 spec as written; no KPM adaptation needed.
 
+## Tools on device
+
+- `strace`: **not installed** (`command -v strace` empty, checked before T10). T10's idle check uses `/proc/<pid>/status` context-switch counters instead.
+- `fbink`: at `/mnt/us/libkh/bin/fbink` (see above).
+
 ## Storage
 
 ```
