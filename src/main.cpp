@@ -88,7 +88,10 @@ int main(int argc, char** argv)
     };
 
     if (input->fds().empty()) {
-        loop.add_poll([&] { drain(sumi::Input::kNoFd); }, kSdlPollMs);
+        loop.add_poll([&] {
+            display->pump(sumi::mono_ms());   // simulated panel: apply due updates
+            drain(sumi::Input::kNoFd);
+        }, kSdlPollMs);
     } else {
         for (int fd : input->fds()) loop.add_fd(fd, drain);
     }

@@ -90,8 +90,12 @@ public:
     // No-op on backends without markers, or when info().unreliable_wait.
     virtual void wait(uint32_t marker = 0) = 0;
 
-    // One GC16 flashing full-screen refresh. Called on entry and on exit.
+    // One GC16 flashing full-screen refresh, waited on. Called on entry and on exit.
     virtual void clear_screen() = 0;
+
+    // Advance a simulated panel (apply updates whose latency has elapsed). The owner calls it
+    // regularly on backends that need it (SDL); a no-op on real hardware.
+    virtual void pump(uint64_t /*now_ms*/) {}
 
     // M1 only (the test card's text line): draw `utf8` centered in `area` into the
     // framebuffer, without refreshing. FBInk backend: OpenType via `font_path`.

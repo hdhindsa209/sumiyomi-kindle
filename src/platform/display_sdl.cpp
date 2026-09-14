@@ -1,6 +1,7 @@
 // SDL simulator display backend (M1 spec §10). Simulates the panel, not just a window:
 //   1. quantization to 16 levels at present
-//   2. latency: refresh() sleeps for the mode's *measured* duration (T04) before presenting
+//   2. latency: refresh() returns at once (like the EPDC); the update is applied to the panel
+//      after the mode's *measured* duration (T04), via pump(). wait() blocks until applied.
 //   3. ghosting: a shadow "panel" buffer keeps a residual of the previous image under
 //      non-flashing refreshes; flashing refreshes reset it. Unrefreshed pixels never change.
 //   4. A2/DU drive pixels to pure black/white; A2 over > 2 distinct values draws visible
@@ -14,6 +15,7 @@
 #include <SDL.h>
 
 #include <algorithm>
+#include <deque>
 #include <cstdint>
 #include <vector>
 
@@ -122,6 +124,7 @@ public:
     void close() override
     {
         if (window_ && renderer_ && texture_) clear_screen();
+        pending_.clear();
         sdl_redraw_hook() = nullptr;
         sdl_snapshot_hook() = nullptr;
         if (texture_)  SDL_DestroyTexture(texture_);
@@ -137,53 +140,73 @@ public:
 
     uint8_t* framebuffer() override { return window_ ? fb_.data() : nullptr; }
 
+    // Asynchronous, like the EPDC: snapshot the region now, apply it to the panel once the
+    // simulated latency has elapsed (pump()). Never blocks the caller.
     uint32_t refresh(const Rect& r, Wave mode) override
     {
         Rect c = r.clipped({0, 0, kWidth, kHeight});
         if (c.empty() || !window_) return 0;
 
-        bool flashing = mode == Wave::GC16_FLASH;
-        bool binary   = mode == Wave::A2 || mode == Wave::DU;
-        bool a2_misuse = mode == Wave::A2 && distinct_values(c) > 2;
-        if (a2_misuse)
+        Update u;
+        u.rect      = c;
+        u.mode      = mode;
+        u.marker    = next_marker_++;
+        u.submit_ms = mono_ms();
+        u.due_ms    = u.submit_ms + latency_ms(mode, c);
+        u.a2_misuse = mode == Wave::A2 && distinct_values(c) > 2;
+        if (u.a2_misuse)
             SUMI_LOGW("display", "A2 MISUSE: refresh %d,%d %dx%d has more than 2 distinct values; "
                       "A2 is B&W->B&W only. Drawing artifacts.", c.x, c.y, c.w, c.h);
 
-        uint32_t lat = latency_ms(mode, c);
-        if (flashing) {
-            // The black flash is visible for part of the update.
-            fill_panel(c, 0);
-            present();
-            SDL_Delay(lat / 3);
-            lat -= lat / 3;
-        }
-        SDL_Delay(lat);
-
-        for (int32_t y = c.y; y < c.bottom(); ++y) {
-            const uint8_t* src = fb_.data() + static_cast<size_t>(y) * kStride;
-            uint8_t* dst = panel_.data() + static_cast<size_t>(y) * kWidth;
-            for (int32_t x = c.x; x < c.right(); ++x) {
-                int target = quantize16(src[x]);
-                if (binary) target = src[x] < 128 ? 0 : 255;
-                if (a2_misuse && ((x + y) % 8 < 2)) target = 255 - target;   // loud diagonal stripes
-
-                int value = target;
-                if (!flashing) value = target + (dst[x] - target) * kGhostResidualPct / 100;
-                dst[x] = static_cast<uint8_t>(value);
-            }
-        }
-        present();
-        SUMI_LOGD("display", "refresh %s %d,%d %dx%d simulated %ums", wave_name(mode), c.x, c.y, c.w, c.h,
-                  latency_ms(mode, c));
-        return 0;
+        u.pixels.resize(static_cast<size_t>(c.w) * static_cast<size_t>(c.h));
+        for (int32_t y = 0; y < c.h; ++y)
+            std::copy_n(fb_.data() + static_cast<size_t>(c.y + y) * kStride + static_cast<size_t>(c.x),
+                        static_cast<size_t>(c.w), u.pixels.data() + static_cast<size_t>(y) * static_cast<size_t>(c.w));
+        pending_.push_back(std::move(u));
+        pump(mono_ms());   // shows a flash's black phase right away
+        return pending_.back().marker;
     }
 
-    void wait(uint32_t) override {}   // refresh() is synchronous here
+    void pump(uint64_t now_ms) override
+    {
+        if (!window_) return;
+        bool dirty = false;
+        for (Update& u : pending_) {
+            if (u.mode == Wave::GC16_FLASH && !u.black_shown) {
+                fill_panel(u.rect, 0);
+                u.black_shown = true;
+                dirty = true;
+            }
+        }
+        // Apply due updates in submission order; stop at the first not-yet-due one so a later
+        // update never lands before an earlier overlapping one.
+        while (!pending_.empty() && pending_.front().due_ms <= now_ms) {
+            apply(pending_.front());
+            SUMI_LOGD("display", "refresh %s %d,%d %dx%d applied after %llums", wave_name(pending_.front().mode),
+                      pending_.front().rect.x, pending_.front().rect.y, pending_.front().rect.w,
+                      pending_.front().rect.h,
+                      static_cast<unsigned long long>(now_ms - pending_.front().submit_ms));
+            applied_marker_ = pending_.front().marker;
+            pending_.pop_front();
+            dirty = true;
+        }
+        if (dirty) present();
+    }
+
+    // Blocks until `marker` (or everything submitted, if 0) has been applied.
+    void wait(uint32_t marker) override
+    {
+        uint32_t target = marker ? marker : next_marker_ - 1;
+        while (window_ && !pending_.empty() && applied_marker_ < target) {
+            SDL_Delay(2);
+            pump(mono_ms());
+        }
+    }
 
     void clear_screen() override
     {
         std::fill(fb_.begin(), fb_.end(), 255);
-        refresh({0, 0, kWidth, kHeight}, Wave::GC16_FLASH);
+        wait(refresh({0, 0, kWidth, kHeight}, Wave::GC16_FLASH));
     }
 
     bool draw_label(const Rect& area, const std::string& utf8, const char* /*font_path*/,
@@ -203,6 +226,32 @@ public:
     }
 
 private:
+    struct Update {
+        Rect                 rect;
+        Wave                 mode = Wave::GC16;
+        uint32_t             marker = 0;
+        uint64_t             submit_ms = 0, due_ms = 0;
+        bool                 a2_misuse = false, black_shown = false;
+        std::vector<uint8_t> pixels;   // fb snapshot at submit time, rect.w x rect.h
+    };
+
+    void apply(const Update& u)
+    {
+        const Rect& c = u.rect;
+        bool flashing = u.mode == Wave::GC16_FLASH;
+        bool binary   = u.mode == Wave::A2 || u.mode == Wave::DU;
+        for (int32_t y = 0; y < c.h; ++y) {
+            const uint8_t* src = u.pixels.data() + static_cast<size_t>(y) * static_cast<size_t>(c.w);
+            uint8_t* dst = panel_.data() + static_cast<size_t>(c.y + y) * kWidth + static_cast<size_t>(c.x);
+            for (int32_t x = 0; x < c.w; ++x) {
+                int target = binary ? (src[x] < 128 ? 0 : 255) : quantize16(src[x]);
+                if (u.a2_misuse && ((c.x + x + c.y + y) % 8 < 2)) target = 255 - target;   // loud diagonal stripes
+                int value = flashing ? target : target + (dst[x] - target) * kGhostResidualPct / 100;
+                dst[x] = static_cast<uint8_t>(value);
+            }
+        }
+    }
+
     void fill_fb(const Rect& r, uint8_t v)
     {
         Rect c = r.clipped({0, 0, kWidth, kHeight});
@@ -252,6 +301,10 @@ private:
         SDL_RenderCopy(renderer_, texture_, nullptr, nullptr);
         SDL_RenderPresent(renderer_);
     }
+
+    std::deque<Update> pending_;
+    uint32_t next_marker_    = 1;
+    uint32_t applied_marker_ = 0;
 
     SDL_Window*   window_   = nullptr;
     SDL_Renderer* renderer_ = nullptr;

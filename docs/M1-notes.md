@@ -370,3 +370,14 @@ explains, and the README says so.
 3. T12 question: did the user really tap outside ~29 times? If not, there's a spurious-Tap bug.
 4. Single core (DEVICE_FACTS): design doc §3.1's "two workers because two cores" rationale doesn't hold here.
 5. U9 (REAGL, M4) and U13 (GL16 vs GC16 visual). The SIGKILL fallback path in `run.sh` is untested on device.
+
+## M1-F1 fix (M2 stage S1)
+- `core/frame.{h,cpp}` — **FrameScheduler**: handlers draw and call `damage(rect, fastest_mode, is_bw)`; the owner calls
+  `flush()` once per loop wake. Damage is merged per (mode, bw) group through DirtyTracker, decided through RefreshPolicy,
+  submitted fastest mode first, and **never waited on**. Unit test: a 30-tap burst → 2 refreshes, 0 waits.
+- The simulated panel is now asynchronous, like the EPDC: `refresh()` snapshots and returns; `Display::pump(now)` (a no-op on
+  FBInk) applies updates in submission order once their latency elapses; `wait()` blocks until applied. Test: three
+  submissions take < 100 ms, and the last lands only after the first GC16's ~477 ms.
+- The M1 test card stays synchronous on purpose: it's the measurement tool for criterion 3 (event → panel complete).
+  M2 screens use FrameScheduler.
+- Stale-event dropping isn't needed yet: with non-blocking handlers a backlog can't build. Revisit if S6 shows otherwise.
