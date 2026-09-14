@@ -281,3 +281,25 @@ Open interpretation: DU full-screen refreshes count toward the flash and can be 
 - SUMMARY now reports the over-budget count and FAILs if any tap in the window exceeds 500 ms, so a good median can't hide stalls.
 - Open (not answered yet): (a) how many outside taps were made. 29 repaints were logged, spaced like rapid real taps;
   if only ~3 were made, there's a spurious-Tap bug. (b) Visual confirmation that the Amazon Ember text line rendered.
+
+## T13 — KUAL packaging + deploy (code notes, pending device verification)
+
+- Templates in `tools/kual/`: `config.xml`, `menu.json`, `run.sh`.
+  - **`config.xml` is required by KUAL** (it points at menu.json) and isn't in spec §11.1.
+  - The menu shape copies KOReader's `platform/kindle/extensions/koreader/menu.json`: a nested item with an absolute `action` and `"status": false`.
+- `run.sh` also follows KOReader's `--kual` path: the app runs in the foreground, after a 250 ms settle, and resets
+  nice back to 0 if KUAL's Kindlet launched it at nice 5.
+  - **Fallback restore only when rc = 137 (SIGKILL).** That's the one case PowerGuard can't handle; every catchable
+    signal already restores inside the binary. This settles spec §8's 🟡 about the fallback relaunching home: it does,
+    but only on that path, so home is never relaunched twice.
+  - Logs go to `/mnt/us/sumiyomi/logs/{stdout,stderr}.log`, capped at 500 KB each.
+- `tools/package-kual.sh`: builds, then assembles `build/package/sumiyomi/` with a stripped binary (1.26 MB).
+- `tools/deploy.sh`:
+  - Target is `root@192.168.15.244` (override with `KINDLE_HOST`).
+  - Uses one multiplexed SSH connection (at most one password prompt).
+  - Uses rsync if the device has it, otherwise scp. rsync on the device is unrecorded in DEVICE_FACTS, so it's detected rather than assumed.
+
+### T13 device run — PASSED
+- Deployed; "Sumiyomi → Start Sumiyomi" appeared in KUAL and launched the test card. Box taps worked, long-press exited,
+  and the home screen came back normally.
+- Not reported: deploy timing (<10 s target), the log tail, and the optional SIGKILL-fallback test (rc=137 path).

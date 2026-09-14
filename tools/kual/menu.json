@@ -1,0 +1,17 @@
+{
+	"items": [
+	{
+		"name": "Sumiyomi",
+		"priority": 0,
+		"items": [
+		{
+			"name": "Start Sumiyomi",
+			"priority": 1,
+			"action": "/mnt/us/extensions/sumiyomi/run.sh",
+			"status": false,
+			"internal": "status Starting Sumiyomi . . ."
+		}
+		]
+	}
+	]
+}
