@@ -154,5 +154,5 @@ Re-measure with `m1_bench --mode=REAGL`. Even then, latency won't settle U9: REA
 | **Reader menu open 350 ms** | 2× GL16 bars | ≥450 | ❌ with GL16. ✅ if menu chrome uses DU (~262 small) |
 | Cold start 2500 ms | GC16 | 478 | ✅ |
 
-**Proposed §10.1 revisions (not applied yet):** page turn RAM ≈ 500 ms, page turn disk ≈ 550 ms,
+**§10.1 revisions (applied to the design doc 2026-09-14):** page turn RAM ≈ 500 ms, page turn disk ≈ 550 ms,
 reader menu 350 ms kept but with DU for the menu bars. Spec §13 says to revise §10.1 before M2 when U8 differs materially.

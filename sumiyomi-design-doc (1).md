@@ -18,7 +18,7 @@ It does not depend on KOReader. It does not embed a KOReader plugin API. It runs
 
 | Goal | Concrete target |
 |---|---|
-| Feel fast | Page turn ≤ 350 ms from tap to visible content on a cached page |
+| Feel fast | Page turn ≤ 500 ms from tap to visible content on a page in the RAM cache (the GL16 full refresh alone is ~478 ms on the target panel, see §10.1) |
 | Look like Mihon | Same information architecture, same screen layout, same terminology |
 | Survive on 512 MB RAM | Steady-state RSS ≤ 120 MB, hard ceiling 180 MB |
 | Not destroy battery | ≤ 4 %/hour active reading with wifi idle; app fully yields on suspend |
@@ -863,7 +863,7 @@ Zones are mirrored automatically for right-to-left reading direction. Physical p
 
 ```
 ┌─────────────────────────────────────┐
-│  ←   Chapter 24 — Curse         ⋮   │  top bar, GL16 on its rect
+│  ←   Chapter 24 — Curse         ⋮   │  top bar, DU on its rect
 │      Chainsaw Man                   │
 ├─────────────────────────────────────┤
 │                                     │
@@ -876,7 +876,7 @@ Zones are mirrored automatically for right-to-left reading direction. Physical p
 └─────────────────────────────────────┘
 ```
 
-The menu overlays only the top 160 and bottom 200 px; the page content in between is untouched, so opening and closing the menu is two small `GL16` refreshes, not a full repaint. The page itself never re-renders.
+The menu overlays only the top 160 and bottom 200 px; the page content in between is untouched, so opening and closing the menu is two small `DU` refreshes (~262–275 ms measured), not a full repaint. The bars are text and icons, so B&W-oriented DU suits them; `GL16` would put the menu at ≥450 ms. The page itself never re-renders.
 
 **Seek bar dragging** uses `A2` on the bar rect at ~8 fps with a page-number bubble; on release, the target page renders with `GL16`.
 
@@ -952,10 +952,10 @@ Every one of these should be an automated on-device benchmark, not a vibe:
 | Library tab switch | 400 ms | Tap to refresh completion |
 | Library scroll page | 400 ms | |
 | Open manga detail (cached) | 600 ms | |
-| Page turn, page in RAM cache | 350 ms | |
-| Page turn, page in disk cache | 500 ms | |
+| Page turn, page in RAM cache | 500 ms | GL16 full refresh measured at 478 ms (M1 T04) |
+| Page turn, page in disk cache | 550 ms | ~25 ms cache read + GL16 |
 | Page turn, cold (no prefetch hit) | 1200 ms | Excludes network |
-| Reader menu open | 350 ms | |
+| Reader menu open | 350 ms | Requires DU for the menu bars (§8.4); GL16 would be ≥450 ms |
 | Search results first paint | 2500 ms | Includes network, obviously variable |
 
 ### 10.2 Memory budget
