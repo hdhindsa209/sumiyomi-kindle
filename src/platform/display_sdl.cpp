@@ -186,7 +186,31 @@ public:
         refresh({0, 0, kWidth, kHeight}, Wave::GC16_FLASH);
     }
 
+    bool draw_label(const Rect& area, const std::string& utf8, const char* /*font_path*/,
+                    std::string& err) override
+    {
+        if (!window_) {
+            err = "display not open";
+            return false;
+        }
+        // Placeholder: a bordered box with a dark bar sized roughly like the text would be.
+        Rect c = area.clipped({0, 0, kWidth, kHeight});
+        int32_t text_w = std::min(c.w - 40, static_cast<int32_t>(utf8.size()) * c.h * 3 / 10);
+        fill_fb(c, 0);
+        fill_fb({c.x + 3, c.y + 3, c.w - 6, c.h - 6}, 255);
+        fill_fb({c.x + (c.w - text_w) / 2, c.y + c.h * 3 / 10, text_w, c.h * 4 / 10}, 68);
+        return true;
+    }
+
 private:
+    void fill_fb(const Rect& r, uint8_t v)
+    {
+        Rect c = r.clipped({0, 0, kWidth, kHeight});
+        for (int32_t y = c.y; y < c.bottom(); ++y)
+            std::fill_n(fb_.data() + static_cast<size_t>(y) * kStride + static_cast<size_t>(c.x),
+                        static_cast<size_t>(c.w), v);
+    }
+
     int distinct_values(const Rect& c) const
     {
         bool seen[256] = {};

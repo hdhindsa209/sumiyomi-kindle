@@ -92,6 +92,13 @@ public:
 
     // One GC16 flashing full-screen refresh. Called on entry and on exit.
     virtual void clear_screen() = 0;
+
+    // M1 only (the test card's text line): draw `utf8` centered in `area` into the
+    // framebuffer, without refreshing. FBInk backend: OpenType via `font_path`.
+    // SDL backend: a placeholder bar (the device fonts don't exist on the host).
+    // M2 replaces this with our own text stack.
+    virtual bool draw_label(const Rect& area, const std::string& utf8, const char* font_path,
+                            std::string& err) = 0;
 };
 
 Display* make_display();   // returns the backend compiled in

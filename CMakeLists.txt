@@ -50,6 +50,12 @@ if(NOT CMAKE_CROSSCOMPILING)
 
     add_executable(sim_testcard tools/sim/sim_testcard.cpp)
     target_link_libraries(sim_testcard PRIVATE sumi_sim)
+
+    # §2 criterion 7: the same app on the desktop, SDL backend.
+    add_library(sumi_sim_platform STATIC src/platform/signals.cpp)
+    target_link_libraries(sumi_sim_platform PUBLIC sumi_sim)
+    add_executable(sumiyomi src/main.cpp src/app/m1_testcard.cpp)
+    target_link_libraries(sumiyomi PRIVATE sumi_sim_platform)
   else()
     message(STATUS "SDL2 not found: simulator not built (brew install sdl2)")
   endif()
@@ -78,7 +84,7 @@ add_library(sumi_platform STATIC
   src/platform/input_evdev.cpp)
 target_link_libraries(sumi_platform PUBLIC sumi_core fbink)
 
-add_executable(sumiyomi src/main.cpp)
+add_executable(sumiyomi src/main.cpp src/app/m1_testcard.cpp)
 target_link_libraries(sumiyomi PRIVATE sumi_platform)
 
 add_executable(m1_bench tools/bench/m1_bench.cpp)

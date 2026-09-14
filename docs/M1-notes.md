@@ -244,3 +244,40 @@ Open interpretation: DU full-screen refreshes count toward the flash and can be 
 - **Not verified on device:** step 4 (tick disarms after a gesture) was skipped, because the long-press had already ended the run.
   Covered by `test_tick_only_while_armed` on macOS and natively on Linux (the real timerfd path). T12's own
   idle behavior will cover it on device again.
+
+## T12 — M1 test card (code notes, pending device verification)
+
+- `app/m1_testcard.{h,cpp}` is backend-agnostic. `main.cpp` wires platform + loop + app, and is **the same file for
+  both backends**. The host `sumiyomi` target is the SDL simulator build (§2 criterion 7).
+- **Tap latency (decided with the user):** each tap logs event→submit (refresh ioctl returned) and
+  event→complete (`fbink_wait_for_complete` returned). **Pass/fail is the median of event→complete over 20 taps, ≤150 ms.**
+  A `SUMMARY … PASS|FAIL` line is logged after every 20 taps. Design doc §10.1 and spec T12 are updated to match.
+- The text line uses `Display::draw_label()`, a new M1-only virtual. FBInk backend: `fbink_print_ot` with
+  `/usr/java/lib/fonts/Amazon-Ember-Regular.ttf` (read at runtime, not bundled). SDL backend: placeholder bar.
+- The mode cycle runs through RefreshPolicy with `flash_interval = 0`, so the logged modes are exactly GC16/GL16/DU.
+- Key::Back (simulator Esc / window close) also exits. The device has no back key.
+- Host smoke test: the simulator build starts, draws, and handles SIGTERM (clear + rc 143).
+
+### T12 device run #1 (2026-09-14)
+- **§2 criterion 3 (tap feedback): PASS, clearly.**
+  - Taps #1–34 (no other work queued): event→submit **3–4 ms**, event→complete **124–126 ms**.
+  - First SUMMARY: median complete **125 ms**, max 126 ms, budget 150 ms.
+  - A2 itself is ~121 ms (T04), so our own overhead (touch event → refresh submitted) is ~4 ms.
+- **Criterion 4: PASS.** Full repaints: GC16 482–485 ms, GL16 482–484 ms, DU 293–295 ms (draw+submit 4–8 ms).
+- **Criterion 5: PASS.** Long-press exited; rc=0, power restored, clean exit.
+- **Criterion 2 (text line):** no `text line:` warning was logged (FBInk font load + print succeeded). Visual rendering not yet confirmed.
+- **FINDING — input backlog under rapid taps (taps #35–44: 2.2–3.4 s).**
+  - Each full repaint runs synchronously inside the input handler and blocks on `wait_for_complete` (~480 ms).
+  - Taps arriving faster than that queue in the kernel. "From tap" latencies grew to ~4.1 s, and box taps queued
+    behind the repaints were handled 2–3 s late.
+  - Timestamps come from the kernel's input event, so the metric correctly counted the queueing.
+  - The second SUMMARY still said PASS: its 20-tap window (#21–40) had 14 good taps, so the median stayed 125 ms,
+    even though max was 2819 ms. **The summary line hides this.**
+  - Not an M1 acceptance failure (criterion 3 is met), but it is exactly the "slow and awkward" failure mode
+    the design doc warns about. It has to be solved before M2 builds screens on this loop: don't block the loop on
+    refresh completion, and coalesce queued input and refresh requests.
+- Decision (user): commit T12 as passing; fix the backlog before M2. Tracked as **M1-F1: non-blocking refresh scheduling +
+  input/refresh coalescing + stale-event dropping** (needs its own tests).
+- SUMMARY now reports the over-budget count and FAILs if any tap in the window exceeds 500 ms, so a good median can't hide stalls.
+- Open (not answered yet): (a) how many outside taps were made. 29 repaints were logged, spaced like rapid real taps;
+  if only ~3 were made, there's a spurious-Tap bug. (b) Visual confirmation that the Amazon Ember text line rendered.

@@ -238,6 +238,11 @@ Present and working:
 
 **Action for T13:** use the `menu.json` KUAL packaging path in the M1 spec as written; no KPM adaptation needed.
 
+## Fonts on device
+
+Amazon's font set is installed at `/usr/java/lib/fonts/` (Amazon Ember Regular/Medium/Bold/Heavy + italics, Bookerly, Baskerville, several CJK fonts, KindleBlackbox, …).
+T12's test card reads `/usr/java/lib/fonts/Amazon-Ember-Regular.ttf` at runtime (not bundled or redistributed). The M2+ UI still bundles Inter so device and simulator render identically.
+
 ## Tools on device
 
 - `strace`: **not installed** (`command -v strace` empty, checked before T10). T10's idle check uses `/proc/<pid>/status` context-switch counters instead.

@@ -948,7 +948,7 @@ Every one of these should be an automated on-device benchmark, not a vibe:
 | Interaction | Budget | Measured as |
 |---|---|---|
 | Cold app start → library visible | 2500 ms | `main()` entry to first refresh completion |
-| Tap feedback (A2 invert) | 150 ms | Input event timestamp to ioctl return |
+| Tap feedback (A2 invert) | 150 ms | Input event timestamp to **panel update complete** (`fbink_wait_for_complete` returns), i.e. the change is visible. Input event to refresh ioctl return is logged too, but does not decide pass/fail (revised in M1 T12) |
 | Library tab switch | 400 ms | Tap to refresh completion |
 | Library scroll page | 400 ms | |
 | Open manga detail (cached) | 600 ms | |

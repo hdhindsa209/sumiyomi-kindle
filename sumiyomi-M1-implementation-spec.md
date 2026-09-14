@@ -714,7 +714,7 @@ Each task is sized for one focused working session. Dependencies are strict.
 | **T09** | RefreshPolicy | T06, T07 | `core/refresh_policy.*` | A2→DU downgrade when `!region_is_bw`; flash counter fires at interval; full-screen promotion above threshold. Host unit tests |
 | **T10** | EventLoop | T05 | `core/loop.*` | epoll over input fds + eventfd + timerfd. Verified idle: process `voluntary_ctxt_switches` + `nonvoluntary_ctxt_switches` in `/proc/<pid>/status` do not increase during 10 s of no input (substitute for `strace -c`, which is not installed on the device — see DEVICE_FACTS) |
 | **T11** | SDL backend | T06, T08 | `display_sdl.cpp`, `input_sdl.cpp` | Same test card renders on desktop with quantization, simulated latency, ghosting accumulation, and a loud A2 misuse warning |
-| **T12** | M1 test card app | T09, T10 | `app/m1_testcard.cpp` | All of §2's criteria 2–5. Tap-feedback latency logged per tap; median over 20 taps **must be ≤150 ms** |
+| **T12** | M1 test card app | T09, T10 | `app/m1_testcard.cpp` | All of §2's criteria 2–5. Tap-feedback latency logged per tap, both input event → refresh ioctl return and input event → update complete; median of **event → update complete** over 20 taps **must be ≤150 ms** |
 | **T13** | KUAL packaging + deploy script | T12 | `tools/package-kual.sh`, `tools/deploy.sh` | `./tools/deploy.sh` rsyncs to device in <10 s; app appears and launches from the KUAL menu |
 | **T14** | M1 wrap-up | T13 | `docs/M1-notes.md`, `README.md` | Measured numbers recorded; every 🔴 in this doc resolved to a confirmed answer; build+deploy documented from a clean checkout |
 
