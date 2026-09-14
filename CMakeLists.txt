@@ -12,7 +12,18 @@ target_compile_options(sumi_warnings INTERFACE
   -Wall -Wextra -Wshadow -Wconversion -Werror
   $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>)
 
-add_executable(sumiyomi src/main.cpp)
+if(CMAKE_CROSSCOMPILING)
+  set(SUMI_POWER_SRC src/platform/power_kindle.cpp)
+else()
+  set(SUMI_POWER_SRC src/platform/power_stub.cpp)
+endif()
+
+add_executable(sumiyomi
+  src/main.cpp
+  src/core/log.cpp
+  src/platform/signals.cpp
+  ${SUMI_POWER_SRC})
+target_include_directories(sumiyomi PRIVATE src)
 target_link_libraries(sumiyomi PRIVATE sumi_warnings)
 set_target_properties(sumiyomi PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

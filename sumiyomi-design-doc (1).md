@@ -53,7 +53,7 @@ These constraints drive nearly every decision below, so they come first.
 Practical readings of this:
 
 - **NEON is available and matters.** Grayscale conversion, resizing, and dithering should be NEON-accelerated. A naive C scalar resize of a 1600×2400 manga page is measurable in hundreds of milliseconds; a NEON box filter is tens.
-- **RAM is the hard wall.** The native Kindle framework (`lab126_gui`, `cvm`, the Java stack) idles at a substantial chunk of the 512 MB. If Sumiyomi runs alongside it, budget is tight. If Sumiyomi stops it (§3.4), budget is comfortable. Design assumes it stops it.
+- **RAM is the hard wall.** The native Kindle framework (`lab126_gui`, `cvm`, the Java stack) idles at a substantial chunk of the 512 MB. **Revised after M1/T02:** Sumiyomi coexists with the framework rather than stopping it (§3.4) — stopping and restarting it left the native UI unrecoverable without a reboot on real hardware. Measured on the target device with the framework running, ~200 MB is available (vs ~369 MB with it stopped), which is still comfortable against the ~108 MB peak budget in §10.2.
 - **There is no compositor.** Whatever is written to `/dev/fb0` is what appears. There is no z-ordering, no clipping, no damage tracking except what Sumiyomi implements.
 
 ### 2.2 The e-ink panel is the real design constraint
@@ -184,26 +184,28 @@ This is where most homebrew Kindle apps get it wrong and end up with a corrupted
 # 1. Take a wakelock so powerd doesn't suspend us mid-launch
 lipc-set-prop com.lab126.powerd preventScreenSaver 1
 
-# 2. Stop the native framework. This frees ~150MB and stops it
-#    from repainting over us.
-/etc/init.d/framework stop        # or: stop lab126_gui
+# 2. Coexist with the native framework (do NOT stop it — see §2.1), but
+#    silence everything that would repaint over us. Mirrors KOReader's default.
+lipc-set-prop com.lab126.pillow disableEnablePillow disable
+killall -STOP awesome                                  # pause the window manager
+[ -f /etc/upstart/statusbar.conf ] && stop statusbar   # status bar is its own job
 
-# 3. Kill the screensaver / suspend timer
-lipc-set-prop com.lab126.powerd deferSuspend 1
-
-# 4. Ensure wifi stays available but idle-capable
+# 3. Ensure wifi stays available but idle-capable
 lipc-set-prop com.lab126.cmd wirelessEnable 1
 
-# 5. Run
+# 4. Run
 cd "$(dirname "$0")"
 LD_LIBRARY_PATH=./lib ./bin/sumiyomi 2>> /mnt/us/sumiyomi/logs/stderr.log
 
-# 6. Restore, always, even on crash
+# 5. Restore, always, even on crash — reverse order
+[ -f /etc/upstart/statusbar.conf ] && start statusbar
+killall -CONT awesome
+lipc-set-prop com.lab126.pillow disableEnablePillow enable
+lipc-set-prop com.lab126.appmgrd start app://com.lab126.booklet.home
 lipc-set-prop com.lab126.powerd preventScreenSaver 0
-/etc/init.d/framework start
 ```
 
-**Critical detail:** the binary installs `SIGTERM`/`SIGINT`/`SIGSEGV` handlers that (a) flush SQLite, (b) do a final `GC16` full-screen refresh to leave a clean panel, and (c) `_exit()`. A crashed app that leaves a half-drawn screen and a stopped framework is a device the user thinks is bricked.
+**Critical detail:** the binary installs `SIGTERM`/`SIGINT`/`SIGSEGV` handlers that (a) flush SQLite, (b) do a final `GC16` full-screen refresh to leave a clean panel, and (c) `_exit()`. A crashed app that leaves a half-drawn screen and a paused window manager is a device the user thinks is bricked.
 
 **Suspend handling:** Sumiyomi listens on the lipc event channel for `com.lab126.powerd goingToScreenSaver` / `resumeFromSuspend`. On suspend: cancel in-flight downloads, checkpoint the DB, release the framebuffer mapping. On resume: remap fb, full `GC16` repaint, re-establish network lazily (do not eagerly reconnect wifi — that is the main battery killer).
 
@@ -972,7 +974,7 @@ Every one of these should be an automated on-device benchmark, not a vibe:
 | Code + static + heap overhead | 25 MB | 30 MB |
 | **Total** | **~55 MB** | **~108 MB** |
 
-Comfortable headroom under the 180 MB ceiling. The decode scratch is the spiky part — cap concurrent decodes at 1 to keep the peak bounded.
+Comfortable headroom under the 180 MB ceiling, and against the ~200 MB measured as available on the target device with the native framework still running (Sumiyomi coexists with it; see §2.1). The decode scratch is the spiky part — cap concurrent decodes at 1 to keep the peak bounded.
 
 ### 10.3 Battery
 
@@ -1075,7 +1077,7 @@ Total to v1: roughly **5 months of focused solo work**, realistically 8–10 cal
 | Amazon changes framebuffer/ioctl behavior | Low | High | FBInk absorbs most of this; pin to FBInk releases and follow upstream |
 | Page turns feel slower than native Kindle reader | Medium | High | Prefetch is mandatory; benchmark every release; the GL16 floor (~450 ms) is physics — set expectations |
 | Extension ecosystem never materializes | Medium | Medium | Ship 6–8 good first-party sources; make the porting guide excellent; the Jsoup-shaped API is the whole bet here |
-| Memory pressure causes OOM kills | Low | High | Hard budgets in §10.2; stop the native framework; cap concurrent decodes at 1 |
+| Memory pressure causes OOM kills | Low | High | Hard budgets in §10.2 (~200 MB available with the framework running); cap concurrent decodes at 1 |
 | Ghosting accumulates to unreadable | Low | Medium | Configurable GC16 cadence; sane default of 6 |
 | Scope creep into "reimplement all of Mihon" | **High** | **High** | The milestone list is the scope. Trackers and migration are M6 for a reason |
 

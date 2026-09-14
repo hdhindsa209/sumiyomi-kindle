@@ -113,7 +113,7 @@ M1 ships when **all** of the following are true on real hardware:
 3. Tapping the rectangle inverts it within **150 ms** (measured, not eyeballed), using `WFM_A2`.
 4. Tapping outside it cycles the whole screen through `WFM_GC16` / `WFM_GL16` / `WFM_DU`, printing measured latency for each to the log.
 5. A long-press (>800 ms) anywhere exits cleanly.
-6. On exit — normal, `SIGTERM`, or crash — the screen is left clean (one `GC16` full refresh), the DB-less state is flushed, and the native framework is restored. **The device is usable without a reboot.**
+6. On exit — normal, `SIGTERM`, or crash — the screen is left clean (one `GC16` full refresh), the DB-less state is flushed, and the native UI is restored (pillow, window manager, status bar). **The device is usable without a reboot.**
 7. The same code, compiled for the host with the SDL backend, runs on desktop and shows the same test pattern with simulated e-ink quantization and latency.
 8. `tools/bench/m1_bench` outputs a CSV of measured refresh latencies per waveform mode.
 9. `docs/DEVICE_FACTS.md` is filled in and committed.
@@ -593,22 +593,33 @@ private:
 
 This is the part that determines whether a bug costs you a debugging session or a device reset. Implement it in T02, before anything draws.
 
+**Strategy (revised in T02): coexist with the native framework, don't stop it.** On the target device (FW 5.17.1.0.3), stopping and restarting `framework`/`lab126_gui` left the native UI unrecoverable without a reboot (see `docs/M1-notes.md`). Sumiyomi instead follows KOReader's default Upstart path: leave the framework running and silence what would draw over us.
+
+**Memory:** with the framework running, ~200 MB is available on the target device (vs ~369 MB with it stopped). That is still comfortable against the design doc's ~108 MB peak budget (§10.2).
+
+| acquire (in order) | restore (reverse order) |
+|---|---|
+| `lipc-set-prop com.lab126.powerd preventScreenSaver 1` | `start statusbar` (only if we stopped it) |
+| `lipc-set-prop com.lab126.pillow disableEnablePillow disable` | `SIGCONT` awesome |
+| `SIGSTOP` awesome (window manager) | `disableEnablePillow enable`, then `lipc-set-prop com.lab126.appmgrd start app://com.lab126.booklet.home` |
+| `stop statusbar`, if `/etc/upstart/statusbar.conf` exists | `preventScreenSaver 0` |
+
 `src/platform/power.h`:
 
 ```cpp
 class PowerGuard {
 public:
-    // Takes the wakelock and stops the native framework.
+    // Takes the wakelock and silences the native UI so it can't draw over us.
     // Records what it changed so restore() can undo exactly that.
     bool acquire(std::string& err);
 
     // Idempotent. Safe to call from a signal handler context
-    // (uses only async-signal-safe operations: fork/exec, write, _exit).
+    // (uses only async-signal-safe operations: fork/exec, kill, write, _exit).
     void restore() noexcept;
 };
 ```
 
-🔴 **VERIFY:** whether `lipc-set-prop` exists and the exact framework stop/start commands for your firmware. Phase 0 answers this. If `lipc` is absent, `power_kindle.cpp` degrades to only doing the framework stop, and logs that the screensaver may interrupt.
+✅ `lipc-set-prop` is present at `/usr/bin/lipc-set-prop` (DEVICE_FACTS U4).
 
 **Signal handling contract:**
 
@@ -624,20 +635,22 @@ HERE="$(dirname "$0")"
 DATA=/mnt/us/sumiyomi
 mkdir -p "$DATA/logs"
 
+# The binary acquires via PowerGuard; this only undoes it if the binary died
+# without restoring (e.g. SIGKILL / OOM kill). Every step is harmless if already restored.
 restore() {
-    lipc-set-prop com.lab126.powerd preventScreenSaver 0 2>/dev/null || true
-    /etc/init.d/framework start                          2>/dev/null || true
+    [ -f /etc/upstart/statusbar.conf ] && start statusbar          2>/dev/null
+    killall -CONT awesome                                           2>/dev/null
+    lipc-set-prop com.lab126.pillow disableEnablePillow enable      2>/dev/null
+    lipc-set-prop com.lab126.powerd preventScreenSaver 0            2>/dev/null
+    true
 }
 trap restore EXIT INT TERM
-
-lipc-set-prop com.lab126.powerd preventScreenSaver 1 2>/dev/null || true
-/etc/init.d/framework stop                          2>/dev/null || true
 
 LD_LIBRARY_PATH="$HERE/lib" "$HERE/bin/sumiyomi" \
     >>"$DATA/logs/stdout.log" 2>>"$DATA/logs/stderr.log"
 ```
 
-🔴 **VERIFY** the framework stop/start paths — `/etc/init.d/framework` vs `stop lab126_gui` vs something else differs by firmware generation.
+🟡 **ASSUMPTION (T13):** whether `run.sh`'s fallback should also relaunch home via `appmgrd`. Relaunching home when the binary already restored may be visible; decide when packaging.
 
 ---
 
@@ -691,7 +704,7 @@ Each task is sized for one focused working session. Dependencies are strict.
 |---|---|---|---|---|
 | **T00** | Phase 0 device facts | — | `docs/DEVICE_FACTS.md` | Every field filled, committed. **Human-only, blocking.** |
 | **T01** | Repo + toolchain + hello-world cross-compile | T00 | `CMakeLists.txt`, `cmake/`, `.gitmodules`, `src/main.cpp` | `cmake --preset kindle && cmake --build` produces an ARM binary; `file` confirms ARM EABI5; it runs on device and prints to stdout |
-| **T02** | Logging + PowerGuard + signal handling | T01 | `core/log.*`, `platform/power*.{h,cpp}` | Binary acquires wakelock, stops framework, sleeps 5 s, restores on exit. Also correct under `kill -TERM` and under a deliberate `abort()`. Device usable after each, no reboot |
+| **T02** | Logging + PowerGuard + signal handling | T01 | `core/log.*`, `platform/power*.{h,cpp}` | Binary acquires wakelock and silences the native UI (coexist, §8), holds, restores on exit. Native UI must not draw over the hold, and the device must be usable afterward (hands-on check, not just exit codes). `kill -TERM` / `abort()` tests deferred to a later pass, once the coexist strategy itself is validated |
 | **T03** | Display backend (FBInk) | T02 | `platform/display.h`, `display_fbink.cpp` | Opens fb, logs full `DisplayInfo`, forces 8bpp if needed, fills the screen mid-gray, one GC16 refresh, exits clean. Logged dimensions match Phase 0 |
 | **T04** | Waveform benchmark | T03 | `tools/bench/m1_bench.cpp` | CSV to stdout: mode, rect size, measured ms (median of 20), for A2/DU/GL16/REAGL/GC16/GC16-flash at full-screen, half, and 200×200. **Commit the results into `docs/M1-notes.md`** — they set the real budgets |
 | **T05** | Input backend (evdev via `fbink_input_scan`) | T03 | `platform/input.h`, `input_evdev.cpp` | Logs classified devices; logs transformed tap coordinates. Tapping each screen corner yields coordinates within 20 px of the expected corner. **This is the transform correctness test** |
@@ -746,7 +759,7 @@ Carry this forward; resolve each into `docs/M1-notes.md` as it's settled.
 |---|---|---|---|
 | U1 | Correct koxtoolchain target + `-mcpu` for your device | T00, T01 | SIGILL at startup |
 | U2 | Native bpp and grayscale polarity | T00, T03 | Inverted or garbled display |
-| U3 | Framework stop/start command for your firmware | T00, T02 | Device appears bricked; needs reboot |
+| U3 | ~~Framework stop/start command~~ → superseded: coexist strategy (§8) must leave native UI fully usable | T00, T02 | Device appears bricked; needs reboot (observed with stop/start) |
 | U4 | `lipc-set-prop` availability | T00, T02 | Screensaver interrupts the app |
 | U5 | MT protocol A vs B | T00, T05 | No touch input at all |
 | U6 | Touch digitizer range vs panel range | T05 | Taps land in the wrong place |
@@ -754,7 +767,7 @@ Carry this forward; resolve each into `docs/M1-notes.md` as it's settled.
 | U8 | Real waveform latencies on this panel | T04 | Every budget in the design doc is wrong |
 | U9 | Whether REAGL beats GL16 for page content here | T04 | Suboptimal but not broken |
 | U10 | FBInk fatal-handler safety | T02 | Dirty screen on crash (acceptable fallback exists) |
-| U11 | Memory actually freed by stopping the framework | T00 | Memory budget in design doc §10.2 needs rework |
+| U11 | Memory available with framework running (coexist) — measured ~200 MB | T00 | Memory budget in design doc §10.2 needs rework (it doesn't: ~108 MB peak) |
 | U12 | KUAL vs KPM packaging for your jailbreak | T00, T13 | App won't launch from the menu |
 
 **U8 is the important one.** The design document's entire performance model is built on assumed refresh latencies. T04 replaces assumptions with measurements, and if the numbers come back materially different, §10.1 of the design doc should be revised before M2 begins rather than after.

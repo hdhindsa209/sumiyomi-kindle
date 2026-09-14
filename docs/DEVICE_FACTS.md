@@ -191,7 +191,11 @@ Decoding the `ABS` bitmask: bit 47 (`ABS_MT_SLOT`, code `0x2f`) is set. **This i
 
 Touch digitizer range (`ABS_MT_POSITION_X/Y` min/max, needed for U6's scaling) is still outstanding — that's in-scope for T05 itself per the spec, not Phase 0.
 
-## Framework control (U3) — RESOLVED
+## Framework control (U3) — SUPERSEDED: Sumiyomi coexists with the framework (see M1 spec §8)
+
+The stop/start record below is kept as Phase 0 history; no code uses it.
+
+> ⚠️ The stop/restore sequence below brings the jobs back to `start/running`, but the UI does not fully recover: after sleep/wake the screen goes blank on its own, and only a reboot fixes it. See `docs/M1-notes.md` → "T02 device run #1". Treat this sequence as unverified until an isolated post-reboot test passes a hands-on usability check.
 
 `/etc/init.d/framework` does **not** exist. This firmware uses **Upstart**, with two separate jobs:
 
