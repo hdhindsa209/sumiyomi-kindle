@@ -211,7 +211,8 @@ Open interpretation: DU full-screen refreshes count toward the flash and can be 
 - `tools/sim/sim_testcard --selftest=DIR` runs a scripted pass headless (`SDL_VIDEODRIVER=dummy`) and saves BMP
   snapshots. Verified: quantization banding, DU binarization, ghost after a GL16 move, A2 misuse stripes + warning,
   policy A2→DU downgrade, clean exit.
-- Not covered by the self-test: **SDL mouse→device coordinate mapping** (pushed mouse events are rescaled by SDL, so
-  the script injects RawEvents instead). Needs one interactive click check.
+- SDL mouse→device coordinate mapping isn't covered by the self-test (pushed mouse events are rescaled by SDL, so the
+  script injects RawEvents). **Checked interactively by the user on the Mac:** a real click inverted the box; ghosting,
+  the A2 misuse stripes + warning, and clean exit all matched.
 - T12 note: the spec's test card has an FBInk OpenType text line. That has no SDL equivalent, so the simulator
   test card will have to skip it or draw a placeholder.
