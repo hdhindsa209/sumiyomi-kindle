@@ -133,7 +133,10 @@ void Screen::on_event(const RawEvent& e)
     std::optional<Gesture> g = gestures_.feed(e);
     if (e.kind == RawKind::Up && pressed_) {
         bool tapped = g && g->kind == GestureKind::Tap && pressed_->hit_test(g->at) == pressed_;
+        bool held = g && g->kind == GestureKind::LongPress && pressed_->on_long_press;   // tick missed the timer
         if (tapped) pending_tap_ = pressed_->on_tap;
+        else if (held) pending_tap_ = pressed_->on_long_press;
+        tapped = tapped || held;
         release_press(!tapped);
     }
     // Swipes are deliberately ignored: on e-ink, navigation is explicit (pager arrows, page keys).
@@ -164,7 +167,10 @@ void Screen::turn_page(Node* list, bool forward)
 
 void Screen::on_tick(uint64_t now_ms)
 {
-    if (auto g = gestures_.tick(now_ms); g && g->kind == GestureKind::LongPress && pressed_) release_press(true);
+    auto g = gestures_.tick(now_ms);
+    if (!g || g->kind != GestureKind::LongPress || !pressed_) return;
+    if (pressed_->on_long_press) pending_tap_ = pressed_->on_long_press;   // runs on the next frame()
+    release_press(true);
 }
 
 void Screen::release_press(bool /*cancelled*/)

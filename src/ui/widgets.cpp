@@ -365,6 +365,36 @@ std::unique_ptr<Node> cta_bar(char32_t icon, const std::string& label, std::func
     return bar;
 }
 
+// ---------------------------------------------------------------- Segmented
+
+std::unique_ptr<Node> segmented(const std::vector<std::string>& labels, int selected, std::function<void(int)> on_select)
+{
+    auto row = container(Layout::Row);
+    row->height = Dim::px(96);
+    row->opaque = true;
+    row->border = Insets::all(tone::RULE);
+    row->border_gray = tone::BLACK;
+    row->padding = Insets::all(tone::RULE);   // cells inside the outline, so it stays visible
+    for (size_t i = 0; i < labels.size(); ++i) {
+        bool on = static_cast<int>(i) == selected;
+        auto cell = container(Layout::Stack);
+        cell->width = Dim::fill();
+        cell->height = Dim::fill();
+        cell->align_main = Align::Center;
+        cell->align_cross = Align::Center;
+        cell->opaque = true;
+        cell->background = on ? tone::BLACK : tone::WHITE;
+        if (i > 0) cell->border.left = tone::RULE;
+        cell->border_gray = tone::BLACK;
+        cell->refresh = Wave::GL16;
+        cell->on_tap = [on_select, i] { on_select(static_cast<int>(i)); };
+        cell->emplace<Label>(labels[i], type::LIST_SECONDARY, on ? FontId::InterSemiBold : FontId::InterMedium,
+                             on ? tone::WHITE : tone::BLACK);
+        row->add(std::move(cell));
+    }
+    return row;
+}
+
 // ---------------------------------------------------------------- Loading page, button
 
 std::unique_ptr<Node> loading_page(const std::string& text, std::function<void()> cancel)

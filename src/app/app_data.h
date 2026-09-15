@@ -47,6 +47,7 @@ struct ChapterView {
     data::Chapter              chapter;
     std::vector<data::Chapter> chapters;   // the whole manga, source order (newest first)
     std::vector<std::string>   pages;      // image URLs in reading order
+    int                        direction = 0;   // this manga: 0 = use the default, 1 = right-to-left, 2 = left-to-right
 };
 
 struct PageImage {
@@ -84,6 +85,7 @@ public:
     void open_manga_id(int64_t manga_id, std::function<void(MangaView, bool refreshed, std::string err)> update);
 
     void set_favorite(int64_t manga_id, bool favorite, std::function<void(bool ok)> done);
+    // Marking unread also forgets the reading position.
     void set_read(int64_t chapter_id, bool read, std::function<void(bool ok)> done);
 
     // Refreshes every library entry's chapter list (§3.4 / §10.3: one batch). Reports new chapters
@@ -93,6 +95,8 @@ public:
     // --- reader (M4) ---
     void reader_settings(std::function<void(ReaderSettings)> done);
     void save_reader_settings(const ReaderSettings& s);
+    // Per-manga reading direction override: 0 = default, 1 = right-to-left, 2 = left-to-right.
+    void set_manga_direction(int64_t manga_id, int direction);
     // Chapter + its manga + the page list from the source. Records the chapter in history.
     void open_chapter(int64_t chapter_id, std::function<void(ChapterView, std::string err)> done);
     // Part `part` of page image `url`, processed with `opt`: from the cache, or fetched, decoded,

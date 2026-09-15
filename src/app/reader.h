@@ -23,7 +23,9 @@ namespace sumi::app {
 //   Around a chapter  past the last page: an end page (next chapter / back to the manga); before
 //                  the first page: a start page (previous chapter / back).
 //   Menu           middle tap shows a top bar (back, chapter, page) and a bottom bar (previous /
-//                  next chapter, reading direction, flash cadence). Only the bars refresh.
+//                  next chapter, this manga's reading direction, Settings). Only the bars refresh.
+//   Settings       a full page: this manga's direction, default direction, flash cadence, dithering,
+//                  crop borders, split double pages. Done re-processes the chapter if pages change.
 //   Loading        opening a chapter loads all its pages in the background (from the current page
 //                  on), so turns rarely wait. This is the evictable page cache, not a download.
 //   Progress       every page shown is saved; reaching the last page marks the chapter read.
@@ -66,6 +68,9 @@ private:
     void toggle_menu();
     void set_menu(bool open);
     void apply_settings(const ReaderSettings& s);
+    bool rtl() const;                    // this manga's direction, else the default
+    void present_settings();
+    void close_settings();
     image::ProcessOptions process_options() const;
     const data::Chapter* neighbor(int step) const;   // +1 = next (newer), -1 = previous (older)
     void save_progress();
@@ -88,6 +93,10 @@ private:
     bool           waiting_ = false;   // a page request is in flight
     bool           loading_shown_ = false;   // the loading page is what's on screen
     bool           menu_open_ = false;
+    bool           in_settings_ = false;
+    bool           settings_shown_ = false;
+    bool           settings_dirty_ = false;
+    image::ProcessOptions settings_before_;
     std::shared_ptr<std::atomic<bool>> load_cancel_;
     int            loaded_ = 0;        // pages of this chapter ready in the cache
     ui::Label*     subtitle_ = nullptr;

@@ -91,6 +91,7 @@ public:
     // --- interaction ---
     std::function<void()> on_tap;   // non-null makes the node pressable (A2 invert on press)
     bool press_feedback = true;     // false: no invert on press (reader tap zones over a page)
+    std::function<void()> on_long_press;   // held >= 800 ms on a pressable node: runs instead of on_tap
     bool pressable() const { return static_cast<bool>(on_tap); }
     bool pressed() const { return pressed_; }
     void set_pressed(bool p);

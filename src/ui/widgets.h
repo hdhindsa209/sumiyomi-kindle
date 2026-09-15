@@ -89,6 +89,9 @@ std::unique_ptr<Node> section_header(const std::string& title, const std::string
 // Sticky full-width call to action (§8.3 "Resume Chapter N"): 120 px PRIMARY bar, SURFACE label + icon.
 std::unique_ptr<Node> cta_bar(char32_t icon, const std::string& label, std::function<void()> on_tap);
 
+// A row of equal options, one selected (inverted). No gray states.
+std::unique_ptr<Node> segmented(const std::vector<std::string>& labels, int selected, std::function<void(int)> on_select);
+
 // Whole-screen loading page: centered SemiBold text on white; `cancel` adds a Cancel button.
 std::unique_ptr<Node> loading_page(const std::string& text, std::function<void()> cancel = nullptr);
 

@@ -85,6 +85,8 @@ struct Env {
             schedule = [this](uint32_t ms, std::function<void()> fn) {
                 loop.add_timeout([this, fn] { fn(); screen.frame(); }, ms);
             };
+        else               // inline data is instant: deferred loading pages would never be due
+            schedule = [](uint32_t, std::function<void()>) {};
         shell = std::make_unique<app::Shell>(screen, *data, [this] { exited = true; },
                                              [] { return int64_t{1789344000000LL + 13 * 3600000LL}; }, schedule);
         shell->start();
@@ -384,7 +386,7 @@ void test_reader_pages_zones_and_refresh()
     calls = env.display.calls.size();
     middle();
     CHECK(env.shows("Right to left"));
-    CHECK(env.shows("Flash: every page"));
+    CHECK(env.shows("Settings"));
     CHECK(env.shows(std::string(kTitle) + " \xC2\xB7 Page 1 of 33 \xC2\xB7 Chapter loaded"));
     CHECK_EQ(env.image_transport.total_hits(), 33);                     // turning pages fetched nothing more
     CHECK(env.display.calls.size() > calls);
@@ -392,22 +394,56 @@ void test_reader_pages_zones_and_refresh()
     CHECK_EQ(env.display.stale_pixels(), 0);
     CHECK(env.golden("reader_menu"));
 
-    env.tap(env.find("Flash: every page"));                             // cycles the cadence in place
-    CHECK(env.shows("Flash: every 2 pages"));
-    env.tap(env.find("Right to left"));                                 // switch direction
+    // Direction from the menu applies to this manga only.
+    env.tap(env.find("Right to left"));
     CHECK(env.shows("Left to right"));
     CHECK(env.shell->on_back());                                        // back closes the menu first
     CHECK(!env.shows("Left to right"));
     CHECK_EQ(env.display.stale_pixels(), 0);
     right();                                                            // left-to-right: the RIGHT third is next
     CHECK_EQ(bars_on_panel(env), 2);
-    right();                                                            // every 2nd turn flashes now
-    CHECK_EQ(bars_on_panel(env), 3);
+    {
+        data::Repo repo(env.db);
+        CHECK(repo.pref("reader.direction") != std::string("ltr"));    // default untouched
+        bool manga_ltr = false;
+        for (const auto& item : repo.library())
+            manga_ltr = manga_ltr || repo.pref("manga." + std::to_string(item.manga.id) + ".direction") == std::string("2");
+        CHECK(manga_ltr);
+    }
 
-    // Settings persisted.
+    // Settings page: options redraw in place (no flash); Done goes back to the page with one flash.
+    middle();
+    env.tap(env.find("Settings"));
+    CHECK(env.shows("Reader settings") && env.shows("Dithering"));
+    CHECK(env.display.calls.back().mode == Wave::GC16_FLASH);
+    CHECK_EQ(env.display.stale_pixels(), 0);
+    CHECK(env.golden("reader_settings"));
+    size_t before_option = env.display.calls.size();
+    env.tap(env.find("Every 2"));
+    CHECK(env.display.calls.back().mode != Wave::GC16_FLASH);
+    CHECK(env.display.calls.size() > before_option);
+    int hits_before = env.image_transport.total_hits();
+    env.tap(env.find("Done"));
+    CHECK_EQ(bars_on_panel(env), 2);
+    CHECK_EQ(env.image_transport.total_hits(), hits_before);           // flash cadence doesn't change pages: nothing reloads
+    right();                                                            // turn 1 of 2: no flash
+    CHECK_EQ(bars_on_panel(env), 3);
+    CHECK(env.display.calls.back().mode == Wave::GL16);
+    right();                                                            // turn 2: flash
+    CHECK(env.display.calls.back().mode == Wave::GC16_FLASH);
+    left();
+
+    // A setting that changes the pages reprocesses the chapter.
+    middle();
+    env.tap(env.find("Settings"));
+    env.tap(env.find("Sharp"));
+    env.tap(env.find("Done"));
+    CHECK_EQ(bars_on_panel(env), 3);
+    CHECK_EQ(env.image_transport.total_hits(), hits_before + 33);        // every page processed for Sharp
+
     app::ReaderSettings s;
     env.data->reader_settings([&](app::ReaderSettings got) { s = got; });
-    CHECK(!s.rtl && s.flash_every == 2);
+    CHECK(s.rtl && s.flash_every == 2 && s.dither == image::Dither::Sharp);
 
     // Leaving the reader: back to the manga, with the position shown on the chapter.
     middle();
@@ -496,6 +532,31 @@ void test_device_loop_reader()
     CHECK_EQ(env.display.stale_pixels(), 0);
 }
 
+void test_long_press_chapter_toggles_read()
+{
+    Env env;
+    open_detail(env);
+    Node* row = env.find("Chapter 24");
+    CHECK(row != nullptr);
+    if (!row) return;
+    Point p{row->frame().x + row->frame().w / 2, row->frame().y + row->frame().h / 2};
+    size_t calls = env.display.calls.size();
+    RawEvent e; e.kind = RawKind::Down; e.pos = p; e.t_ms = env.t;
+    env.screen.on_event(e);
+    env.screen.frame();
+    env.screen.on_tick(env.t + GestureRecognizer::kLongPressMs + 10);
+    env.screen.frame();
+    e.kind = RawKind::Up; e.t_ms = env.t + 1000;
+    env.screen.on_event(e);
+    env.screen.frame();
+    CHECK(env.shows("Jul 7, 2026 \xC2\xB7 Read"));
+    CHECK(!env.shows("Loading"));                                        // stayed on the manga, no reader
+    for (size_t i = calls; i < env.display.calls.size(); ++i) CHECK(env.display.calls[i].rect.h < 300);   // row only
+    CHECK_EQ(env.display.stale_pixels(), 0);
+    data::Repo repo(env.db);
+    CHECK_EQ(repo.library()[0].unread, 27);
+}
+
 void test_updates_refresh_reports()
 {
     Env env;
@@ -533,6 +594,7 @@ int main()
     RUN(test_reader_end_of_chapter_marks_read);
     RUN(test_reader_page_error_and_cancel);
     RUN(test_device_loop_reader);
+    RUN(test_long_press_chapter_toggles_read);
     RUN(test_updates_refresh_reports);
     RUN(test_more_exit);
     return check_result();

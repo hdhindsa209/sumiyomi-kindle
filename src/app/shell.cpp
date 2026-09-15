@@ -572,9 +572,18 @@ std::unique_ptr<Node> Shell::chapter_row(uint64_t gen, size_t i)
     int64_t cid = c.id;
     bool read = c.read;
     int resume = read ? 0 : c.last_page_read;
-    (void)gen;
-    // Unread = black dot; read = check mark. No dimmed text. Tap opens the reader.
-    return list_row({c.name, sub, !read, false, read ? icon::check : 0, [this, cid, resume] { open_reader(cid, resume); }});
+    // Unread = black dot; read = check mark. No dimmed text. Tap opens the reader; long-press toggles read.
+    auto row = list_row({c.name, sub, !read, false, read ? icon::check : 0, [this, cid, resume] { open_reader(cid, resume); }});
+    row->on_long_press = [this, gen, cid, read, i] {
+        data_.set_read(cid, !read, [this, gen, i, read](bool ok) {
+            if (!current(gen) || !ok || !list_ || i >= view_.chapters.size()) return;
+            view_.chapters[i].read = !read;
+            if (read) view_.chapters[i].last_page_read = 0;
+            // Only this row changes: repaint just it.
+            screen_.relayout(list_->replace_child(first_chapter_item_ + i, chapter_row(gen, i)));
+        });
+    };
+    return row;
 }
 
 void Shell::present_detail(uint64_t gen, Change change)

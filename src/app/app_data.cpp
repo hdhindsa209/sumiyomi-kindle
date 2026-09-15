@@ -202,6 +202,10 @@ void AppData::set_read(int64_t chapter_id, bool read, std::function<void(bool)> 
 {
     exec_.submit([this, chapter_id, read, done = std::move(done)] {
         bool ok = repo_.set_read(chapter_id, read);
+        if (ok && !read) {
+            auto ch = repo_.chapter(chapter_id);
+            ok = ch && repo_.set_progress(chapter_id, 0, ch->pages_total);
+        }
         exec_.post([done, ok] { done(ok); });
     });
 }
@@ -261,6 +265,14 @@ void AppData::save_reader_settings(const ReaderSettings& s)
     });
 }
 
+void AppData::set_manga_direction(int64_t manga_id, int direction)
+{
+    exec_.submit([this, manga_id, direction] {
+        if (!repo_.set_pref("manga." + std::to_string(manga_id) + ".direction", std::to_string(std::clamp(direction, 0, 2))))
+            SUMI_LOGW("app", "cannot save direction: %s", db_.error().c_str());
+    });
+}
+
 void AppData::open_chapter(int64_t chapter_id, std::function<void(ChapterView, std::string)> done)
 {
     exec_.submit([this, chapter_id, done = std::move(done)] {
@@ -277,6 +289,7 @@ void AppData::open_chapter(int64_t chapter_id, std::function<void(ChapterView, s
             view.manga = *manga;
             view.chapter = *chapter;
             view.chapters = repo_.chapters(manga->id);
+            if (auto d = repo_.pref("manga." + std::to_string(manga->id) + ".direction")) view.direction = std::clamp(std::atoi(d->c_str()), 0, 2);
             std::vector<source::SPage> pages;
             source::SChapter sc{chapter->url, chapter->name, chapter->scanlator, chapter->chapter_number, chapter->date_upload};
             if (ext->pages(sc, pages, err)) {

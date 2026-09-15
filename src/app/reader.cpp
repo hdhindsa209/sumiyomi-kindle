@@ -107,12 +107,6 @@ Label* big_text(Node* parent, const std::string& text, TypeRole role, FontId fon
     return l;
 }
 
-std::string flash_label(int n)
-{
-    if (n == 0) return "Flash: never";
-    if (n == 1) return "Flash: every page";
-    return "Flash: every " + std::to_string(n) + " pages";
-}
 
 } // namespace
 
@@ -197,7 +191,7 @@ image::ProcessOptions Reader::process_options() const
     o.dither = settings_.dither;
     o.crop_borders = settings_.crop_borders;
     o.split_spreads = settings_.split_spreads;
-    o.rtl = settings_.rtl;
+    o.rtl = rtl();
     return o;
 }
 
@@ -272,8 +266,8 @@ std::unique_ptr<Node> Reader::tap_layer(std::unique_ptr<Node> content)
         else if (forward) next();
         else prev();
     });
-    auto left = [this] { if (menu_open_) set_menu(false); else if (settings_.rtl) next(); else prev(); };
-    auto right = [this] { if (menu_open_) set_menu(false); else if (settings_.rtl) prev(); else next(); };
+    auto left = [this] { if (menu_open_) set_menu(false); else if (rtl()) next(); else prev(); };
+    auto right = [this] { if (menu_open_) set_menu(false); else if (rtl()) prev(); else next(); };
     zones->add(zone(3, left));
     zones->add(zone(4, [this] { toggle_menu(); }));
     zones->add(zone(3, right));
@@ -349,35 +343,120 @@ std::unique_ptr<Node> Reader::menu_bars()
     auto row2 = std::make_unique<Node>();
     row2->layout = Layout::Row;
     row2->gap = 20;
-    row2->add(button(settings_.rtl ? "Right to left" : "Left to right", [this] {
-        ReaderSettings s = settings_;
-        s.rtl = !s.rtl;
-        apply_settings(s);
-        data_.save_reader_settings(s);
+    // Direction applies to this manga (manga vs. webtoons differ); the default lives in Settings.
+    row2->add(button(rtl() ? "Right to left" : "Left to right", [this] {
+        view_.direction = rtl() ? 2 : 1;
+        data_.set_manga_direction(view_.manga.id, view_.direction);
         menu_open_ = true;
         pos_.part = 0;   // split-spread order flips with direction
         show(pos_, Change::Update);
         load_chapter();  // pages are processed per direction: load the chapter again for the new one
     }));
-    row2->add(button(flash_label(settings_.flash_every), [this] {
-        static constexpr int kSteps[] = {1, 2, 3, 5, 10, 0};
-        size_t i = 0;
-        while (i < std::size(kSteps) && kSteps[i] != settings_.flash_every) ++i;
-        ReaderSettings s = settings_;
-        s.flash_every = kSteps[(i + 1) % std::size(kSteps)];
-        apply_settings(s);
-        data_.save_reader_settings(s);
-        // Relabel in place: only this button refreshes.
-        Node* row = bottom_bar_ ? bottom_bar_->children().back().get() : nullptr;
-        if (row && row->children().size() == 2) {
-            auto* label = static_cast<Label*>(row->children()[1]->children().back().get());
-            label->set_text(flash_label(s.flash_every));
-        }
-    }));
+    row2->add(button("Settings", [this] { present_settings(); }, false, icon::settings));
     bottom->add(std::move(row2));
     bottom_bar_ = bottom_layer->add(std::move(bottom));
     layers->add(std::move(bottom_layer));
     return layers;
+}
+
+bool Reader::rtl() const
+{
+    return view_.direction == 1 ? true : view_.direction == 2 ? false : settings_.rtl;
+}
+
+void Reader::present_settings()
+{
+    ++request_;
+    waiting_ = false;
+    loading_shown_ = false;
+    in_settings_ = true;
+    menu_open_ = false;
+    top_bar_ = bottom_bar_ = nullptr;
+    subtitle_ = nullptr;
+    // What the pages look like before, to know on Done whether the chapter must be processed again.
+    if (!settings_dirty_) settings_before_ = process_options();
+    settings_dirty_ = true;
+
+    auto root = std::make_unique<Node>();
+    root->layout = Layout::Column;
+    root->height = Dim::fill();
+    root->opaque = true;
+    root->add(app_bar("Reader settings", [this] { close_settings(); }, {}));
+
+    auto body = std::make_unique<Node>();
+    body->layout = Layout::Column;
+    body->height = Dim::fill();
+    body->padding = Insets{32, 16, 32, 16};
+    body->gap = 12;
+    auto section = [&](const std::string& title, std::unique_ptr<Node> control) {
+        auto* l = body->emplace<Label>(title, type::LIST_PRIMARY, FontId::InterSemiBold, tone::BLACK);
+        l->width = Dim::fill();
+        body->add(std::move(control));
+        auto spacer = std::make_unique<Node>();
+        spacer->height = Dim::px(20);
+        body->add(std::move(spacer));
+    };
+    auto save = [this](ReaderSettings s) {
+        apply_settings(s);
+        data_.save_reader_settings(s);
+        present_settings();
+    };
+
+    section("This manga", segmented({"Default", "Right to left", "Left to right"}, view_.direction, [this](int i) {
+        view_.direction = i;
+        data_.set_manga_direction(view_.manga.id, i);
+        present_settings();
+    }));
+    section("Default reading direction", segmented({"Right to left", "Left to right"}, settings_.rtl ? 0 : 1, [this, save](int i) {
+        ReaderSettings s = settings_;
+        s.rtl = i == 0;
+        save(s);
+    }));
+    static constexpr int kFlash[] = {1, 2, 5, 10, 0};
+    int flash_index = 0;
+    for (int i = 0; i < 5; ++i)
+        if (kFlash[i] == settings_.flash_every) flash_index = i;
+    section("Full refresh (flash)", segmented({"Every page", "Every 2", "Every 5", "Every 10", "Never"}, flash_index, [this, save](int i) {
+        ReaderSettings s = settings_;
+        s.flash_every = kFlash[i];
+        save(s);
+    }));
+    section("Dithering", segmented({"Sharp", "Balanced", "Smooth"}, static_cast<int>(settings_.dither), [this, save](int i) {
+        ReaderSettings s = settings_;
+        s.dither = static_cast<image::Dither>(i);
+        save(s);
+    }));
+    section("Crop blank borders", segmented({"On", "Off"}, settings_.crop_borders ? 0 : 1, [this, save](int i) {
+        ReaderSettings s = settings_;
+        s.crop_borders = i == 0;
+        save(s);
+    }));
+    section("Split double pages", segmented({"On", "Off"}, settings_.split_spreads ? 0 : 1, [this, save](int i) {
+        ReaderSettings s = settings_;
+        s.split_spreads = i == 0;
+        save(s);
+    }));
+    root->add(std::move(body));
+    auto done = std::make_unique<Node>();
+    done->padding = Insets{32, 0, 32, 32};
+    done->add(button("Done", [this] { close_settings(); }, true));
+    root->add(std::move(done));
+    // First entry is a new screen; option changes redraw it in place without a flash.
+    screen_.set_root(std::move(root), settings_shown_ ? Change::Update : Change::NewScreen);
+    settings_shown_ = true;
+}
+
+void Reader::close_settings()
+{
+    if (!in_settings_) return;
+    in_settings_ = false;
+    settings_shown_ = false;
+    settings_dirty_ = false;
+    image::ProcessOptions now = process_options();
+    bool reprocess = image::PageCache::key("", 0, now) != image::PageCache::key("", 0, settings_before_);
+    if (reprocess) pos_.part = 0;
+    show(pos_, Change::NewScreen);
+    if (reprocess) load_chapter();
 }
 
 void Reader::toggle_menu() { set_menu(!menu_open_); }
@@ -511,6 +590,10 @@ void Reader::prev()
 
 bool Reader::on_back()
 {
+    if (in_settings_) {
+        close_settings();
+        return true;
+    }
     if (menu_open_) {
         set_menu(false);
         return true;

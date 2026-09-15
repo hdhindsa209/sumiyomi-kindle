@@ -386,6 +386,38 @@ void test_refresh_follows_the_reason_for_the_change()
     CHECK_EQ(env.display.calls.size(), before);
 }
 
+void test_long_press_runs_its_own_action()
+{
+    Env env;
+    int taps = 0, holds = 0;
+    auto root = box(Dim::fill(), Dim::fill());
+    root->opaque = true;
+    root->on_tap = [&] { ++taps; };
+    root->on_long_press = [&] { ++holds; };
+    env.screen.set_root(std::move(root));
+    env.screen.frame();
+
+    RawEvent e; e.kind = RawKind::Down; e.pos = {300, 300}; e.t_ms = 1000;
+    env.screen.on_event(e);
+    env.screen.frame();
+    env.screen.on_tick(1000 + GestureRecognizer::kLongPressMs + 10);   // held past the threshold
+    env.screen.frame();
+    CHECK_EQ(holds, 1);
+    e.kind = RawKind::Up; e.t_ms = 2000;
+    env.screen.on_event(e);
+    env.screen.frame();
+    CHECK_EQ(taps, 0);                                    // the release after a long press isn't a tap
+    CHECK_EQ(holds, 1);
+
+    e.kind = RawKind::Down; e.t_ms = 5000;
+    env.screen.on_event(e);
+    e.kind = RawKind::Up; e.t_ms = 5060;
+    env.screen.on_event(e);
+    env.screen.frame();
+    CHECK_EQ(taps, 1);
+    CHECK_EQ(holds, 1);
+}
+
 void test_rounded_rect_corners()
 {
     std::vector<uint8_t> px(100 * 100, 255);
@@ -427,6 +459,7 @@ int main()
     RUN(test_dirty_label_damages_its_frame_with_hint);
     RUN(test_tap_replacing_root_renders_new_screen);
     RUN(test_refresh_follows_the_reason_for_the_change);
+    RUN(test_long_press_runs_its_own_action);
     RUN(test_rounded_rect_corners);
     return check_result();
 }
