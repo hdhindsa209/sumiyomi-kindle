@@ -28,7 +28,7 @@ else
     scp $SSH_OPTS -q "$PKG/bin/sumiyomi" "$PKG/bin/http_smoke" "root@$HOST:$DEST/bin/"
     ssh $SSH_OPTS "root@$HOST" "mkdir -p $DEST/assets/fonts"
     scp $SSH_OPTS -q "$PKG"/assets/fonts/* "root@$HOST:$DEST/assets/fonts/"
-    ssh $SSH_OPTS "root@$HOST" "mkdir -p $DEST/sources"
+    ssh $SSH_OPTS "root@$HOST" "rm -rf $DEST/sources && mkdir -p $DEST/sources"   # drop removed sources
     scp $SSH_OPTS -q -r "$PKG/sources/." "root@$HOST:$DEST/sources/"
     ssh $SSH_OPTS "root@$HOST" "mkdir -p $DEST/assets/certs"
     scp $SSH_OPTS -q "$PKG/assets/certs/cacert.pem" "root@$HOST:$DEST/assets/certs/"
