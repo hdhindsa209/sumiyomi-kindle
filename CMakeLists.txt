@@ -41,6 +41,33 @@ target_compile_definitions(sqlite3 PUBLIC
   SQLITE_ENABLE_FTS5)
 target_compile_options(sqlite3 PRIVATE -w)
 
+# Network (design doc §9): mbedTLS 3.6 LTS + libcurl, static, HTTP(S) only. The Kindle's system
+# OpenSSL is too old for modern TLS, so the TLS stack and CA bundle ship with the app.
+set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
+set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+set(MBEDTLS_FATAL_WARNINGS OFF CACHE BOOL "" FORCE)
+set(USE_SHARED_MBEDTLS_LIBRARY OFF CACHE BOOL "" FORCE)
+set(USE_STATIC_MBEDTLS_LIBRARY ON CACHE BOOL "" FORCE)
+add_subdirectory(third_party/mbedtls EXCLUDE_FROM_ALL SYSTEM)
+
+# Point curl's FindMbedTLS at the in-tree targets instead of searching the system.
+set(MBEDTLS_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/third_party/mbedtls/include" CACHE PATH "" FORCE)
+set(MBEDTLS_LIBRARY mbedtls CACHE STRING "" FORCE)
+set(MBEDX509_LIBRARY mbedx509 CACHE STRING "" FORCE)
+set(MBEDCRYPTO_LIBRARY mbedcrypto CACHE STRING "" FORCE)
+foreach(opt HTTP_ONLY CURL_USE_MBEDTLS CURL_DISABLE_INSTALL)
+  set(${opt} ON CACHE BOOL "" FORCE)
+endforeach()
+foreach(opt BUILD_CURL_EXE BUILD_SHARED_LIBS BUILD_TESTING BUILD_EXAMPLES BUILD_LIBCURL_DOCS BUILD_MISC_DOCS
+            ENABLE_CURL_MANUAL CURL_USE_OPENSSL CURL_USE_LIBPSL CURL_USE_LIBSSH2 CURL_USE_GSSAPI USE_NGHTTP2
+            USE_LIBIDN2 USE_APPLE_IDN ENABLE_UNIX_SOCKETS CURL_BROTLI CURL_ZSTD CURL_USE_PKGCONFIG)
+  set(${opt} OFF CACHE BOOL "" FORCE)
+endforeach()
+set(CURL_ZLIB OFF CACHE STRING "" FORCE)
+set(CURL_CA_BUNDLE none CACHE STRING "" FORCE)   # we always pass CURLOPT_CAINFO
+set(CURL_CA_PATH none CACHE STRING "" FORCE)
+add_subdirectory(third_party/curl EXCLUDE_FROM_ALL SYSTEM)
+
 set(SUMI_ASSETS_DIR "${CMAKE_SOURCE_DIR}/assets")
 
 # Backend-independent core: builds for host and device.
@@ -81,6 +108,12 @@ add_library(sumi_data STATIC
   src/data/repo.cpp)
 target_link_libraries(sumi_data PUBLIC sumi_core sqlite3)
 
+# Net: HTTP client over libcurl + mbedTLS (M3 S2).
+add_library(sumi_net STATIC
+  src/net/http.cpp
+  src/net/curl_transport.cpp)
+target_link_libraries(sumi_net PUBLIC sumi_core libcurl_static)
+
 if(NOT CMAKE_CROSSCOMPILING)
   # Host: unit tests, plus the SDL simulator backend (§10) when SDL2 is available.
   enable_testing()
@@ -114,6 +147,15 @@ if(NOT CMAKE_CROSSCOMPILING)
                                                SUMI_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/tests/golden")
   target_link_libraries(test_shell PRIVATE sumi_ui)
   add_test(NAME shell COMMAND test_shell)
+
+  add_executable(test_http tests/unit/test_http.cpp)
+  target_compile_definitions(test_http PRIVATE SUMI_ASSETS_DIR="${SUMI_ASSETS_DIR}")
+  target_link_libraries(test_http PRIVATE sumi_net)
+  add_test(NAME http COMMAND test_http)
+
+  add_executable(http_smoke tools/net/http_smoke.cpp)
+  target_compile_definitions(http_smoke PRIVATE SUMI_ASSETS_DIR="${SUMI_ASSETS_DIR}")
+  target_link_libraries(http_smoke PRIVATE sumi_net)
 
   add_executable(test_data tests/unit/test_data.cpp)
   target_link_libraries(test_data PRIVATE sumi_data)
@@ -196,5 +238,10 @@ target_include_directories(text_smoke PRIVATE assets/fonts tests/unit)
 target_compile_definitions(text_smoke PRIVATE SUMI_ASSETS_DIR="/mnt/us/extensions/sumiyomi/assets")
 target_link_libraries(text_smoke PRIVATE sumi_warnings harfbuzz)
 
-set_target_properties(sumiyomi m1_testcard m1_bench text_smoke PROPERTIES
+# Device-side live TLS check: ./http_smoke [url] [ca_bundle]
+add_executable(http_smoke tools/net/http_smoke.cpp)
+target_compile_definitions(http_smoke PRIVATE SUMI_ASSETS_DIR="/mnt/us/extensions/sumiyomi/assets")
+target_link_libraries(http_smoke PRIVATE sumi_net)
+
+set_target_properties(sumiyomi m1_testcard m1_bench text_smoke http_smoke PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

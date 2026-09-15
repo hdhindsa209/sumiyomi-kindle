@@ -7,3 +7,9 @@
 [submodule "third_party/harfbuzz"]
 	path = third_party/harfbuzz
 	url = https://github.com/harfbuzz/harfbuzz.git
+[submodule "third_party/curl"]
+	path = third_party/curl
+	url = https://github.com/curl/curl.git
+[submodule "third_party/mbedtls"]
+	path = third_party/mbedtls
+	url = https://github.com/Mbed-TLS/mbedtls.git
