@@ -247,7 +247,8 @@ void test_margins_shrink_the_page_area()
     int32_t h0 = h;
     o.margin = 56;
     fit_size(1200, 1600, o, w, h);
-    CHECK(h == 1448 - 2 * 56 && w <= 1072 - 2 * 56);   // fits inside the margins on every side
+    CHECK(w <= 1072 - 2 * 56 && h <= 1448 - 2 * 56);   // fits inside the margins on every side
+    CHECK(w == 1072 - 2 * 56 || h == 1448 - 2 * 56);  // and fills one axis of that area
     CHECK(h < h0);
     ProcessOptions a, b;
     b.margin = 24;
