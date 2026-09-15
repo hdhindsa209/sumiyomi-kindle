@@ -40,8 +40,9 @@ USBNet must be up; the Kindle is `192.168.15.244` (override with `KINDLE_HOST`).
 ./tools/deploy.sh                     # package + copy to /mnt/us/extensions/sumiyomi
 ```
 
-Then on the Kindle: **KUAL → Sumiyomi → Start Sumiyomi**. Tap the box (A2 invert, latency logged),
-tap outside (GC16/GL16/DU cycle), long-press to exit. Logs: `/mnt/us/sumiyomi/logs/`.
+Then on the Kindle (with Wi-Fi on): **KUAL → Sumiyomi → Start Sumiyomi**. Browse → MangaDex to find manga,
+add them to the library; exit with **More → Exit Sumiyomi**. Library data: `/mnt/us/sumiyomi/sumiyomi.db`,
+logs: `/mnt/us/sumiyomi/logs/`. The M1 latency test card is still built as `build/kindle/bin/m1_testcard`.
 
 ## Extensions
 
