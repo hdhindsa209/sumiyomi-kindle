@@ -61,6 +61,15 @@ struct LibraryItem {
     int   total  = 0;
 };
 
+struct UpdateItem {
+    int64_t     chapter_id = 0;
+    int64_t     manga_id = 0;
+    std::string manga_title;
+    std::string chapter_name;
+    bool        read = false;
+    int64_t     date_fetch = 0;   // when the update found it
+};
+
 struct HistoryItem {
     int64_t     chapter_id = 0;
     int64_t     manga_id = 0;

@@ -8,6 +8,7 @@
 #include <string>
 #include <thread>
 
+#include "core/executor.h"
 #include "core/loop.h"
 
 namespace sumi {
@@ -29,7 +30,7 @@ inline Cancel make_cancel() { return std::make_shared<CancelToken>(); }
 //   worker.submit([&] { auto data = fetch(); worker.post([data] { ui.show(data); }); });
 //
 // post() closures run on the event loop thread, in the order they were posted.
-class Worker {
+class Worker final : public Executor {
 public:
     explicit Worker(EventLoop& loop) : loop_(loop) {}
     ~Worker() { stop(); }
@@ -40,10 +41,10 @@ public:
     bool start(std::string& err);
 
     // Queue a job for the worker thread (FIFO).
-    void submit(std::function<void()> job);
+    void submit(std::function<void()> job) override;
 
     // Run `fn` on the loop thread. Safe from any thread.
-    void post(std::function<void()> fn);
+    void post(std::function<void()> fn) override;
 
     // Drops queued jobs, waits for the running one, joins. Undelivered posts are dropped.
     void stop();

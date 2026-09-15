@@ -39,6 +39,10 @@ public:
     bool set_read(int64_t chapter_id, bool read);
     bool set_progress(int64_t chapter_id, int last_page_read, int pages_total);
 
+    // Chapters found by library updates, newest first (§8.5 Updates): chapters of favorites fetched
+    // after the manga entered the library.
+    std::vector<UpdateItem> updates(int limit = 100);
+
     // --- categories ---
     std::optional<int64_t> create_category(const std::string& name);
     std::vector<Category> categories();

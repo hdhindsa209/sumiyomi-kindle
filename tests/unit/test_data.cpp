@@ -234,6 +234,22 @@ void test_history_upsert_and_cascade()
     CHECK_EQ(f.repo.history().size(), 1);
 }
 
+void test_updates_only_after_added_to_library()
+{
+    Fixture f;
+    Manga m = make_manga("/m", "Manga");
+    CHECK(f.repo.upsert_manga(m));
+    CHECK_EQ(f.repo.sync_chapters(m.id, {ch("/c1", "Chapter 1", 1)}, 100), 1);   // browsed before adding
+    CHECK(f.repo.set_favorite(m.id, true, 200));
+    CHECK(f.repo.updates().empty());                                            // not an "update"
+    CHECK_EQ(f.repo.sync_chapters(m.id, {ch("/c2", "Chapter 2", 2), ch("/c1", "Chapter 1", 1)}, 300), 1);
+    auto u = f.repo.updates();
+    CHECK_EQ(u.size(), 1);
+    CHECK(u[0].chapter_name == "Chapter 2" && u[0].manga_title == "Manga" && u[0].date_fetch == 300 && !u[0].read);
+    CHECK(f.repo.set_favorite(m.id, false, 400));
+    CHECK(f.repo.updates().empty());                                            // left the library
+}
+
 void test_transaction_rolls_back()
 {
     Fixture f;
@@ -265,6 +281,7 @@ int main()
     RUN(test_sync_chapters_preserves_read_state);
     RUN(test_categories_filter_library);
     RUN(test_history_upsert_and_cascade);
+    RUN(test_updates_only_after_added_to_library);
     RUN(test_transaction_rolls_back);
     return check_result();
 }

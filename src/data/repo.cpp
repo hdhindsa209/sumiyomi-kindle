@@ -190,6 +190,18 @@ bool Repo::set_progress(int64_t chapter_id, int last_page_read, int pages_total)
         && db_.changes() == 1;
 }
 
+std::vector<UpdateItem> Repo::updates(int limit)
+{
+    Stmt s = db_.prepare(R"(SELECT c.id, m.id, m.title, c.name, c.read, c.date_fetch
+                            FROM chapters c JOIN mangas m ON m.id = c.manga_id
+                            WHERE m.favorite = 1 AND c.date_fetch > m.date_added
+                            ORDER BY c.date_fetch DESC, m.title COLLATE NOCASE, c.source_order LIMIT ?1)");
+    s.bind(1, limit);
+    std::vector<UpdateItem> out;
+    while (s.step()) out.push_back({s.i64(0), s.i64(1), s.text(2), s.text(3), s.i64(4) != 0, s.i64(5)});
+    return out;
+}
+
 // ---------------------------------------------------------------- categories
 
 std::optional<int64_t> Repo::create_category(const std::string& name)

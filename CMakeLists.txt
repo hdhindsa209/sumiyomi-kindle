@@ -144,6 +144,12 @@ add_library(sumi_source STATIC
 target_link_libraries(sumi_source PUBLIC sumi_net lua lexbor_static)
 target_include_directories(sumi_source SYSTEM PRIVATE third_party/lexbor/source)
 
+# App services: data access for the UI over worker jobs (M3 S6).
+add_library(sumi_app_data STATIC
+  src/app/app_data.cpp
+  src/app/format.cpp)
+target_link_libraries(sumi_app_data PUBLIC sumi_data sumi_source)
+
 if(NOT CMAKE_CROSSCOMPILING)
   # Host: unit tests, plus the SDL simulator backend (§10) when SDL2 is available.
   enable_testing()
@@ -201,6 +207,12 @@ if(NOT CMAKE_CROSSCOMPILING)
   target_compile_definitions(test_extension PRIVATE SUMI_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
   target_link_libraries(test_extension PRIVATE sumi_source)
   add_test(NAME extension COMMAND test_extension WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+  add_executable(test_app_data tests/unit/test_app_data.cpp)
+  target_include_directories(test_app_data PRIVATE tools/ext)
+  target_compile_definitions(test_app_data PRIVATE SUMI_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+  target_link_libraries(test_app_data PRIVATE sumi_app_data)
+  add_test(NAME app_data COMMAND test_app_data)
 
   add_executable(test_data tests/unit/test_data.cpp)
   target_link_libraries(test_data PRIVATE sumi_data)
