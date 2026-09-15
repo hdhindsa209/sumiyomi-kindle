@@ -78,7 +78,7 @@ struct Env {
         int rc = std::system(rm.c_str());
         (void)rc;
         CHECK(page_cache.init(err));
-        data = std::make_unique<app::AppData>(*exec, db, std::move(exts), &images, &page_cache);
+        data = std::make_unique<app::AppData>(*exec, db, std::move(exts), &images, &page_cache, cache_dir + "/downloads");
         // Fixed "now" (2026-09-14 13:00 UTC) so relative dates in goldens never drift.
         app::Shell::Schedule schedule;
         if (device_loop)   // as main.cpp: one-shot timers on the event loop, painting after they run
@@ -169,6 +169,8 @@ struct Env {
                 if (Node* hit = walk(c.get())) return hit;
             return nullptr;
         };
+        if (Node* over = screen.overlay())   // a bottom sheet on top is searched first
+            if (Node* hit = walk(over)) return hit;
         return root() ? walk(root()) : nullptr;
     }
     bool shows(const std::string& label) { return find(label) != nullptr; }
@@ -584,6 +586,63 @@ void test_long_press_chapter_toggles_read()
     CHECK_EQ(repo.library()[0].unread, 27);
 }
 
+void test_downloads_from_manga_page()
+{
+    Env env;
+    open_detail(env);
+    // App bar download action -> sheet.
+    env.tap(env.root()->children()[0]->children().back().get());
+    CHECK(env.shows("Next 5 unread") && env.shows("All unread") && env.shows("Select chapters"));
+    CHECK(env.shows("28 chapters"));                                     // sheet subtitle for "All unread"
+    CHECK_EQ(env.display.stale_pixels(), 0);
+
+    // Selection mode: tap rows to select, the title counts them; only rows + title refresh.
+    env.tap(env.find("Select chapters"));
+    CHECK(env.shows("Select chapters"));
+    CHECK(env.shows("Download") && env.shows("Delete") && env.shows("Read") && env.shows("Unread"));
+    size_t calls = env.display.calls.size();
+    env.tap(env.find("Chapter 25"));
+    CHECK(env.shows("1 selected"));
+    for (size_t k = calls; k < env.display.calls.size(); ++k) CHECK(env.display.calls[k].rect.h < kH / 2);
+    CHECK_EQ(env.display.stale_pixels(), 0);
+    CHECK(env.golden("select_chapters"));
+    env.tap(env.find("Chapter 23"));                                      // 23's pages aren't recorded: it fails
+    CHECK(env.shows("2 selected"));
+    env.tap(env.find("Download"));
+
+    // Inline executor: downloads finish at once. Rows show the states; selection mode ends.
+    CHECK(!env.shows("2 selected"));
+    CHECK(env.shows("1 week ago \xC2\xB7 Download failed") || env.shows("Jun 6, 2026 \xC2\xB7 Download failed"));
+    CHECK_EQ(env.image_transport.total_hits(), 33);
+    CHECK_EQ(env.display.stale_pixels(), 0);
+
+    // More -> Download queue lists both.
+    CHECK(env.shell->on_back());
+    env.screen.frame();
+    env.tap(env.nav_cell(4));
+    env.tap(env.find("Download queue"));
+    CHECK(env.shows(std::string(kTitle) + " \xC2\xB7 Chapter 25"));
+    CHECK(env.shows("Downloaded \xC2\xB7 33 pages"));
+    CHECK(env.golden("download_queue"));
+
+    // Hold to remove a download.
+    Node* row = env.find(std::string(kTitle) + " \xC2\xB7 Chapter 25");
+    CHECK(row != nullptr);
+    if (!row) return;
+    Point p{row->frame().x + 200, row->frame().y + row->frame().h / 2};
+    RawEvent e; e.kind = RawKind::Down; e.pos = p; e.t_ms = env.t;
+    env.screen.on_event(e);
+    env.screen.frame();
+    env.screen.on_tick(env.t + GestureRecognizer::kLongPressMs + 10);
+    env.screen.frame();
+    e.kind = RawKind::Up; e.t_ms = env.t + 1000;
+    env.screen.on_event(e);
+    env.screen.frame();
+    env.t += 2000;
+    CHECK(!env.shows("Downloaded \xC2\xB7 33 pages"));
+    CHECK_EQ(env.display.stale_pixels(), 0);
+}
+
 void test_updates_refresh_reports()
 {
     Env env;
@@ -623,6 +682,7 @@ int main()
     RUN(test_device_loop_reader);
     RUN(test_reader_long_strip_slices);
     RUN(test_long_press_chapter_toggles_read);
+    RUN(test_downloads_from_manga_page);
     RUN(test_updates_refresh_reports);
     RUN(test_more_exit);
     return check_result();

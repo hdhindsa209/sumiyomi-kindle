@@ -2,6 +2,7 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -28,6 +29,7 @@ struct BrowseResult {
 struct MangaView {
     data::Manga                manga;
     std::vector<data::Chapter> chapters;
+    std::map<int64_t, data::DownloadItem> downloads;   // by chapter id: chapters with a download
 };
 
 enum class Browse { Popular, Latest, Search };
@@ -155,6 +157,7 @@ private:
     bool               downloading_ = false;   // worker: a download chain is running
 
     std::string chapter_dir(int64_t source, int64_t manga, int64_t chapter) const;
+    std::map<int64_t, data::DownloadItem> downloads_of(int64_t manga_id);
     void download_step();
     void notify_download(const data::DownloadItem& item, bool removed = false);
 };

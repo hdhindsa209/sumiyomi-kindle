@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -42,7 +43,7 @@ private:
     enum Tab { kLibrary, kUpdates, kHistory, kBrowse, kMore };
 
     struct Route {
-        enum Kind { TabRoot, Source, Search, Detail, Reader };
+        enum Kind { TabRoot, Source, Search, Detail, Reader, Downloads };
         Route(Kind k = TabRoot, int tab_index = kLibrary) : kind(k), tab(tab_index) {}
         Kind           kind;
         int            tab;
@@ -89,6 +90,13 @@ private:
     void show_detail(const Route& r);
     void present_detail(uint64_t gen, ui::Change change);
     void show_reader(const Route& r);
+    void show_downloads();
+    void on_download_changed(const data::DownloadItem& item, bool removed);
+    void set_selecting(uint64_t gen, bool on);
+    void toggle_selected(uint64_t gen, size_t index);
+    std::unique_ptr<ui::Node> detail_app_bar(uint64_t gen);
+    std::unique_ptr<ui::Node> selection_bar(uint64_t gen);
+    void show_download_sheet(uint64_t gen);
     void open_reader(int64_t chapter_id, int start_page);
     std::unique_ptr<ui::Node> detail_actions(uint64_t gen);
     std::unique_ptr<ui::Node> chapter_row(uint64_t gen, size_t index);
@@ -117,6 +125,9 @@ private:
     bool           detail_shown_ = false;
     size_t         first_chapter_item_ = 0;   // detail: list index of chapter 0's row
     size_t         favorite_item_ = 0;        // detail: list index of the action row
+    bool           selecting_ = false;        // detail: chapter selection mode
+    std::set<int64_t> selected_;
+    bool           downloads_shown_ = false;  // the download queue screen is up
     std::unique_ptr<Reader> reader_;
     std::unique_ptr<Reader> retired_reader_;  // left from inside its own callback: destroyed on the next screen
 };

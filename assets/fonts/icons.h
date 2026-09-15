@@ -42,5 +42,8 @@ inline constexpr char32_t storage = 0xe1db;
 inline constexpr char32_t label = 0xe893;
 inline constexpr char32_t backspace = 0xe14a;
 inline constexpr char32_t chevron_left = 0xe5cb;
+inline constexpr char32_t check_box = 0xe9de;
+inline constexpr char32_t check_box_outline_blank = 0xe835;
+inline constexpr char32_t download_for_offline = 0xf000;
 
 } // namespace sumi::icon

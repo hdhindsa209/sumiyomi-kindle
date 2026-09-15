@@ -159,6 +159,7 @@ void AppData::refresh(source::Extension* ext, data::Manga manga,
     if (manga.id > 0) {
         if (auto stored = repo_.manga(manga.id)) view.manga = *stored;
         view.chapters = repo_.chapters(manga.id);
+        view.downloads = downloads_of(manga.id);
     }
     exec_.post([update, view = std::move(view), err = std::move(err)]() mutable { update(std::move(view), true, std::move(err)); });
 }
@@ -170,7 +171,7 @@ void AppData::open_manga(int64_t source, source::SManga seed,
         data::Manga manga;
         if (auto stored = repo_.manga_by_url(source, seed.url)) {
             manga = *stored;
-            MangaView local{manga, repo_.chapters(manga.id)};
+            MangaView local{manga, repo_.chapters(manga.id), downloads_of(manga.id)};
             exec_.post([update, local = std::move(local)]() mutable { update(std::move(local), false, ""); });
         } else {
             manga.source_id = source;
@@ -192,7 +193,7 @@ void AppData::open_manga_id(int64_t manga_id, std::function<void(MangaView, bool
             exec_.post([update] { update({}, true, "manga not found"); });
             return;
         }
-        MangaView local{*stored, repo_.chapters(manga_id)};
+        MangaView local{*stored, repo_.chapters(manga_id), downloads_of(manga_id)};
         exec_.post([update, local]() mutable { update(std::move(local), false, ""); });
         refresh(extension(stored->source_id), *stored, update);
     });
@@ -474,6 +475,14 @@ void remove_dir(const std::string& dir)
 }
 
 } // namespace
+
+std::map<int64_t, data::DownloadItem> AppData::downloads_of(int64_t manga_id)
+{
+    std::map<int64_t, data::DownloadItem> out;
+    for (auto& d : repo_.downloads())
+        if (d.manga_id == manga_id) out[d.chapter_id] = d;
+    return out;
+}
 
 std::string AppData::chapter_dir(int64_t source, int64_t manga, int64_t chapter) const
 {

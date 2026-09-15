@@ -42,3 +42,7 @@ label
 backspace
 # Pager bar (bottom arrows instead of swipes)
 chevron_left
+# Selection and downloads (M5)
+check_box
+check_box_outline_blank
+download_for_offline

@@ -5,6 +5,7 @@
 #include "ui/widgets.h"
 
 #include <algorithm>
+#include <map>
 
 namespace sumi::app {
 
@@ -99,6 +100,7 @@ Shell::Shell(Screen& screen, AppData& data, std::function<void()> on_exit, std::
     : screen_(screen), data_(data), on_exit_(std::move(on_exit)),
       now_ms_(now_ms ? std::move(now_ms) : std::function<int64_t()>(wall_ms)), schedule_(std::move(schedule))
 {
+    data_.set_download_listener([this](const data::DownloadItem& item, bool removed) { on_download_changed(item, removed); });
 }
 
 void Shell::start() { go({Route::TabRoot, kLibrary}); }
@@ -110,6 +112,10 @@ bool Shell::on_back()
         return true;
     }
     if (reader_ && reader_->on_back()) return true;   // closes the reader menu first
+    if (selecting_) {                                  // leaves chapter selection first
+        set_selecting(generation_, false);
+        return true;
+    }
     if (keyboard_ && keyboard_->visible && !results_.empty()) {   // search: put the keyboard away first
         keyboard_->visible = false;
         if (Node* pager = list_ ? list_->parent()->children()[1].get() : nullptr) pager->visible = true;
@@ -135,6 +141,9 @@ uint64_t Shell::begin()
     results_.clear();
     next_page_ = 1;
     detail_shown_ = false;
+    selecting_ = false;
+    selected_.clear();
+    downloads_shown_ = false;
     return ++generation_;
 }
 
@@ -161,6 +170,7 @@ void Shell::show(const Route& r)
     case Route::Search: show_search(r); break;
     case Route::Detail: show_detail(r); break;
     case Route::Reader: show_reader(r); break;
+    case Route::Downloads: show_downloads(); break;
     }
 }
 
@@ -569,11 +579,33 @@ std::unique_ptr<Node> Shell::chapter_row(uint64_t gen, size_t i)
     if (c.read) sub += (sub.empty() ? "" : kDot) + std::string("Read");
     if (!c.read && c.last_page_read > 0 && c.pages_total > 0)
         sub += (sub.empty() ? "" : kDot) + std::string("Page ") + std::to_string(c.last_page_read + 1) + " of " + std::to_string(c.pages_total);
+
+    // Download state: trailing icon, plus words while it's in flight or failed.
+    char32_t trailing = c.read ? icon::check : 0;
+    auto dl = view_.downloads.find(c.id);
+    if (dl != view_.downloads.end()) {
+        const data::DownloadItem& d = dl->second;
+        switch (d.state) {
+        case data::DownloadState::Done: trailing = icon::download_done; break;
+        case data::DownloadState::Queued: trailing = icon::download; sub += kDot + std::string("Queued"); break;
+        case data::DownloadState::Downloading:
+            trailing = icon::download;
+            sub += kDot + std::string("Downloading ") + std::to_string(d.pages_done) + " of " + std::to_string(d.pages_total);
+            break;
+        case data::DownloadState::Error: trailing = icon::error; sub += kDot + std::string("Download failed"); break;
+        }
+    }
+
     int64_t cid = c.id;
     bool read = c.read;
     int resume = read ? 0 : c.last_page_read;
-    // Unread = black dot; read = check mark. No dimmed text. Tap opens the reader; long-press toggles read.
-    auto row = list_row({c.name, sub, !read, false, read ? icon::check : 0, [this, cid, resume] { open_reader(cid, resume); }});
+    if (selecting_) {
+        RowSpec spec{c.name, sub, false, false, trailing, [this, gen, i] { toggle_selected(gen, i); }};
+        spec.leading = selected_.count(cid) ? icon::check_box : icon::check_box_outline_blank;
+        return list_row(spec);
+    }
+    // Unread = black dot. No dimmed text. Tap opens the reader; long-press toggles read.
+    auto row = list_row({c.name, sub, !read, false, trailing, [this, cid, resume] { open_reader(cid, resume); }});
     row->on_long_press = [this, gen, cid, read, i] {
         data_.set_read(cid, !read, [this, gen, i, read](bool ok) {
             if (!current(gen) || !ok || !list_ || i >= view_.chapters.size()) return;
@@ -584,6 +616,123 @@ std::unique_ptr<Node> Shell::chapter_row(uint64_t gen, size_t i)
         });
     };
     return row;
+}
+
+std::unique_ptr<Node> Shell::detail_app_bar(uint64_t gen)
+{
+    if (selecting_) {
+        std::string title = selected_.empty() ? std::string("Select chapters") : std::to_string(selected_.size()) + " selected";
+        return app_bar(title, [this, gen] { set_selecting(gen, false); }, {});
+    }
+    return app_bar("", [this] { on_back(); }, {{icon::download, [this, gen] { show_download_sheet(gen); }}});
+}
+
+std::unique_ptr<Node> Shell::selection_bar(uint64_t gen)
+{
+    auto bar = std::make_unique<Node>();
+    bar->layout = Layout::Row;
+    bar->padding = Insets{24, 16, 24, 16};
+    bar->gap = 12;
+    bar->opaque = true;
+    bar->border.top = tone::RULE;
+    auto act = [this, gen](std::function<void(const std::vector<int64_t>&)> fn) {
+        return [this, gen, fn] {
+            if (!current(gen) || selected_.empty()) return;
+            std::vector<int64_t> ids(selected_.begin(), selected_.end());
+            fn(ids);
+        };
+    };
+    bar->add(button("Download", act([this, gen](const std::vector<int64_t>& ids) {
+        data_.download_chapters(ids);
+        set_selecting(gen, false);
+    })));
+    bar->add(button("Delete", act([this, gen](const std::vector<int64_t>& ids) {
+        data_.delete_downloads(ids);
+        set_selecting(gen, false);
+    })));
+    auto mark = [this, gen](bool read) {
+        return [this, gen, read](const std::vector<int64_t>& ids) {
+            for (int64_t id : ids) data_.set_read(id, read, [](bool) {});
+            for (data::Chapter& c : view_.chapters)
+                if (std::find(ids.begin(), ids.end(), c.id) != ids.end()) {
+                    c.read = read;
+                    if (!read) c.last_page_read = 0;
+                }
+            set_selecting(gen, false);
+        };
+    };
+    bar->add(button("Read", act(mark(true))));
+    bar->add(button("Unread", act(mark(false))));
+    return bar;
+}
+
+void Shell::set_selecting(uint64_t gen, bool on)
+{
+    if (!current(gen) || !detail_shown_) return;
+    selecting_ = on;
+    selected_.clear();
+    present_detail(gen, Change::Update);   // rows change shape: redraw the screen once, no flash
+}
+
+void Shell::toggle_selected(uint64_t gen, size_t index)
+{
+    if (!current(gen) || !list_ || index >= view_.chapters.size()) return;
+    int64_t id = view_.chapters[index].id;
+    if (!selected_.insert(id).second) selected_.erase(id);
+    // Just the row and the title.
+    screen_.relayout(list_->replace_child(first_chapter_item_ + index, chapter_row(gen, index)));
+    if (Node* root = screen_.root()) screen_.relayout(root->replace_child(0, detail_app_bar(gen)));
+}
+
+void Shell::show_download_sheet(uint64_t gen)
+{
+    auto pick_unread = [this](size_t limit) {
+        std::vector<int64_t> ids;
+        for (auto it = view_.chapters.rbegin(); it != view_.chapters.rend() && ids.size() < limit; ++it) {   // oldest first
+            auto dl = view_.downloads.find(it->id);
+            bool have = dl != view_.downloads.end() && dl->second.state != data::DownloadState::Error;
+            if (!it->read && !have) ids.push_back(it->id);
+        }
+        return ids;
+    };
+    std::vector<std::unique_ptr<Node>> rows;
+    auto row = [&](const std::string& title, const std::string& subtitle, std::function<void()> fn) {
+        RowSpec r{title, subtitle, false, false, 0, [this, gen, fn] {
+            screen_.hide_overlay();
+            if (current(gen)) fn();
+        }};
+        rows.push_back(list_row(r));
+    };
+    size_t next5 = pick_unread(5).size(), all = pick_unread(100000).size();
+    row("Next 5 unread", next5 ? std::to_string(next5) + " chapters" : "Nothing to download", [this, pick_unread] {
+        auto ids = pick_unread(5);
+        if (!ids.empty()) data_.download_chapters(ids);
+    });
+    row("All unread", all ? std::to_string(all) + " chapters" : "Nothing to download", [this, pick_unread] {
+        auto ids = pick_unread(100000);
+        if (!ids.empty()) data_.download_chapters(ids);
+    });
+    row("Select chapters", "Choose chapters to download, delete or mark", [this, gen] { set_selecting(gen, true); });
+    screen_.show_overlay(sheet("Download", std::move(rows)));
+}
+
+void Shell::on_download_changed(const data::DownloadItem& item, bool removed)
+{
+    // Progress arrives per page; on e-ink, repaint a row only every 5 pages and on state changes.
+    bool worth_painting = removed || item.state != data::DownloadState::Downloading || item.pages_done % 5 == 0
+                       || item.pages_done == item.pages_total;
+    if (detail_shown_ && item.manga_id == view_.manga.id) {
+        auto old = view_.downloads.find(item.chapter_id);
+        bool state_changed = old == view_.downloads.end() || old->second.state != item.state;
+        if (removed) view_.downloads.erase(item.chapter_id);
+        else view_.downloads[item.chapter_id] = item;
+        if (list_ && !selecting_ && (worth_painting || state_changed)) {
+            for (size_t i = 0; i < view_.chapters.size(); ++i)
+                if (view_.chapters[i].id == item.chapter_id)
+                    screen_.relayout(list_->replace_child(first_chapter_item_ + i, chapter_row(generation_, i)));
+        }
+    }
+    if (downloads_shown_ && worth_painting) show_downloads();
 }
 
 void Shell::present_detail(uint64_t gen, Change change)
@@ -627,7 +776,10 @@ void Shell::present_detail(uint64_t gen, Change change)
     }
 
     detail_shown_ = true;
-    present(scaffold(app_bar("", [this] { on_back(); }, {}), paged(std::move(items), page), -1), change);
+    auto body = column();
+    body->add(paged(std::move(items), page));
+    if (selecting_) body->add(selection_bar(gen));
+    present(scaffold(detail_app_bar(gen), std::move(body), -1), change);
 }
 
 // ---------------------------------------------------------------- Reader
@@ -662,6 +814,44 @@ void Shell::show_reader(const Route& r)
     reader_->start(r.chapter_id, r.start_page, r.from_end);
 }
 
+// ---------------------------------------------------------------- Download queue
+
+void Shell::show_downloads()
+{
+    bool refresh_only = downloads_shown_;   // progress update of the screen that's already up
+    uint64_t gen = refresh_only ? generation_ : begin();
+    int page = refresh_only && list_ ? list_->page() : 0;
+    if (!refresh_only) loading(gen, std::string("Loading downloads") + kEllipsis, nullptr);
+    data_.downloads([this, gen, page, refresh_only](std::vector<data::DownloadItem> items) {
+        if (!current(gen)) return;
+        std::vector<std::unique_ptr<Node>> rows;
+        if (items.empty()) rows.push_back(message("No downloads.\nDownload chapters from a manga's page."));
+        for (const data::DownloadItem& d : items) {
+            std::string state;
+            char32_t trailing = icon::download;
+            switch (d.state) {
+            case data::DownloadState::Queued: state = "Queued"; break;
+            case data::DownloadState::Downloading:
+                state = "Downloading " + std::to_string(d.pages_done) + " of " + std::to_string(d.pages_total);
+                break;
+            case data::DownloadState::Done: state = "Downloaded" + std::string(kDot) + std::to_string(d.pages_total) + " pages"; trailing = icon::download_done; break;
+            case data::DownloadState::Error: state = "Failed" + std::string(kDot) + "tap to retry" + kDot + d.error; trailing = icon::error; break;
+            }
+            int64_t id = d.chapter_id;
+            bool failed = d.state == data::DownloadState::Error;
+            auto row = list_row({d.manga_title + kDot + d.chapter_name, state, false, false, trailing, [this, id, failed] {
+                if (failed) data_.download_chapters({id});
+            }});
+            row->on_long_press = [this, id] { data_.delete_downloads({id}); };
+            rows.push_back(std::move(row));
+        }
+        if (!items.empty()) rows.push_back(message("Hold a chapter to remove its download."));
+        downloads_shown_ = true;
+        present(scaffold(app_bar("Download queue", [this] { on_back(); }, {}), paged(std::move(rows), page), -1),
+                refresh_only ? Change::Update : Change::NewScreen);
+    });
+}
+
 // ---------------------------------------------------------------- More
 
 void Shell::show_more()
@@ -672,7 +862,12 @@ void Shell::show_more()
                                [this](bool on) { downloaded_only_ = on; }));
     items.push_back(switch_row("Incognito mode", "Pauses reading history", incognito_, [this](bool on) { incognito_ = on; }));
     struct Entry { char32_t icon; const char* title; const char* subtitle; };
-    for (const Entry& e : {Entry{icon::download, "Download queue", "Arrives in M5"}, Entry{icon::label, "Categories", ""},
+    RowSpec queue{"Download queue", "Chapters kept on this Kindle", false, false, icon::chevron_right, [this] {
+        go(Route{Route::Downloads});
+    }};
+    queue.leading = icon::download;
+    items.push_back(list_row(queue));
+    for (const Entry& e : {Entry{icon::label, "Categories", ""},
                            Entry{icon::storage, "Data and storage", ""}, Entry{icon::settings, "Settings", ""},
                            Entry{icon::info, "About", "Sumiyomi 0.3 (M3: data + WeebCentral)"}}) {
         RowSpec r{e.title, e.subtitle, false, false, 0, [] {}};
