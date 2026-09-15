@@ -508,8 +508,66 @@ void test_reader_end_of_chapter_marks_read()
     CHECK(env.shows("There's no next chapter yet."));
     CHECK_EQ(env.display.stale_pixels(), 0);
     CHECK(env.golden("reader_end"));
+    CHECK(env.page_cache.disk_files() >= 33);
     env.tap(env.find("Back to manga"));
     CHECK(env.shows("In library"));
+    CHECK_EQ(env.page_cache.disk_files(), 0);                            // read to the end: its pages left the cache
+    data::Repo again(env.db);
+    CHECK(again.chapter(chapter25)->read);
+}
+
+void test_downloaded_chapter_opens_at_once()
+{
+    // Device loop, so every screen really reaches the panel: a downloaded chapter goes "Opening chapter" ->
+    // page, with no chapter loading page in between (a network chapter shows one).
+    Env env(true);
+    CHECK(env.run_until([&] { return env.shows("Browse sources"); }));
+    source::SManga seed{"/series/01KTEH8Z2TJ9NQ2NDZ75EM36SS/neechan-no-tomodachi-ga-uzai-hanashi", kTitle, "", "", "", "", {}, 0};
+    int64_t chapter25 = 0;
+    bool ready = false;
+    env.data->open_manga(env.data->sources()[0].id, seed, [&](app::MangaView v, bool refreshed, std::string) {
+        if (!refreshed || v.chapters.empty()) return;
+        chapter25 = v.chapters[0].id;
+        env.data->set_favorite(v.manga.id, true, [&](bool) { ready = true; });
+    });
+    CHECK(env.run_until([&] { return ready; }));
+    env.data->download_chapters({chapter25});
+    // The database belongs to the worker: ask through AppData, one request at a time.
+    bool done = false, asking = false;
+    CHECK(env.run_until([&] {
+        if (!asking) {
+            asking = true;
+            env.data->downloads([&](std::vector<data::DownloadItem> items) {
+                asking = false;
+                for (const auto& d : items) done = done || (d.chapter_id == chapter25 && d.state == data::DownloadState::Done);
+            });
+        }
+        return done;
+    }));
+    bool cleared = false;
+    env.data->clear_page_cache([&] { cleared = true; });
+    CHECK(env.run_until([&] { return cleared; }));
+    env.tap(env.nav_cell(1));
+    CHECK(env.run_until([&] { return env.shows("Updates"); }));
+    env.tap(env.nav_cell(0));
+    CHECK(env.run_until([&] { return env.shows(kTitle); }));
+    env.tap(env.find(kTitle));
+    CHECK(env.run_until([&] { return env.shows("Chapter 25") && env.shows("In library"); }));
+    int hits = env.image_transport.total_hits();
+
+    size_t calls = env.display.calls.size();
+    env.tap(env.find("Chapter 25"));
+    CHECK(env.run_until([&] { return bars_on_panel(env) == 1; }));
+    size_t full = 0;
+    for (size_t i = calls; i < env.display.calls.size(); ++i) full += env.display.calls[i].rect.h == kH;
+    CHECK(full <= 2);
+    CHECK_EQ(env.image_transport.total_hits(), hits);                    // local files only
+    CHECK_EQ(env.display.stale_pixels(), 0);
+    CHECK(env.run_until([&] { return env.page_cache.disk_files() >= 33; }));   // the rest prepared behind it
+    size_t turn = env.display.calls.size();
+    env.tap(Point{100, 700});
+    CHECK(env.run_until([&] { return bars_on_panel(env) == 2; }));
+    CHECK(env.display.calls.size() - turn <= 2);
 }
 
 void test_reader_page_error_and_cancel()
@@ -1153,6 +1211,7 @@ int main()
     RUN(test_device_loop_results_reach_the_panel);
     RUN(test_reader_pages_zones_and_refresh);
     RUN(test_reader_end_of_chapter_marks_read);
+    RUN(test_downloaded_chapter_opens_at_once);
     RUN(test_reader_page_error_and_cancel);
     RUN(test_device_loop_reader);
     RUN(test_reader_long_strip_slices);

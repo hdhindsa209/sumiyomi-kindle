@@ -228,6 +228,8 @@ public:
     void load_chapter(int64_t source, std::vector<std::string> urls, int start, const image::ProcessOptions& opt,
                       std::shared_ptr<std::atomic<bool>> cancel, std::function<void(int loaded, int total)> progress,
                       std::function<void(int loaded, int failed)> done = nullptr);
+    // Drop a chapter's processed pages from the page cache (every part), for these options. Downloads are untouched.
+    void evict_chapter(std::vector<std::string> urls, const image::ProcessOptions& opt);
     // --- downloads (M5) ---
     // Downloading keeps a chapter on the device: the original image files, in downloads_dir, never
     // evicted, used by the reader instead of the network. Only ever started by the user.

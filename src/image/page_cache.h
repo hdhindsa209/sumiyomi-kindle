@@ -46,6 +46,9 @@ public:
     uint64_t cap() const { std::lock_guard<std::mutex> l(mu_); return cap_; }
     // New size limit; evicts the oldest pages at once if over it.
     void     set_cap(uint64_t bytes);
+    // Deletes one page (disk and RAM). Returns how many parts its image had (0 if it wasn't cached), so a
+    // caller can remove the other parts too.
+    int      remove(const std::string& key);
     // Deletes every cached page (disk and RAM).
     void     clear();
 

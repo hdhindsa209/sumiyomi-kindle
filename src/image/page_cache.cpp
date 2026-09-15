@@ -155,6 +155,33 @@ void PageCache::set_cap(uint64_t bytes)
     evict();
 }
 
+int PageCache::remove(const std::string& k)
+{
+    std::lock_guard<std::mutex> lock(mu_);
+    int parts = 0;
+    for (auto it = ram_.begin(); it != ram_.end(); ++it)
+        if (it->first == k) {
+            parts = it->second.parts;
+            ram_.erase(it);
+            break;
+        }
+    std::string path = path_for(k);
+    auto it = index_.find(path.substr(dir_.size() + 1));
+    if (it == index_.end()) return parts;
+    if (parts == 0) {   // the part count is in the file header
+        if (FILE* f = std::fopen(path.c_str(), "rb")) {
+            uint8_t head[6];
+            if (std::fread(head, 1, sizeof head, f) == sizeof head && std::memcmp(head, kMagic, 4) == 0) parts = std::max<uint8_t>(1, head[5]);
+            std::fclose(f);
+        }
+        if (parts == 0) parts = 1;
+    }
+    unlink(path.c_str());
+    disk_bytes_ -= std::min(disk_bytes_, it->second.size);
+    index_.erase(it);
+    return parts;
+}
+
 void PageCache::clear()
 {
     std::lock_guard<std::mutex> lock(mu_);

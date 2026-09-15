@@ -120,7 +120,10 @@ Reader::~Reader() { detach(); }
 
 void Reader::detach()
 {
+    if (detached_) return;
+    detached_ = true;
     if (load_cancel_) load_cancel_->store(true);           // stop loading the rest of the chapter
+    if (finished_ && !view_.pages.empty()) data_.evict_chapter(view_.pages, process_options());   // read to the end: free the cache
     alive_.reset();                                         // pending results are dropped
     screen_.set_pages_per_flash(Screen::kPagesPerFlash);   // lists get their own cadence back
 }
@@ -147,21 +150,52 @@ void Reader::start(int64_t chapter_id, int start_page, bool from_end)
             Pos p;
             p.image = from_end ? n - 1 : std::clamp(start_page, 0, n - 1);
             pos_ = p;
-            load_chapter("Loading chapter", [this, p, from_end] { show(p, Change::NewScreen, from_end); });
+            load_chapter("Loading chapter", [this, p, from_end] { show(p, Change::NewScreen, from_end); }, downloaded());
         });
     });
 }
 
-void Reader::load_chapter(const std::string& title, std::function<void()> then)
+bool Reader::downloaded() const
+{
+    for (const std::string& url : view_.pages)
+        if (url.rfind("file://", 0) != 0) return false;
+    return !view_.pages.empty();
+}
+
+void Reader::load_chapter(const std::string& title, std::function<void()> then, bool background)
 {
     if (!alive_ || view_.pages.empty()) return;
     if (load_cancel_) load_cancel_->store(true);
     load_cancel_ = std::make_shared<std::atomic<bool>>(false);
     loaded_ = 0;
+    int total = static_cast<int>(view_.pages.size());
+    if (background) {
+        // Pages are prepared in reading order from the current one: it's ready first (a fraction of a second),
+        // shows then, and the rest follow while reading.
+        std::weak_ptr<int> alive = alive_;
+        auto started = std::make_shared<bool>(false);
+        auto start_once = [alive, started, then] {
+            if (alive.expired() || *started) return;
+            *started = true;
+            then();
+        };
+        data_.load_chapter(view_.manga.source_id, view_.pages, pos_.image, process_options(), load_cancel_,
+                           [this, alive, start_once](int loaded, int) {
+                               if (alive.expired()) return;
+                               loaded_ = loaded;
+                               start_once();
+                           },
+                           [start_once](int, int) { start_once(); });   // even if the first page failed
+        return;
+    }
     ++request_;
     waiting_ = true;
-    int total = static_cast<int>(view_.pages.size());
-    loading(title + kEllipsis);
+    if (loading_shown_ && loading_label_) {   // "Opening chapter" is up: just change its words
+        loading_label_->set_text(title + kEllipsis);
+        screen_.relayout(loading_label_);
+    } else {
+        loading(title + kEllipsis);
+    }
     std::weak_ptr<int> alive = alive_;
     uint64_t req = request_;
     data_.load_chapter(view_.manga.source_id, view_.pages, pos_.image, process_options(), load_cancel_,
@@ -246,7 +280,8 @@ void Reader::show(Pos pos, Change change, bool want_last_part)
     waiting_ = true;
     int total = static_cast<int>(view_.pages.size());
     // A settings change re-renders the page in place (menu stays open); anything else may need a loading page.
-    if (change != Change::Update)
+    // (A loading page already up stays: swapping one loading page for another is a wasted refresh.)
+    if (change != Change::Update && !loading_shown_)
         loading("Loading page " + std::to_string(pos.image + 1) + " of " + std::to_string(total) + kEllipsis);
     load(req, pos.image, pos.part, change, want_last_part);
 }
@@ -518,7 +553,7 @@ void Reader::set_menu(bool open)
             load_chapter("Applying settings", [this] {
                 if (loading_shown_) show(pos_, Change::NewScreen);
                 else waiting_ = false;
-            });
+            }, downloaded());
         }
     }
 }
@@ -645,6 +680,7 @@ void Reader::save_progress()
     if (view_.chapter.id <= 0 || view_.pages.empty()) return;
     int n = static_cast<int>(view_.pages.size());
     bool last = pos_.image == n - 1 && pos_.part + 1 >= std::max(1, parts_[static_cast<size_t>(pos_.image)]);
+    finished_ = finished_ || last;
     data_.save_progress(view_.chapter.id, pos_.image, n, last);
 }
 

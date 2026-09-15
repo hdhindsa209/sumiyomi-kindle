@@ -170,6 +170,13 @@ void test_cap_change_and_clear()
     PageCache::Entry e;
     cache.clear_ram();
     CHECK(!cache.get("k0", e) && cache.get("k3", e));
+    CHECK(cache.put("spread|p0", page(50, 50, 1, 2), err) && cache.put("spread|p1", page(50, 50, 2, 2), err));
+    cache.clear_ram();
+    size_t before = cache.disk_files();
+    CHECK_EQ(cache.remove("spread|p0"), 2);                    // parts read from the file header
+    CHECK_EQ(cache.disk_files(), before - 1);
+    CHECK(!cache.get("spread|p0", e));
+    CHECK_EQ(cache.remove("missing"), 0);
     cache.clear();
     CHECK_EQ(cache.disk_files(), 0);
     CHECK_EQ(cache.disk_bytes(), 0);

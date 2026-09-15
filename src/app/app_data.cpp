@@ -854,6 +854,7 @@ void AppData::load_chapter(int64_t source, std::vector<std::string> urls, int st
         };
         if (order.empty() && done) exec_.post([done] { done(0, 0); });
 
+        auto local = std::make_shared<std::vector<std::string>>();
         for (size_t idx : order) {
             const std::string& url = urls[idx];
             if (cache_ && cache_->contains(image::PageCache::key(url, 0, opt))) {
@@ -872,14 +873,36 @@ void AppData::load_chapter(int64_t source, std::vector<std::string> urls, int st
                 }, cancel);
                 continue;
             }
-            // One page per job, so the reader's own requests get in between.
-            exec_.submit([this, source, url, opt, cancel, finish_one] {
-                if (cancel->load()) return;
-                std::vector<image::Gray> parts;
-                std::string err;
-                finish_one(fetch_page(source, url, opt, false, parts, err));
-            });
+            local->push_back(url);
         }
+        // Local files (and everything without a pool): one page per job, each queuing the next, so a page the
+        // reader asks for meanwhile waits for at most one page, not the rest of the chapter.
+        auto step = std::make_shared<std::function<void(size_t)>>();
+        std::weak_ptr<std::function<void(size_t)>> weak = step;
+        *step = [this, source, opt, cancel, finish_one, local, weak](size_t k) {
+            auto self = weak.lock();
+            if (!self || k >= local->size() || cancel->load()) return;
+            std::vector<image::Gray> parts;
+            std::string err;
+            const std::string& url = (*local)[k];
+            finish_one((cache_ && cache_->contains(image::PageCache::key(url, 0, opt))) || fetch_page(source, url, opt, false, parts, err));
+            exec_.submit([self, k] { (*self)(k + 1); });
+        };
+        if (!local->empty()) exec_.submit([step] { (*step)(0); });
+    });
+}
+
+void AppData::evict_chapter(std::vector<std::string> urls, const image::ProcessOptions& opt)
+{
+    exec_.submit([this, urls = std::move(urls), opt] {
+        if (!cache_) return;
+        size_t removed = 0;
+        for (const std::string& url : urls) {
+            int parts = cache_->remove(image::PageCache::key(url, 0, opt));
+            removed += parts > 0;
+            for (int p = 1; p < parts; ++p) cache_->remove(image::PageCache::key(url, p, opt));
+        }
+        SUMI_LOGI("cache", "finished chapter: %zu pages removed from the page cache", removed);
     });
 }
 

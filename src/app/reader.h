@@ -31,6 +31,9 @@ namespace sumi::app {
 //                  the page re-renders it under the open menu, and the chapter reloads when the menu closes.
 //   Loading        opening a chapter loads all of its pages before the first one is shown: one loading
 //                  page counting pages ("12 of 33"), then every turn comes straight from the page cache.
+//                  A downloaded chapter opens at once instead: its local files are prepared in the background
+//                  far faster than pages are read. Leaving a chapter that was read to the end drops its pages
+//                  from the page cache.
 //                  Settings that change the pages load the chapter again the same way when the menu
 //                  closes. This is the evictable page cache, not a download.
 //   Progress       every page shown is saved; reaching the last page marks the chapter read.
@@ -85,7 +88,11 @@ private:
     void loading(const std::string& text);
     // Load every page of the chapter (from the current one on) behind a loading page that counts pages,
     // then run `then`. Pages already cached are skipped, so a loaded chapter goes straight through.
-    void load_chapter(const std::string& title, std::function<void()> then);
+    // `background`: no loading page; `then` runs at once and pages keep loading while reading (local files).
+    void load_chapter(const std::string& title, std::function<void()> then, bool background = false);
+    bool downloaded() const;             // every page is a local file
+    bool           finished_ = false;    // the last page was reached: its cached pages go when the reader closes
+    bool           detached_ = false;
     std::string subtitle() const;        // top bar second line: manga · page · loading progress
 
     ui::Screen& screen_;
