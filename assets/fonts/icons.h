@@ -46,5 +46,7 @@ inline constexpr char32_t check_box = 0xe9de;
 inline constexpr char32_t check_box_outline_blank = 0xe835;
 inline constexpr char32_t download_for_offline = 0xf000;
 inline constexpr char32_t light_mode = 0xe518;
+inline constexpr char32_t grid_view = 0xe9b0;
+inline constexpr char32_t view_list = 0xe8ef;
 
 } // namespace sumi::icon

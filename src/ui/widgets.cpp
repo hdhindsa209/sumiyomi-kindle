@@ -161,6 +161,31 @@ std::unique_ptr<Node> list_row(const RowSpec& spec)
 
 namespace {
 
+// The cover picture itself, blitted at its exact size.
+class CoverImage : public Node {
+public:
+    CoverImage(std::shared_ptr<const std::vector<uint8_t>> px, int32_t w, int32_t h) : px_(std::move(px)), w_(w), h_(h)
+    {
+        opaque = true;
+        background = tone::WHITE;
+    }
+
+protected:
+    void paint_content(PaintCtx& ctx) override
+    {
+        if (!px_ || px_->size() != static_cast<size_t>(w_) * static_cast<size_t>(h_)) return;
+        Rect f = frame();
+        Rect dst{f.x, f.y, std::min(w_, f.w), std::min(h_, f.h)};
+        Rect c = dst.clipped(ctx.clip);
+        if (c.empty()) return;
+        ctx.canvas.blit_gray8(c, px_->data() + static_cast<size_t>(c.y - dst.y) * static_cast<size_t>(w_) + static_cast<size_t>(c.x - dst.x), w_);
+    }
+
+private:
+    std::shared_ptr<const std::vector<uint8_t>> px_;
+    int32_t w_, h_;
+};
+
 class CoverCell : public Node {
 public:
     CoverCell(const CoverSpec& spec, int32_t cover_w, int32_t cover_h) : unread_(spec.unread)
@@ -171,16 +196,18 @@ public:
         on_tap = spec.on_tap;
         refresh = Wave::GL16;
 
-        auto cover = std::make_unique<Node>();
-        cover->layout = Layout::Stack;
+        auto cover = std::make_unique<CoverImage>(spec.image, cover_w, cover_h);
         cover->width = Dim::fill();
         cover->height = Dim::px(cover_h);
-        cover->opaque = true;
-        cover->radius = 12;
-        cover->background = tone::SURFACE_2;
-        cover->align_main = Align::Center;
-        cover->align_cross = Align::Center;
-        cover->emplace<Label>(initials(spec.title), TypeRole{40, 48}, FontId::InterSemiBold, tone::ON_SURFACE_VARIANT);
+        if (!spec.image) {
+            // No cover: initials in an outlined box.
+            cover->layout = Layout::Stack;
+            cover->align_main = Align::Center;
+            cover->align_cross = Align::Center;
+            cover->border = Insets::all(tone::RULE);
+            cover->border_gray = tone::BLACK;
+            cover->emplace<Label>(initials(spec.title), TypeRole{40, 48}, FontId::InterSemiBold, tone::BLACK);
+        }
         add(std::move(cover));
 
         // Caption strip below the cover (§8.2): 12 sp Medium, 2 lines max with ellipsis.
@@ -202,6 +229,8 @@ protected:
         int32_t h = ctx.fonts.sp(22), w = std::max(h, tw + 2 * 12);
         Rect f = frame();
         Rect badge{f.right() - w - 12, f.y + 12, w, h};
+        // White ring first, so the black badge reads on a dark cover too.
+        ctx.canvas.fill_rounded_rect({badge.x - 4, badge.y - 4, badge.w + 8, badge.h + 8}, h / 2 + 4, tone::WHITE, ctx.clip);
         ctx.canvas.fill_rounded_rect(badge, h / 2, tone::PRIMARY, ctx.clip);
         FontMetrics m = ctx.text.metrics(s);
         ctx.text.draw(ctx.canvas, n, s, badge.x + (w - tw) / 2, badge.y + (h - (m.ascent + m.descent)) / 2 + m.ascent,
@@ -214,12 +243,20 @@ private:
 
 } // namespace
 
+void cover_size(int columns, int32_t width, int32_t& cover_w, int32_t& cover_h)
+{
+    columns = std::clamp(columns, 2, 5);
+    constexpr int32_t kSide = 32, kGutter = 24;
+    cover_w = (width - 2 * kSide - (columns - 1) * kGutter) / columns;
+    cover_h = cover_w * 3 / 2;
+}
+
 std::vector<std::unique_ptr<Node>> cover_rows(const std::vector<CoverSpec>& covers, int columns, int32_t width)
 {
     columns = std::clamp(columns, 2, 5);
     constexpr int32_t kSide = 32, kGutter = 24;
-    int32_t cover_w = (width - 2 * kSide - (columns - 1) * kGutter) / columns;
-    int32_t cover_h = cover_w * 3 / 2;
+    int32_t cover_w = 0, cover_h = 0;
+    cover_size(columns, width, cover_w, cover_h);
 
     std::vector<std::unique_ptr<Node>> rows;
     for (size_t i = 0; i < covers.size(); i += static_cast<size_t>(columns)) {

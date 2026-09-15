@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <set>
 #include <string>
@@ -77,6 +78,9 @@ private:
     std::unique_ptr<ui::Node> paged(std::vector<std::unique_ptr<ui::Node>> items, int page = 0, int focus_item = -1);
 
     void show_library();
+    static constexpr int kLibraryColumns = 3;
+    void present_library(uint64_t gen, std::vector<data::LibraryItem> items, bool covers,
+                         std::map<int64_t, image::Gray> thumbs);
     void show_updates(const std::string& status = "");
     void show_history();
     void show_browse();

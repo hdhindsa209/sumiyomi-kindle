@@ -58,6 +58,9 @@ Rect content_bounds(const Gray& g);
 // (in reading order), or several slices for a long strip. Never empty for a non-empty input.
 std::vector<Gray> process_page(const Gray& decoded, const ProcessOptions& opt);
 
+// A cover thumbnail: scaled to fill w×h (center-cropped to that aspect), toned and quantized.
+Gray cover_thumbnail(const Gray& decoded, int32_t w, int32_t h, const ProcessOptions& opt);
+
 // Individual stages (exposed for tests and page_bench).
 Gray crop(const Gray& g, const Rect& r);
 // Target size for a w×h page under `opt` (fit mode, screen size), keeping aspect.

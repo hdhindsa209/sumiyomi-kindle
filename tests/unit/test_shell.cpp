@@ -721,6 +721,42 @@ void test_front_light_controls()
     CHECK_EQ(env.display.stale_pixels(), 0);
 }
 
+void test_library_covers_option()
+{
+    Env env;
+    source::SManga seed{"/series/01KTEH8Z2TJ9NQ2NDZ75EM36SS/neechan-no-tomodachi-ga-uzai-hanashi", kTitle, "", "", "", "", {}, 0};
+    int64_t id = 0;
+    env.data->open_manga(env.data->sources()[0].id, seed, [&](app::MangaView v, bool, std::string) { id = v.manga.id; });
+    env.data->set_favorite(id, true, [](bool) {});
+    env.tap(env.nav_cell(1));
+    env.tap(env.nav_cell(0));
+    CHECK(env.shows("28 unread \xC2\xB7 28 chapters"));                  // list by default
+
+    // App bar: [light] [grid] [refresh] -> the grid toggle is the middle action.
+    const auto& actions = env.root()->children()[0]->children();
+    env.tap(actions[actions.size() - 2].get());
+    CHECK(!env.shows("28 unread \xC2\xB7 28 chapters"));
+    CHECK(env.shows(kTitle));                                              // caption under the cover
+    int cover_hits = 0;
+    for (const auto& kv : env.image_transport.hits)
+        if (kv.first.find("/cover/") != std::string::npos) cover_hits += kv.second;
+    CHECK_EQ(cover_hits, 1);
+    CHECK(env.display.calls.back().mode == Wave::GC16_FLASH);              // one screen, all covers in it
+    CHECK_EQ(env.display.stale_pixels(), 0);
+    CHECK(env.golden("library_covers"));
+
+    // Remembered, and cached: coming back fetches nothing.
+    env.tap(env.nav_cell(1));
+    env.tap(env.nav_cell(0));
+    CHECK(!env.shows("28 unread \xC2\xB7 28 chapters"));
+    int again = 0;
+    for (const auto& kv : env.image_transport.hits)
+        if (kv.first.find("/cover/") != std::string::npos) again += kv.second;
+    CHECK_EQ(again, 1);
+    env.tap(env.find(kTitle));
+    CHECK(env.shows("In library"));
+}
+
 void test_updates_refresh_reports()
 {
     Env env;
@@ -762,6 +798,7 @@ int main()
     RUN(test_long_press_chapter_toggles_read);
     RUN(test_downloads_from_manga_page);
     RUN(test_front_light_controls);
+    RUN(test_library_covers_option);
     RUN(test_updates_refresh_reports);
     RUN(test_more_exit);
     return check_result();

@@ -147,6 +147,14 @@ public:
     // Called on the UI thread whenever a download changes (queued, a page done, finished, failed, removed).
     void set_download_listener(std::function<void(const data::DownloadItem&, bool removed)> listener);
 
+    // Library cover thumbnails (M5): each manga's cover at w×h, from the page cache or fetched, processed
+    // and cached. Mangas without a cover URL get one from their source first (stored). Mangas whose
+    // cover can't be had are simply missing from the result.
+    void covers(std::vector<data::Manga> mangas, int32_t w, int32_t h,
+                std::function<void(std::map<int64_t, image::Gray>)> done);
+    void library_display(std::function<void(bool covers)> done);
+    void save_library_display(bool covers);
+
     // Remember the reading position; `finished` also marks the chapter read.
     void save_progress(int64_t chapter_id, int page, int pages_total, bool finished);
 

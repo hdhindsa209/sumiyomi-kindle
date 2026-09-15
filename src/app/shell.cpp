@@ -227,13 +227,45 @@ void Shell::show_library()
 {
     uint64_t gen = begin();
     loading(gen, std::string("Loading library") + kEllipsis, nullptr);
-    data_.library([this, gen](std::vector<data::LibraryItem> items) {
+    data_.library_display([this, gen](bool covers) {
         if (!current(gen)) return;
-        std::vector<std::unique_ptr<Node>> nodes;
-        if (items.empty()) {
-            nodes.push_back(message("Your library is empty.\nAdd manga from a source in Browse.", "Browse sources",
-                                    [this] { go({Route::TabRoot, kBrowse}); }));
+        data_.library([this, gen, covers](std::vector<data::LibraryItem> items) {
+            if (!current(gen)) return;
+            if (!covers || items.empty()) {
+                present_library(gen, std::move(items), false, {});
+                return;
+            }
+            // Every cover first, then one screen: no grid filling in tile by tile.
+            std::vector<data::Manga> mangas;
+            for (const auto& it : items) mangas.push_back(it.manga);
+            int32_t w = 0, h = 0;
+            cover_size(kLibraryColumns, screen_.bounds().w, w, h);
+            data_.covers(std::move(mangas), w, h, [this, gen, items = std::move(items)](std::map<int64_t, image::Gray> thumbs) mutable {
+                if (current(gen)) present_library(gen, std::move(items), true, std::move(thumbs));
+            });
+        });
+    });
+}
+
+void Shell::present_library(uint64_t gen, std::vector<data::LibraryItem> items, bool covers,
+                            std::map<int64_t, image::Gray> thumbs)
+{
+    (void)gen;
+    std::vector<std::unique_ptr<Node>> nodes;
+    if (items.empty()) {
+        nodes.push_back(message("Your library is empty.\nAdd manga from a source in Browse.", "Browse sources",
+                                [this] { go({Route::TabRoot, kBrowse}); }));
+    } else if (covers) {
+        std::vector<CoverSpec> specs;
+        for (const data::LibraryItem& it : items) {
+            int64_t id = it.manga.id;
+            CoverSpec spec{it.manga.title, it.unread, [this, id] { Route r{Route::Detail}; r.manga_id = id; go(r); }, nullptr};
+            auto t = thumbs.find(id);
+            if (t != thumbs.end()) spec.image = std::make_shared<const std::vector<uint8_t>>(std::move(t->second.px));
+            specs.push_back(std::move(spec));
         }
+        nodes = cover_rows(specs, kLibraryColumns, screen_.bounds().w);
+    } else {
         for (const data::LibraryItem& it : items) {
             int64_t id = it.manga.id;
             std::string sub = it.unread > 0 ? std::to_string(it.unread) + " unread" : "Up to date";
@@ -244,9 +276,14 @@ void Shell::show_library()
                                           go(r);
                                       }}));
         }
-        present(scaffold(app_bar("Library", nullptr, with_light({{icon::refresh, [this] { go({Route::TabRoot, kUpdates}); }}})),
-                         paged(std::move(nodes)), kLibrary));
-    });
+    }
+    auto toggle = [this, covers] {
+        data_.save_library_display(!covers);
+        go({Route::TabRoot, kLibrary});
+    };
+    present(scaffold(app_bar("Library", nullptr, with_light({{covers ? icon::view_list : icon::grid_view, toggle},
+                                                              {icon::refresh, [this] { go({Route::TabRoot, kUpdates}); }}})),
+                     paged(std::move(nodes)), kLibrary));
 }
 
 // ---------------------------------------------------------------- Updates / History

@@ -48,7 +48,12 @@ struct CoverSpec {
     std::string title;
     int         unread = 0;         // badge count, 0 = no badge
     std::function<void()> on_tap;
+    // Cover image: 8-bit gray, exactly cover_w × cover_h (already processed for the panel). Empty = initials.
+    std::shared_ptr<const std::vector<uint8_t>> image;
 };
+
+// Size of one cover image in a `columns`-wide grid of `width` px (images must be exactly this size).
+void cover_size(int columns, int32_t width, int32_t& cover_w, int32_t& cover_h);
 
 // Rows of cover cells for a PagedList (one row per item, so paging moves by whole rows).
 std::vector<std::unique_ptr<Node>> cover_rows(const std::vector<CoverSpec>& covers, int columns, int32_t width);

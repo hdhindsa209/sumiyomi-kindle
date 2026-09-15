@@ -27,7 +27,10 @@ local function list(sort, query, page)
     for _, a in ipairs(doc:select("article > section > a")) do
         local title = a:select_first("div:not([class]):last-child")
         if title then
-            mangas[#mangas + 1] = { url = relative(a:attr("href")), title = title:text() }
+            -- Cover: the JPEG fallback (the <source> variants are WebP, which the reader doesn't decode).
+            local img = a:select_first("img")
+            mangas[#mangas + 1] = { url = relative(a:attr("href")), title = title:text(),
+                                    thumbnail_url = img and img:attr("src") or nil }
         end
     end
     return { mangas = mangas, has_next_page = doc:select_first("button") ~= nil }
@@ -60,6 +63,8 @@ function Source.manga_details(manga)
     local meta, main = sections[1], sections[2]
 
     local out = { url = manga.url, title = main:select_first("h1") and main:select_first("h1"):text() or manga.title }
+    local cover = meta:select_first("img")
+    if cover and cover:attr("src") ~= "" then out.thumbnail_url = cover:attr("src") end
     local authors = {}
     local li = field(meta, "Author")
     if li then for _, a in ipairs(li:select("span > a")) do authors[#authors + 1] = a:text() end end

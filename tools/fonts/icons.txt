@@ -48,3 +48,6 @@ check_box_outline_blank
 download_for_offline
 # Front light (M5)
 light_mode
+# Library display (M5)
+grid_view
+view_list

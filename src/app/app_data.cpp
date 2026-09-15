@@ -448,6 +448,74 @@ void AppData::save_progress(int64_t chapter_id, int page, int pages_total, bool 
     });
 }
 
+// ---------------------------------------------------------------- covers
+
+void AppData::library_display(std::function<void(bool)> done)
+{
+    exec_.submit([this, done = std::move(done)] {
+        bool covers = repo_.pref("library.display") == std::string("covers");
+        exec_.post([done, covers] { done(covers); });
+    });
+}
+
+void AppData::save_library_display(bool covers)
+{
+    exec_.submit([this, covers] { repo_.set_pref("library.display", covers ? "covers" : "list"); });
+}
+
+void AppData::covers(std::vector<data::Manga> mangas, int32_t w, int32_t h,
+                     std::function<void(std::map<int64_t, image::Gray>)> done)
+{
+    exec_.submit([this, mangas = std::move(mangas), w, h, done = std::move(done)]() mutable {
+        std::map<int64_t, image::Gray> out;
+        image::ProcessOptions opt;
+        opt.dither = image::Dither::Smooth;   // covers are mostly tone and color: full diffusion
+        for (data::Manga& m : mangas) {
+            if (m.thumbnail_url.empty()) {
+                // Saved before covers were recorded: ask the source once, keep the answer.
+                source::Extension* ext = extension(m.source_id);
+                source::SManga seed{m.url, m.title, "", "", "", "", {}, 0}, details;
+                std::string err;
+                if (ext && ext->details(seed, details, err) && !details.thumbnail_url.empty()) {
+                    m.thumbnail_url = details.thumbnail_url;
+                    if (auto stored = repo_.manga(m.id)) {
+                        stored->thumbnail_url = m.thumbnail_url;
+                        repo_.upsert_manga(*stored);
+                    }
+                }
+                if (m.thumbnail_url.empty()) continue;
+            }
+            std::string key = "cover:" + m.thumbnail_url + "|" + std::to_string(w) + "x" + std::to_string(h);
+            image::PageCache::Entry hit;
+            if (cache_ && cache_->get(key, hit)) {
+                out[m.id] = std::move(hit.page);
+                continue;
+            }
+            if (!images_) continue;
+            net::Request req;
+            req.url = m.thumbnail_url;
+            req.total_timeout_ms = 30000;
+            source::Extension* ext = extension(m.source_id);
+            if (ext && !ext->manifest().base_url.empty()) req.headers.push_back({"Referer", ext->manifest().base_url + "/"});
+            net::Response res = images_->fetch(req);
+            image::Gray decoded;
+            std::string err;
+            image::DecodeOptions dopt;
+            dopt.fit_w = w;
+            dopt.fit_h = h;
+            if (!res.http_ok() || !image::decode_gray(reinterpret_cast<const uint8_t*>(res.body.data()), res.body.size(), dopt, decoded, err)) {
+                SUMI_LOGW("app", "cover for %s: %s", m.title.c_str(), res.http_ok() ? err.c_str() : "download failed");
+                continue;
+            }
+            image::Gray thumb = image::cover_thumbnail(decoded, w, h, opt);
+            std::string cache_err;
+            if (cache_) cache_->put(key, {thumb, 1}, cache_err, false);
+            out[m.id] = std::move(thumb);
+        }
+        exec_.post([done, out = std::move(out)]() mutable { done(std::move(out)); });
+    });
+}
+
 // ---------------------------------------------------------------- downloads
 
 namespace {

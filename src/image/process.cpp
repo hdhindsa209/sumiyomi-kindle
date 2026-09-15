@@ -299,6 +299,25 @@ void quantize16(Gray& g, Dither dither)
     }
 }
 
+Gray cover_thumbnail(const Gray& decoded, int32_t w, int32_t h, const ProcessOptions& opt)
+{
+    if (decoded.w <= 0 || decoded.h <= 0 || w <= 0 || h <= 0) return {};
+    // Crop the source to the target aspect around its center, then scale.
+    int64_t src_w = decoded.w, src_h = decoded.h;
+    Rect r{0, 0, decoded.w, decoded.h};
+    if (src_w * h > src_h * w) {   // too wide
+        r.w = static_cast<int32_t>(src_h * w / h);
+        r.x = (decoded.w - r.w) / 2;
+    } else {
+        r.h = static_cast<int32_t>(src_w * h / w);
+        r.y = (decoded.h - r.h) / 2;
+    }
+    Gray out = resize(crop(decoded, r), w, h);
+    apply_tone(out, opt);
+    quantize16(out, opt.dither);
+    return out;
+}
+
 std::vector<Gray> process_page(const Gray& decoded, const ProcessOptions& opt)
 {
     std::vector<Gray> pages;

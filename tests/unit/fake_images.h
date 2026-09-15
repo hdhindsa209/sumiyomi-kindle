@@ -68,7 +68,8 @@ public:
 
     sumi::net::Response perform(const sumi::net::Request& req) override
     {
-        if (req.url.find("://scans") == std::string::npos) return other_.perform(req);
+        bool cover = req.url.find("/cover/") != std::string::npos;
+        if (req.url.find("://scans") == std::string::npos && !cover) return other_.perform(req);
         ++hits[req.url];
         for (const auto& h : req.headers)
             if (h.first == "Referer") last_referer = h.second;
@@ -80,7 +81,7 @@ public:
         }
         r.status = 200;
         int n = page_number(req.url);
-        r.body = n == 5 ? jpeg_page(n, 784, 4000) : jpeg_page(n);   // page 5 is a long strip
+        r.body = cover ? jpeg_page(3, 400, 600) : n == 5 ? jpeg_page(n, 784, 4000) : jpeg_page(n);   // page 5 is a long strip
         return r;
     }
 
