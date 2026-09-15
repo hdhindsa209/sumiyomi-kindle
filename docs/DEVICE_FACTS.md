@@ -258,6 +258,14 @@ Ample room for the app, extensions, and cache budgets in the design doc.
 
 ---
 
+## M3 checks (2026-09-14)
+
+- **Network while running:** Wi-Fi + DNS + HTTPS (mbedTLS, bundled CA bundle) work from Sumiyomi. Early "Could not
+  resolve host" failures were the USBNet route, not the app.
+- **Clock:** correct enough for TLS certificate validation.
+- **REAGL:** visibly worse than GL16/GC16 for the UI on this panel (user report). Closes U9 for UI screens; do not use.
+- **Refresh preferences (user):** clear image over speed; more flashing is acceptable in the reader.
+
 ## Outstanding
 
 - **Hotfix installed (y/n)** — unrecorded, non-blocking for now.

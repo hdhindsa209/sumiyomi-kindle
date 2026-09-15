@@ -19,3 +19,26 @@ Out of scope (M4): cover/page image decoding. Covers stay as initials placeholde
 
 **Open device questions (to record in DEVICE_FACTS at the S6 check):** Wi-Fi/DNS availability while Sumiyomi runs, and
 whether the Kindle's clock is right (TLS certificate validation depends on it).
+
+## As built (device-verified 2026-09-14)
+
+M3 is done: browse, search, detail and a persistent library work on the device against live data.
+What changed from the plan, and why:
+
+- **Source: WeebCentral, not MangaDex.** MangaDex was too slow on the user's devices. WeebCentral is HTML
+  scraping (lexbor selectors in `sources/weebcentral/source.lua`, 1 request / 2 s). Its page images are served
+  with a `.png` name but are JPEG, so the M4 decoder sniffs magic bytes.
+- **Text-only lists.** No covers or placeholders anywhere (user preference; covers are not planned for M4 either).
+- **E-ink UI rules** (see `src/ui/screen.h`, `src/ui/tone.h`, `src/app/shell.h`):
+  - Pure black/white palette; emphasis by weight, 2 px rules, 6 px bars and inversion. No grays.
+  - No swipe navigation. Lists page by whole pages with a bottom pager bar (`[<] Page N of M [>]`).
+  - Every whole-screen repaint carries a reason: NewScreen = GC16 flash; Loading = GL16; PageTurn = GL16 with a
+    flash every 5th; Update = GL16. Local changes refresh only their node.
+  - Screens that need data show one full-screen loading page, then the finished screen with a single flash
+    (skipped when data arrives within 300 ms).
+  - REAGL looked worse than GL16/GC16 on this panel. Not used.
+- **Bugs the simulator hid:** async results never painted (no frame without input). Tests now use FakeDisplay's
+  panel model (a golden requires panel == framebuffer) plus a shell test on the real EventLoop + Worker.
+
+Device answers: Wi-Fi and DNS work while Sumiyomi runs (DNS failed only while USBNet was misrouting), and TLS
+validation passes, so the clock is fine.
