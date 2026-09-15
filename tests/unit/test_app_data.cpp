@@ -6,6 +6,7 @@
 #include "fake_images.h"
 #include "fixture_transport.h"
 
+#include <atomic>
 #include <cstdlib>
 #include <string>
 #include <unistd.h>
@@ -237,6 +238,31 @@ void test_open_chapter_and_load_pages()
     env.image_transport.fail.insert(ch.pages[5]);
     env.app->load_page(env.dex, ch.pages[5], 0, opt, [&](PageImage p, std::string e) { page = std::move(p); err = e; });
     CHECK(err == "HTTP 404" && page.page.px.empty());
+
+    // Loading the whole chapter: every page fetched once (page 3 is already cached), in order from
+    // the start page, into the disk cache only.
+    env.image_transport.fail.clear();
+    env.image_transport.hits.clear();
+    auto cancel = std::make_shared<std::atomic<bool>>(false);
+    int last_loaded = -1, last_total = -1;
+    env.cache.clear_ram();
+    env.app->load_chapter(env.dex, ch.pages, 10, opt, cancel, [&](int n, int total) { last_loaded = n; last_total = total; });
+    CHECK_EQ(last_total, 33);
+    CHECK_EQ(last_loaded, 33);
+    CHECK_EQ(env.image_transport.total_hits(), 32);
+    CHECK_EQ(env.image_transport.hits.count(ch.pages[2]), 0);
+    CHECK_EQ(env.cache.ram_pages(), 0);
+    for (const std::string& url : ch.pages) CHECK(env.cache.contains(image::PageCache::key(url, 0, opt)));
+    // Loading again finds everything cached: no requests.
+    env.app->load_chapter(env.dex, ch.pages, 0, opt, cancel, [](int, int) {});
+    CHECK_EQ(env.image_transport.total_hits(), 32);
+    // Cancelled before it starts: nothing fetched.
+    env.image_transport.hits.clear();
+    auto stop = std::make_shared<std::atomic<bool>>(true);
+    image::ProcessOptions other = opt;
+    other.dither = image::Dither::Smooth;
+    env.app->load_chapter(env.dex, ch.pages, 0, other, stop, [](int, int) {});
+    CHECK_EQ(env.image_transport.total_hits(), 0);
 
     // Progress and finishing.
     env.app->save_progress(ch.chapter.id, 10, 33, false);

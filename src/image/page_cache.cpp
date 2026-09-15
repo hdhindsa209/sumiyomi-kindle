@@ -199,14 +199,22 @@ bool PageCache::get(const std::string& k, Entry& out)
     return true;
 }
 
-bool PageCache::put(const std::string& k, const Entry& entry, std::string& err)
+bool PageCache::contains(const std::string& k) const
+{
+    for (const auto& e : ram_)
+        if (e.first == k) return true;
+    std::string path = path_for(k);
+    return index_.count(path.substr(dir_.size() + 1)) != 0;
+}
+
+bool PageCache::put(const std::string& k, const Entry& entry, std::string& err, bool into_ram)
 {
     const Gray& g = entry.page;
     if (g.w <= 0 || g.h <= 0 || g.px.size() != static_cast<size_t>(g.w) * static_cast<size_t>(g.h)) {
         err = "page cache: empty page";
         return false;
     }
-    remember(k, entry);
+    if (into_ram) remember(k, entry);
 
     std::vector<uint8_t> bytes(kMagic, kMagic + 4);
     bytes.push_back(kVersion);

@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -98,11 +99,19 @@ public:
     // processed (all parts cached) and returned.
     void load_page(int64_t source, const std::string& url, int part, const image::ProcessOptions& opt,
                    std::function<void(PageImage, std::string err)> done);
+    // Load a whole chapter in the background (M4 S5): every page fetched, processed and put in the
+    // page cache, starting at `start` and continuing to the end, then the pages before it. This is
+    // *loading* for reading, not downloading: pages live in the evictable cache. Cached pages are
+    // skipped. Stops when `cancel` is set. `progress` runs on the UI thread after each page.
+    void load_chapter(int64_t source, std::vector<std::string> urls, int start, const image::ProcessOptions& opt,
+                      std::shared_ptr<std::atomic<bool>> cancel, std::function<void(int loaded, int total)> progress);
     // Remember the reading position; `finished` also marks the chapter read.
     void save_progress(int64_t chapter_id, int page, int pages_total, bool finished);
 
 private:
     source::Extension* extension(int64_t source);
+    bool fetch_page(int64_t source, const std::string& url, const image::ProcessOptions& opt, bool into_ram,
+                    std::vector<image::Gray>& parts, std::string& err);
     void refresh(source::Extension* ext, data::Manga manga,
                  const std::function<void(MangaView, bool, std::string)>& update);
 

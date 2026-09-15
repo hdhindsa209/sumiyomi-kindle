@@ -291,6 +291,50 @@ void AppData::open_chapter(int64_t chapter_id, std::function<void(ChapterView, s
     });
 }
 
+bool AppData::fetch_page(int64_t source, const std::string& url, const image::ProcessOptions& opt, bool into_ram,
+                         std::vector<image::Gray>& parts, std::string& err)
+{
+    // Worker only. Fetch -> decode -> process -> cache every part.
+    if (!images_) {
+        err = "network unavailable";
+        return false;
+    }
+    net::Request req;
+    req.url = url;
+    req.total_timeout_ms = 45000;   // §9.1: images
+    source::Extension* ext = extension(source);
+    if (ext && !ext->manifest().base_url.empty()) req.headers.push_back({"Referer", ext->manifest().base_url + "/"});
+    req.headers.push_back({"Accept", "image/jpeg,image/png,image/*;q=0.8"});
+    uint64_t t0 = mono_ms();
+    net::Response res = images_->fetch(req);
+    uint64_t t_fetch = mono_ms() - t0;
+    if (!res.transport_ok()) err = res.error;
+    else if (!res.http_ok()) err = "HTTP " + std::to_string(res.status);
+    image::Gray decoded;
+    image::DecodeOptions dopt;
+    dopt.fit_w = opt.screen_w;
+    dopt.fit_h = opt.fit == image::Fit::Screen ? opt.screen_h : 0;
+    uint64_t t1 = mono_ms();
+    if (!err.empty() || !image::decode_gray(reinterpret_cast<const uint8_t*>(res.body.data()), res.body.size(), dopt, decoded, err)) {
+        SUMI_LOGW("app", "page %s: %s", url.c_str(), err.c_str());
+        return false;
+    }
+    uint64_t t2 = mono_ms();
+    parts = image::process_page(decoded, opt);
+    uint64_t t3 = mono_ms();
+    for (size_t i = 0; i < parts.size(); ++i) {
+        std::string cache_err;
+        if (cache_ && !cache_->put(image::PageCache::key(url, static_cast<int>(i), opt),
+                                   {parts[i], static_cast<uint8_t>(parts.size())}, cache_err, into_ram))
+            SUMI_LOGW("app", "%s", cache_err.c_str());
+    }
+    SUMI_LOGI("perf", "page %zu KB: fetch %llums, decode %llums (%dx%d), process %llums, cache %llums%s",
+              res.body.size() / 1024, static_cast<unsigned long long>(t_fetch), static_cast<unsigned long long>(t2 - t1),
+              decoded.w, decoded.h, static_cast<unsigned long long>(t3 - t2), static_cast<unsigned long long>(mono_ms() - t3),
+              into_ram ? "" : " (chapter load)");
+    return !parts.empty();
+}
+
 void AppData::load_page(int64_t source, const std::string& url, int part, const image::ProcessOptions& opt,
                         std::function<void(PageImage, std::string)> done)
 {
@@ -298,52 +342,48 @@ void AppData::load_page(int64_t source, const std::string& url, int part, const 
         PageImage result;
         std::string err;
         image::PageCache::Entry hit;
+        std::vector<image::Gray> parts;
         if (cache_ && cache_->get(image::PageCache::key(url, part, opt), hit)) {
             result.page = std::move(hit.page);
             result.parts = hit.parts;
-        } else if (!images_) {
-            err = "network unavailable";
-        } else {
-            net::Request req;
-            req.url = url;
-            req.total_timeout_ms = 45000;   // §9.1: images
-            source::Extension* ext = extension(source);
-            if (ext && !ext->manifest().base_url.empty()) req.headers.push_back({"Referer", ext->manifest().base_url + "/"});
-            req.headers.push_back({"Accept", "image/jpeg,image/png,image/*;q=0.8"});
-            uint64_t t0 = mono_ms();
-            net::Response res = images_->fetch(req);
-            uint64_t t_fetch = mono_ms() - t0;
-            image::Gray decoded;
-            image::DecodeOptions dopt;
-            dopt.fit_w = opt.screen_w;
-            dopt.fit_h = opt.fit == image::Fit::Screen ? opt.screen_h : 0;
-            if (!res.transport_ok()) {
-                err = res.error;
-            } else if (!res.http_ok()) {
-                err = "HTTP " + std::to_string(res.status);
-            } else if (uint64_t t1 = mono_ms();
-                       image::decode_gray(reinterpret_cast<const uint8_t*>(res.body.data()), res.body.size(), dopt, decoded, err)) {
-                uint64_t t2 = mono_ms();
-                std::vector<image::Gray> parts = image::process_page(decoded, opt);
-                uint64_t t3 = mono_ms();
-                result.parts = static_cast<int>(parts.size());
-                for (size_t i = 0; i < parts.size(); ++i) {
-                    std::string cache_err;
-                    if (cache_ && !cache_->put(image::PageCache::key(url, static_cast<int>(i), opt),
-                                               {parts[i], static_cast<uint8_t>(parts.size())}, cache_err))
-                        SUMI_LOGW("app", "%s", cache_err.c_str());
-                }
-                SUMI_LOGI("perf", "page %zu KB: fetch %llums, decode %llums (%dx%d), process %llums, cache %llums",
-                          res.body.size() / 1024, static_cast<unsigned long long>(t_fetch),
-                          static_cast<unsigned long long>(t2 - t1), decoded.w, decoded.h,
-                          static_cast<unsigned long long>(t3 - t2), static_cast<unsigned long long>(mono_ms() - t3));
-                int want = std::clamp(part, 0, result.parts - 1);
-                result.page = std::move(parts[static_cast<size_t>(want)]);
-            }
-            if (!err.empty()) SUMI_LOGW("app", "page %s: %s", url.c_str(), err.c_str());
+        } else if (fetch_page(source, url, opt, true, parts, err)) {
+            result.parts = static_cast<int>(parts.size());
+            result.page = std::move(parts[static_cast<size_t>(std::clamp(part, 0, result.parts - 1))]);
         }
         exec_.post([done, result = std::move(result), err = std::move(err)]() mutable { done(std::move(result), std::move(err)); });
     });
+}
+
+void AppData::load_chapter(int64_t source, std::vector<std::string> urls, int start, const image::ProcessOptions& opt,
+                           std::shared_ptr<std::atomic<bool>> cancel, std::function<void(int loaded, int total)> progress)
+{
+    // Order: from the reading position to the end, then the pages before it.
+    auto order = std::make_shared<std::vector<size_t>>();
+    for (size_t i = static_cast<size_t>(std::max(0, start)); i < urls.size(); ++i) order->push_back(i);
+    for (size_t i = std::min(static_cast<size_t>(std::max(0, start)), urls.size()); i-- > 0;) order->push_back(i);
+    auto shared_urls = std::make_shared<std::vector<std::string>>(std::move(urls));
+    auto loaded = std::make_shared<int>(0);
+    // One page per worker job, each queuing the next: pages the reader asks for meanwhile get in
+    // between instead of waiting for the whole chapter.
+    auto step = std::make_shared<std::function<void(size_t)>>();
+    std::weak_ptr<std::function<void(size_t)>> weak_step = step;
+    *step = [this, source, opt, cancel, progress, order, shared_urls, loaded, weak_step](size_t k) {
+        auto self = weak_step.lock();
+        if (!self || cancel->load()) return;
+        if (k >= order->size()) return;
+        const std::string& url = (*shared_urls)[(*order)[k]];
+        std::string err;
+        bool ok = cache_ && cache_->contains(image::PageCache::key(url, 0, opt));
+        if (!ok) {
+            std::vector<image::Gray> parts;
+            ok = !cancel->load() && fetch_page(source, url, opt, false, parts, err);
+        }
+        if (ok) ++*loaded;
+        int n = *loaded, total = static_cast<int>(order->size());
+        exec_.post([progress, cancel, n, total] { if (!cancel->load()) progress(n, total); });
+        exec_.submit([self, k] { (*self)(k + 1); });
+    };
+    exec_.submit([step] { (*step)(0); });   // each queued job holds the chain alive until it ends
 }
 
 void AppData::save_progress(int64_t chapter_id, int page, int pages_total, bool finished)

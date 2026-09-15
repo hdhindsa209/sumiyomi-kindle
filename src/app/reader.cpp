@@ -125,6 +125,7 @@ Reader::~Reader() { detach(); }
 
 void Reader::detach()
 {
+    if (load_cancel_) load_cancel_->store(true);           // stop loading the rest of the chapter
     alive_.reset();                                         // pending results are dropped
     screen_.set_pages_per_flash(Screen::kPagesPerFlash);   // lists get their own cadence back
 }
@@ -150,9 +151,35 @@ void Reader::start(int64_t chapter_id, int start_page, bool from_end)
             int n = static_cast<int>(view_.pages.size());
             Pos p;
             p.image = from_end ? n - 1 : std::clamp(start_page, 0, n - 1);
+            pos_ = p;
             show(p, Change::NewScreen, from_end);
+            load_chapter();
         });
     });
+}
+
+void Reader::load_chapter()
+{
+    if (!alive_ || view_.pages.empty()) return;
+    if (load_cancel_) load_cancel_->store(true);
+    load_cancel_ = std::make_shared<std::atomic<bool>>(false);
+    loaded_ = 0;
+    std::weak_ptr<int> alive = alive_;
+    data_.load_chapter(view_.manga.source_id, view_.pages, pos_.image, process_options(), load_cancel_,
+                       [this, alive](int loaded, int) {
+                           if (alive.expired()) return;
+                           loaded_ = loaded;
+                           if (menu_open_ && subtitle_) subtitle_->set_text(subtitle());   // only the bar refreshes
+                       });
+}
+
+std::string Reader::subtitle() const
+{
+    std::string sub = view_.manga.title;
+    int n = static_cast<int>(view_.pages.size());
+    if (pos_.place == Place::Page) sub += kDot + std::string("Page ") + std::to_string(pos_.image + 1) + " of " + std::to_string(n);
+    sub += kDot + (loaded_ >= n ? std::string("Chapter loaded") : "Loaded " + std::to_string(loaded_) + " of " + std::to_string(n));
+    return sub;
 }
 
 void Reader::apply_settings(const ReaderSettings& s)
@@ -181,6 +208,7 @@ void Reader::loading(const std::string& text)
     auto show_page = [this, alive, req, text] {
         if (alive.expired() || req != request_ || (!waiting_ && shown_)) return;
         top_bar_ = bottom_bar_ = nullptr;
+        subtitle_ = nullptr;
         menu_open_ = false;
         loading_shown_ = true;
         screen_.set_root(loading_page(text, [this] { cb_.exit(); }), Change::Loading);
@@ -287,10 +315,8 @@ std::unique_ptr<Node> Reader::menu_bars()
     titles->layout = Layout::Column;
     titles->width = Dim::fill();
     titles->emplace<Label>(view_.chapter.name, type::LIST_PRIMARY, FontId::InterSemiBold, tone::BLACK)->width = Dim::fill();
-    std::string sub = view_.manga.title;
-    if (pos_.place == Place::Page)
-        sub += kDot + std::string("Page ") + std::to_string(pos_.image + 1) + " of " + std::to_string(view_.pages.size());
-    titles->emplace<Label>(sub, type::LIST_SECONDARY, FontId::InterRegular, tone::BLACK)->width = Dim::fill();
+    subtitle_ = titles->emplace<Label>(subtitle(), type::LIST_SECONDARY, FontId::InterRegular, tone::BLACK);
+    subtitle_->width = Dim::fill();
     top->add(std::move(titles));
     top_bar_ = top_layer->add(std::move(top));
     layers->add(std::move(top_layer));
@@ -331,6 +357,7 @@ std::unique_ptr<Node> Reader::menu_bars()
         menu_open_ = true;
         pos_.part = 0;   // split-spread order flips with direction
         show(pos_, Change::Update);
+        load_chapter();  // pages are processed per direction: load the chapter again for the new one
     }));
     row2->add(button(flash_label(settings_.flash_every), [this] {
         static constexpr int kSteps[] = {1, 2, 3, 5, 10, 0};
@@ -360,6 +387,7 @@ void Reader::set_menu(bool open)
     if (!top_bar_ || !bottom_bar_ || open == menu_open_) return;
     menu_open_ = open;
     if (open) {
+        if (subtitle_) subtitle_->set_text(subtitle());
         top_bar_->visible = bottom_bar_->visible = true;
         screen_.layout_node(top_bar_->parent());
         screen_.layout_node(bottom_bar_->parent());

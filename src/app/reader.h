@@ -24,6 +24,8 @@ namespace sumi::app {
 //                  the first page: a start page (previous chapter / back).
 //   Menu           middle tap shows a top bar (back, chapter, page) and a bottom bar (previous /
 //                  next chapter, reading direction, flash cadence). Only the bars refresh.
+//   Loading        opening a chapter loads all its pages in the background (from the current page
+//                  on), so turns rarely wait. This is the evictable page cache, not a download.
 //   Progress       every page shown is saved; reaching the last page marks the chapter read.
 class Reader {
 public:
@@ -68,6 +70,8 @@ private:
     const data::Chapter* neighbor(int step) const;   // +1 = next (newer), -1 = previous (older)
     void save_progress();
     void loading(const std::string& text);
+    void load_chapter();                 // (re)start background loading of every page from the current one
+    std::string subtitle() const;        // top bar second line: manga · page · loading progress
 
     ui::Screen& screen_;
     AppData&    data_;
@@ -84,6 +88,9 @@ private:
     bool           waiting_ = false;   // a page request is in flight
     bool           loading_shown_ = false;   // the loading page is what's on screen
     bool           menu_open_ = false;
+    std::shared_ptr<std::atomic<bool>> load_cancel_;
+    int            loaded_ = 0;        // pages of this chapter ready in the cache
+    ui::Label*     subtitle_ = nullptr;
     ui::Node*      top_bar_ = nullptr;
     ui::Node*      bottom_bar_ = nullptr;
 };

@@ -347,6 +347,10 @@ void test_reader_pages_zones_and_refresh()
     CHECK(env.shows("Start reading: Chapter 1"));
     env.tap(env.find("Chapter 25"));
 
+    // Opening the chapter loads all of it: each page fetched exactly once.
+    CHECK_EQ(env.image_transport.hits.size(), 33);
+    CHECK_EQ(env.image_transport.total_hits(), 33);
+
     // First page: one full-screen flash, what's drawn is what the panel shows.
     CHECK_EQ(bars_on_panel(env), 1);
     CHECK(env.display.calls.back().mode == Wave::GC16_FLASH && env.display.calls.back().rect.h == kH);
@@ -381,6 +385,8 @@ void test_reader_pages_zones_and_refresh()
     middle();
     CHECK(env.shows("Right to left"));
     CHECK(env.shows("Flash: every page"));
+    CHECK(env.shows(std::string(kTitle) + " \xC2\xB7 Page 1 of 33 \xC2\xB7 Chapter loaded"));
+    CHECK_EQ(env.image_transport.total_hits(), 33);                     // turning pages fetched nothing more
     CHECK(env.display.calls.size() > calls);
     for (size_t i = calls; i < env.display.calls.size(); ++i) CHECK(env.display.calls[i].rect.h < kH / 2);
     CHECK_EQ(env.display.stale_pixels(), 0);

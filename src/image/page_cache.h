@@ -33,7 +33,10 @@ public:
     static std::string key(const std::string& url, int part, const ProcessOptions& opt);
 
     bool get(const std::string& key, Entry& out);
-    bool put(const std::string& key, const Entry& entry, std::string& err);
+    // `into_ram` false: disk only (background chapter loading mustn't push the pages being read out of RAM).
+    bool put(const std::string& key, const Entry& entry, std::string& err, bool into_ram = true);
+    // In RAM or on disk, without reading it.
+    bool contains(const std::string& key) const;
 
     uint64_t disk_bytes() const { return disk_bytes_; }
     size_t   disk_files() const { return index_.size(); }
