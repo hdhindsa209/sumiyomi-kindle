@@ -437,3 +437,21 @@ shell (8 screen goldens). Every golden was visually reviewed before it was commi
   **AddressSanitizer** (macOS: no leak detection available).
 - Tooling gotcha: `\uXXXX` sequences written through the agent's file tool get converted to literal characters. The JSON escape
   tests had to be rewritten byte-exactly.
+
+## S5–S6
+- **MangaDex source** (`sources/mangadex`): API v5, 5 req/s. External (licensed) chapters are skipped: many popular
+  titles show 0 chapters (e.g. "Look Back"). That's MangaDex, not a bug.
+- **Fixtures are recorded, not hand-written:** `ext_runner --record`. The M3 shell tests needed a search the keyboard can
+  type ("nee chan no tomodachi"); only that one exchange was recorded and added, so existing fixture values didn't move.
+- **AppData:** every SQLite / network / Lua call runs on the worker (Executor). `InlineExecutor` makes UI tests synchronous.
+  - Opening a manga shows the stored copy first, then refreshes details + chapters and persists them.
+- **Updates** are chapters fetched after the manga joined the library (`date_fetch > date_added`). Browsing doesn't create "updates".
+- **On-screen keyboard:** lower-case + digits + space. Keys are black-and-white-bordered and flagged `bw`, so press = A2 and
+  release = DU. There's no hyphen/uppercase (MangaDex search is case-insensitive and fuzzy).
+- **Shell:** a route stack for back navigation; async results are dropped if the screen changed (generation counter).
+  - Search restores its query + results when you come back from a detail (found by the S6 tests).
+- **Two bugs found by reviewing goldens:** `\n` drew as a missing-glyph box (wrap now treats it as a hard break,
+  ellipsize as a space), and relative dates came from the real clock (the shell now takes an injectable clock).
+- Covers are still initials placeholders: image decoding is M4.
+- The package ships `bin/http_smoke` for on-device TLS/network diagnosis.
+- Stripped Kindle binary: 5.4 MB (design doc estimated 8–14 MB); package 7.6 MB.

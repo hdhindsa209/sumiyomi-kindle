@@ -39,6 +39,23 @@ public:
     virtual Response perform(const Request& req) = 0;
 };
 
+// Always fails: stands in when the real transport can't be created, so the UI shows errors
+// instead of the app refusing to start.
+class FailingTransport final : public Transport {
+public:
+    explicit FailingTransport(std::string reason) : reason_(std::move(reason)) {}
+    Response perform(const Request&) override
+    {
+        Response r;
+        r.error = reason_;
+        r.permanent = true;
+        return r;
+    }
+
+private:
+    std::string reason_;
+};
+
 struct CurlOptions {
     std::string ca_bundle;        // PEM file (assets/certs/cacert.pem); required
     std::string cookie_file;      // persisted cookie jar, empty = in-memory only

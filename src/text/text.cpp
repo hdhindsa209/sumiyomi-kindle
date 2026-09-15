@@ -58,9 +58,14 @@ int32_t Text::measure(std::string_view utf8, const TextStyle& s)
     return px26(w);
 }
 
-std::string Text::ellipsize(std::string_view utf8, const TextStyle& s, int32_t max_width)
+std::string Text::ellipsize(std::string_view in, const TextStyle& s, int32_t max_width)
 {
-    if (measure(utf8, s) <= max_width) return std::string(utf8);
+    // Single-line context: a newline is just a space.
+    std::string flat(in);
+    for (char& c : flat)
+        if (c == '\n') c = ' ';
+    std::string_view utf8 = flat;
+    if (measure(utf8, s) <= max_width) return flat;
     int64_t budget = static_cast<int64_t>(max_width - measure(kEllipsis, s)) * 64;
 
     shape(utf8, s, glyphs_);
@@ -83,6 +88,30 @@ std::vector<std::string> Text::wrap(std::string_view utf8, const TextStyle& s, i
 {
     std::vector<std::string> lines;
     if (max_lines <= 0 || max_width <= 0) return lines;
+
+    // '\n' is a hard break: wrap each paragraph on its own, sharing the line budget.
+    if (size_t nl = utf8.find('\n'); nl != std::string_view::npos) {
+        size_t start = 0;
+        while (start <= utf8.size() && static_cast<int>(lines.size()) < max_lines) {
+            size_t end = utf8.find('\n', start);
+            bool last_para = end == std::string_view::npos;
+            if (last_para) end = utf8.size();
+            int budget = max_lines - static_cast<int>(lines.size());
+            auto para = wrap(utf8.substr(start, end - start), s, max_width, budget);
+            if (para.empty()) para.emplace_back();   // blank line
+            bool more_after = !last_para && static_cast<int>(lines.size() + para.size()) >= max_lines;
+            for (auto& l : para) lines.push_back(std::move(l));
+            if (more_after) {   // text remains beyond the budget: the last line always shows it was cut
+                std::string& l = lines.back();
+                constexpr std::string_view kEll = "\xE2\x80\xA6";
+                bool has_ell = l.size() >= 3 && std::string_view(l).substr(l.size() - 3) == kEll;
+                if (!has_ell) l = ellipsize(l + std::string(kEll), s, max_width);
+            }
+            if (last_para) break;
+            start = end + 1;
+        }
+        return lines;
+    }
 
     std::vector<Glyph> gl;
     shape(utf8, s, gl);

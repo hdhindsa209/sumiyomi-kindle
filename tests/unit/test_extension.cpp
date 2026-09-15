@@ -62,7 +62,7 @@ void test_manifest_and_stable_id()
     CHECK_EQ(m.rate_requests, 5);
     CHECK_EQ(m.rate_per_ms, 1000);
     CHECK_EQ(env.ext->id(), 1280265887656964444LL);             // never changes: library rows depend on it
-    CHECK(env.transport.size() == 6);
+    CHECK(env.transport.size() == 7);
 }
 
 void test_popular_and_latest()

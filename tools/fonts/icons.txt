@@ -39,3 +39,4 @@ info
 bar_chart
 storage
 label
+backspace

@@ -2,7 +2,7 @@
 
 A native manga reader for jailbroken Kindle e-ink devices, modeled on Mihon's UI/UX and rendered
 directly to the framebuffer via [FBInk](https://github.com/NiLuJe/FBInk). Not affiliated with Mihon
-or Amazon. Status: **Milestone 1 (skeleton) complete.**
+or Amazon. Status: **M1 skeleton and M2 render engine done; M3 (data + MangaDex) in device testing.**
 
 - Design: `sumiyomi-design-doc (1).md` · M1 spec: `sumiyomi-M1-implementation-spec.md`
 - Target device facts: `docs/DEVICE_FACTS.md` · Measurements and decisions: `docs/M1-notes.md`
@@ -42,6 +42,15 @@ USBNet must be up; the Kindle is `192.168.15.244` (override with `KINDLE_HOST`).
 
 Then on the Kindle: **KUAL → Sumiyomi → Start Sumiyomi**. Tap the box (A2 invert, latency logged),
 tap outside (GC16/GL16/DU cycle), long-press to exit. Logs: `/mnt/us/sumiyomi/logs/`.
+
+## Extensions
+
+Sources live in `sources/<id>/{manifest.json,source.lua}` (Lua 5.4, sandboxed; API in design doc §6.3).
+
+```sh
+./build/host/ext_runner sources/mangadex --live --search "frieren"        # run a source against the real site
+./build/host/ext_runner sources/mangadex --record tests/fixtures/x ...    # capture fixtures for tests
+```
 
 ## Device checks
 

@@ -1,9 +1,14 @@
 // Sumiyomi: platform setup + the app shell. Same code for both backends:
 // Kindle (FBInk + evdev + epoll) and the host simulator (SDL).
 //   --crash=abort|segv   test only: fault deliberately after the first frame (tools/crash-tests.sh)
+#include "app/app_data.h"
 #include "app/shell.h"
 #include "core/log.h"
 #include "core/loop.h"
+#include "core/worker.h"
+#include "data/db.h"
+#include "net/http.h"
+#include "source/extension.h"
 #include "platform/display.h"
 #include "platform/input.h"
 #include "platform/power.h"
@@ -11,7 +16,9 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <dirent.h>
 #include <memory>
+#include <sys/stat.h>
 #include <string>
 #include <unistd.h>
 #include <vector>
@@ -21,10 +28,33 @@ namespace {
 constexpr uint32_t kTickMs    = 100;   // long-press detection, armed only while needed
 constexpr uint32_t kSdlPollMs = 10;    // fd-less input (simulator only)
 
-std::string assets_dir()
+std::string env_or(const char* name, const char* fallback)
 {
-    const char* env = std::getenv("SUMI_ASSETS");
-    return env ? env : SUMI_ASSETS_DIR;
+    const char* env = std::getenv(name);
+    return env ? env : fallback;
+}
+
+// Every sources/<id>/ with a manifest.json + source.lua (design doc §3.3).
+std::vector<std::unique_ptr<sumi::source::Extension>> load_extensions(const std::string& dir, sumi::net::Client& http)
+{
+    std::vector<std::unique_ptr<sumi::source::Extension>> out;
+    DIR* d = opendir(dir.c_str());
+    if (!d) {
+        SUMI_LOGW("main", "no sources directory at %s", dir.c_str());
+        return out;
+    }
+    while (dirent* e = readdir(d)) {
+        if (e->d_name[0] == '.') continue;
+        std::string err;
+        if (auto ext = sumi::source::Extension::load(dir + "/" + e->d_name, &http, err)) {
+            SUMI_LOGI("main", "source %s %s loaded", ext->manifest().name.c_str(), ext->manifest().version.c_str());
+            out.push_back(std::move(ext));
+        } else {
+            SUMI_LOGW("main", "source %s: %s", e->d_name, err.c_str());
+        }
+    }
+    closedir(d);
+    return out;
 }
 
 } // namespace
@@ -71,8 +101,12 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    std::string assets = env_or("SUMI_ASSETS", SUMI_ASSETS_DIR);
+    std::string data_dir = env_or("SUMI_DATA", SUMI_DATA_DIR);
+    mkdir(data_dir.c_str(), 0755);
+
     sumi::Fonts fonts;
-    if (!fonts.open(assets_dir() + "/fonts", di.dpi, err)) {
+    if (!fonts.open(assets + "/fonts", di.dpi, err)) {
         SUMI_LOGE("main", "fonts: %s", err.c_str());
         input->close();
         display->close();
@@ -85,7 +119,28 @@ int main(int argc, char** argv)
     sumi::RefreshPolicy  policy;
     sumi::FrameScheduler frames(*display, policy);
     sumi::ui::Screen     screen(canvas, text, fonts, frames, di.width, di.height);
-    sumi::app::Shell     shell(screen, di.width, [&loop] { loop.stop(); });
+
+    // Data + network + extensions: used only on the worker thread (design doc §3.1).
+    sumi::data::Db db;
+    if (!db.open(data_dir + "/sumiyomi.db", err)) {
+        SUMI_LOGE("main", "database: %s", err.c_str());
+        input->close();
+        display->close();
+        power.restore();
+        return 1;
+    }
+    auto transport = sumi::net::make_curl_transport(
+        {assets + "/certs/cacert.pem", data_dir + "/cookies.txt", "Sumiyomi/0.3 (manga reader for Kindle)"}, err);
+    if (!transport) SUMI_LOGE("main", "network: %s", err.c_str());
+    sumi::net::FailingTransport offline("network unavailable: " + err);
+    sumi::net::Client http(transport ? *transport : static_cast<sumi::net::Transport&>(offline));
+    sumi::Worker worker(loop);
+    if (!worker.start(err)) {
+        SUMI_LOGE("main", "worker: %s", err.c_str());
+        return 1;
+    }
+    sumi::app::AppData app_data(worker, db, load_extensions(env_or("SUMI_SOURCES", SUMI_SOURCES_DIR), http));
+    sumi::app::Shell shell(screen, app_data, di.width, [&loop] { loop.stop(); });
 
     uint64_t t_start = sumi::mono_ms();
     shell.start();
@@ -139,6 +194,7 @@ int main(int argc, char** argv)
 
     loop.run();
 
+    worker.stop();   // before the data the jobs use goes away
     input->close();
     display->close();   // one GC16 flashing clear
     power.restore();

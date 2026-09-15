@@ -24,8 +24,8 @@ cp "$ROOT/assets/certs/cacert.pem" "$PKG/assets/certs/"
 cp -R "$ROOT/sources" "$PKG/sources"
 
 # Strip inside the toolchain container (paths are relative to the repo mounted at /src).
-"$ROOT/tools/kbuild.sh" arm-kindlehf-linux-gnueabihf-strip -o build/package/sumiyomi/bin/sumiyomi build/kindle/bin/sumiyomi
-chmod +x "$PKG/bin/sumiyomi"
+"$ROOT/tools/kbuild.sh" sh -c 'for b in sumiyomi http_smoke; do arm-kindlehf-linux-gnueabihf-strip -o build/package/sumiyomi/bin/$b build/kindle/bin/$b; done'
+chmod +x "$PKG/bin/sumiyomi" "$PKG/bin/http_smoke"
 
 echo "packaged: $PKG"
 ls -l "$PKG" "$PKG/bin"

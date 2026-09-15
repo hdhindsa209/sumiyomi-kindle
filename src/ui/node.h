@@ -109,6 +109,9 @@ public:
     virtual bool on_page(bool forward) { (void)forward; return false; }
     virtual bool pages() const { return false; }
 
+    // The text a node displays, if it's a text leaf (Label). For tests and accessibility-style lookups.
+    virtual const std::string* label_text() const { return nullptr; }
+
     // --- damage ---
     void mark_dirty();                               // content changed: repaint + refresh this frame
     bool dirty() const { return dirty_; }
@@ -136,6 +139,7 @@ public:
 
     void set_text(std::string text);
     const std::string& text() const { return text_; }
+    const std::string* label_text() const override { return &text_; }
     Align text_align = Align::Start;
 
     Size measure(Text& text, Fonts& fonts, int32_t max_w, int32_t max_h) override;

@@ -1,11 +1,14 @@
-// M2 S6: the shell driven through a FakeDisplay. Checks navigation, in-place tab swaps,
-// paging, and per-row updates by the refreshes they produce; goldens lock the screens in.
+// M3 S6: the shell on real data — MangaDex source (recorded fixtures), in-memory SQLite, inline
+// executor (async results arrive synchronously). Navigation, search via the on-screen keyboard,
+// detail, library persistence, updates, error states; goldens lock the screens in.
 #include "app/shell.h"
 
 #include "check.h"
 #include "fake_display.h"
+#include "fixture_transport.h"
 #include "golden.h"
 
+#include <functional>
 #include <string>
 
 using namespace sumi;
@@ -15,6 +18,12 @@ namespace {
 
 Fonts* g_fonts = nullptr;
 constexpr int32_t kW = 1072, kH = 1448;
+constexpr const char* kTitle = "Nee-chan no Tomodachi ga Uzai Hanashi";
+
+net::Client::Clock no_wait()
+{
+    return {[] { return uint64_t{0}; }, [](uint64_t) {}, [] { return 0.5; }};
+}
 
 struct Env {
     FakeDisplay    display;
@@ -24,17 +33,30 @@ struct Env {
     RefreshPolicy  policy;
     FrameScheduler frames;
     Screen         screen;
+
+    fixtures::ReplayTransport transport{SUMI_SOURCE_DIR "/tests/fixtures/mangadex"};
+    net::Client    client{transport, no_wait()};
+    InlineExecutor exec;
+    data::Db       db;
+    std::unique_ptr<app::AppData> data;
+    std::unique_ptr<app::Shell>   shell;
     bool           exited = false;
-    app::Shell     shell;
     uint64_t       t = 10000;
 
     Env()
         : display(kW, kH, kW), canvas(display.framebuffer(), kW, kH, kW, false), text(*g_fonts, cache),
-          frames(display, policy), screen(canvas, text, *g_fonts, frames, kW, kH),
-          shell(screen, kW, [this] { exited = true; })
+          frames(display, policy), screen(canvas, text, *g_fonts, frames, kW, kH)
     {
         policy.set_flash_interval(0);
-        shell.start();
+        std::string err;
+        CHECK(db.open(":memory:", err));
+        std::vector<std::unique_ptr<source::Extension>> exts;
+        if (auto ext = source::Extension::load(SUMI_SOURCE_DIR "/sources/mangadex", &client, err)) exts.push_back(std::move(ext));
+        data = std::make_unique<app::AppData>(exec, db, std::move(exts));
+        // Fixed "now" (2026-09-14 13:00 UTC) so relative dates in goldens never drift.
+        shell = std::make_unique<app::Shell>(screen, *data, kW, [this] { exited = true; },
+                                             [] { return int64_t{1789344000000LL + 13 * 3600000LL}; });
+        shell->start();
         screen.frame();
     }
 
@@ -46,164 +68,146 @@ struct Env {
         screen.on_event(e); screen.frame();
         t += 1000;
     }
-    void swipe_up(Point p)
+    void tap(Node* n)
     {
-        RawEvent e; e.kind = RawKind::Down; e.pos = p; e.t_ms = t;
-        screen.on_event(e);
-        e.kind = RawKind::Move; e.pos.y -= 150; e.t_ms = t + 100; screen.on_event(e);
-        e.kind = RawKind::Move; e.pos.y -= 150; e.t_ms = t + 200; screen.on_event(e);
-        e.kind = RawKind::Up; e.t_ms = t + 250; screen.on_event(e);
-        screen.frame();
-        t += 1000;
+        CHECK(n != nullptr);
+        if (n) tap({n->frame().x + n->frame().w / 2, n->frame().y + n->frame().h / 2});
+    }
+    void key(Key k)
+    {
+        RawEvent e; e.kind = RawKind::Key; e.key = k; e.pressed = true; e.t_ms = t++;
+        screen.on_event(e); screen.frame();
     }
     Node* root() { return screen.root(); }
-    Node* nav() { return root()->children().back().get(); }
-    Point nav_cell(int i)
+    Node* nav_cell(int i) { return root()->children().back()->children()[static_cast<size_t>(i)].get(); }
+
+    // The nearest pressable ancestor (or the node itself) of the first visible text leaf showing `label`.
+    Node* find(const std::string& label)
     {
-        Rect r = nav()->children()[static_cast<size_t>(i)]->frame();
-        return {r.x + r.w / 2, r.y + r.h / 2};
+        std::function<Node*(Node*)> walk = [&](Node* n) -> Node* {
+            if (!n->visible) return nullptr;
+            if (const std::string* s = n->label_text(); s && *s == label) {
+                for (Node* p = n; p; p = p->parent())
+                    if (p->pressable()) return p;
+                return n;
+            }
+            for (auto& c : n->children())
+                if (Node* hit = walk(c.get())) return hit;
+            return nullptr;
+        };
+        return root() ? walk(root()) : nullptr;
     }
+    bool shows(const std::string& label) { return find(label) != nullptr; }
+
     bool golden(const std::string& name)
     {
         std::string why;
-        bool ok = golden::match("shell_" + name, display.fb.data(), kW, kH, why);
+        bool ok = golden::match("m3_" + name, display.fb.data(), kW, kH, why);
         if (!ok) std::fprintf(stderr, "golden %s: %s\n", name.c_str(), why.c_str());
         return ok;
     }
 };
 
-bool same(Rect a, Rect b) { return a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h; }
-bool covers(Rect outer, Rect inner) { return outer.clipped(inner).area() == inner.area(); }
-
-void test_library_is_entry_screen()
+void open_mangadex(Env& env)
 {
-    Env env;
-    CHECK_EQ(env.display.calls.size(), 1);
-    CHECK(env.display.calls[0].mode == Wave::GC16_FLASH);
-    CHECK(env.golden("library"));
+    env.tap(env.nav_cell(3));   // Browse
+    env.tap(env.find("MangaDex"));
 }
 
-void test_nav_switches_screens_with_one_flash()
+void test_library_starts_empty()
 {
     Env env;
-    const char* names[] = {"library", "updates", "history", "browse", "more"};
-    for (int i : {1, 2, 3, 4, 0}) {
-        env.display.calls.clear();
-        env.tap(env.nav_cell(i));
-        CHECK(!env.display.calls.empty());
-        CHECK(env.display.calls.front().mode == Wave::A2);            // press feedback first
-        CHECK(env.display.calls.back().mode == Wave::GC16_FLASH);     // then the new screen, once
-        CHECK_EQ(env.display.calls.back().rect.h, kH);
-        if (i != 0) CHECK(env.golden(names[i]));
-    }
+    CHECK(env.shows("Your library is empty.\nAdd manga from a source in Browse."));
+    CHECK(env.golden("library_empty"));
+    env.tap(env.find("Browse sources"));
+    CHECK(env.shows("MangaDex"));
 }
 
-void test_category_tab_swaps_body_only()
+void test_browse_source_popular_grid_and_load_more_error()
 {
     Env env;
-    Node* body = env.root()->children()[1].get();
-    Rect tab_strip = body->children()[0]->frame();
-    Rect second_tab = body->children()[0]->children()[1]->frame();
-    env.display.calls.clear();
-    env.tap({second_tab.x + second_tab.w / 2, second_tab.y + second_tab.h / 2});
-    CHECK(!env.display.calls.empty());
-    const auto& last = env.display.calls.back();
-    CHECK(last.mode == Wave::GL16);                                   // gray covers: not DU
-    // §8.2 asks for the content area only; the body is 83% of the screen, so RefreshPolicy's
-    // >60% rule (§7.2) promotes it to full screen. Either way it's one GL16, no flash.
-    CHECK(covers(last.rect, body->frame()));
-    CHECK(covers(last.rect, tab_strip));
-    CHECK_EQ(env.display.calls.size(), 3);                            // A2 press, GL16 release, GL16 body
-    CHECK(env.root()->children()[1].get() == body);                   // body swapped in place
+    open_mangadex(env);
+    CHECK(env.shows("Popular") && env.shows("Latest"));
+    CHECK(env.shows("Chainsaw Man"));                             // from the recorded popular list
+    CHECK(env.golden("source_popular"));
+
+    // Page to the end: "Load more". Page 2 isn't recorded, so the load fails with a retry.
+    for (int i = 0; i < 10 && !env.shows("Load more"); ++i) env.key(Key::PageNext);
+    CHECK(env.shows("Load more"));
+    env.tap(env.find("Load more"));
+    CHECK(env.shows("Couldn't load more \xC2\xB7 Retry"));
+    for (int i = 0; i < 10; ++i) env.key(Key::PagePrev);
+    CHECK(env.shows("Chainsaw Man"));                             // the loaded results are kept
+    CHECK(env.shell->on_back());
+    CHECK(env.shows("Sources"));
 }
 
-void test_open_manga_back_and_toggle_chapter()
+void test_search_with_keyboard_detail_and_library_state()
 {
     Env env;
-    // First cover of "Reading".
-    Node* list = env.root()->children()[1]->children()[1].get();
-    Rect cover = list->children()[0]->children()[0]->frame();
-    env.tap({cover.x + cover.w / 2, cover.y + cover.h / 3});
-    CHECK(env.display.calls.back().mode == Wave::GC16_FLASH);
+    open_mangadex(env);
+    env.tap(env.root()->children()[0]->children().back().get()); // app bar: search action
+    CHECK(env.shows("Type a title, then tap search."));
+    for (char c : std::string("nee chan no tomodachi")) env.tap(env.find(c == ' ' ? "space" : std::string(1, c)));
+    auto* field = static_cast<TextField*>(env.root()->children()[1].get());
+    CHECK(field->text() == "nee chan no tomodachi");
+    CHECK(env.golden("search_typing"));
+
+    Node* keyboard = env.root()->children()[3].get();
+    env.tap(keyboard->children()[4]->children()[1].get());       // bottom row: search key
+    CHECK(!keyboard->visible);
+    CHECK(env.shows(kTitle));
+
+    env.tap(env.find(kTitle));
+    CHECK(env.shows("Azusa Kina"));
+    CHECK(env.shows("29 chapters"));
+    CHECK(env.shows("Ch.25"));
+    CHECK(env.shows("Add to library"));
     CHECK(env.golden("detail"));
 
-    // Detail: [app bar, PagedList, CTA]. Tap a chapter row: one DU refresh of that row.
-    auto* chapters = static_cast<PagedList*>(env.root()->children()[1].get());
-    Node* row = nullptr;
-    for (auto& c : chapters->children())
-        if (c->visible && c->pressable() && c->frame().h == 112) { row = c.get(); break; }
-    CHECK(row != nullptr);
-    if (row) {
-        Rect r = row->frame();
-        env.display.calls.clear();
-        env.tap({r.x + 300, r.y + 50});
-        bool row_du = false;
-        for (const auto& c : env.display.calls) row_du = row_du || (c.mode == Wave::DU && same(c.rect, r));
-        CHECK(row_du);
-    }
+    env.tap(env.find("Add to library"));
+    CHECK(env.shows("In library"));
+    env.tap(env.find("Ch.25"));                                   // mark read
+    data::Repo repo(env.db);
+    auto lib = repo.library();
+    CHECK_EQ(lib.size(), 1);
+    if (!lib.empty()) CHECK_EQ(lib[0].unread, 28);
 
-    // Back (system back and the app bar arrow both work).
-    CHECK(env.shell.on_back());
-    env.screen.frame();
-    CHECK(env.display.calls.back().mode == Wave::GC16_FLASH);
-    CHECK(!env.shell.on_back());                                       // top level
+    CHECK(env.shell->on_back());                                  // detail -> search results
+    CHECK(env.shows(kTitle));
 }
 
-void test_paging_in_chapter_list()
+void test_library_shows_saved_manga_and_reopens_detail()
 {
     Env env;
-    Node* list = env.root()->children()[1]->children()[1].get();
-    Rect cover = list->children()[0]->children()[0]->frame();
-    env.tap({cover.x + cover.w / 2, cover.y + cover.h / 3});
-    auto* chapters = static_cast<PagedList*>(env.root()->children()[1].get());
-    int first = chapters->first_visible(), last = chapters->last_visible();
-    CHECK(chapters->can_page_forward());
-
-    env.display.calls.clear();
-    Rect f = chapters->frame();
-    env.swipe_up({f.x + 500, f.y + f.h / 2});
-    CHECK_EQ(chapters->first_visible(), last);                         // one item of overlap
-    CHECK(chapters->last_visible() > last);
-    CHECK_EQ(env.display.calls.size(), 1);                             // one refresh per page
-    CHECK(covers(env.display.calls[0].rect, f));                       // list area (promoted if > 60%)
-    CHECK(env.display.calls[0].mode == Wave::GL16);
-    CHECK(env.golden("detail_page2"));
-
-    RawEvent k; k.kind = RawKind::Key; k.key = Key::PagePrev; k.pressed = true;
-    env.screen.on_event(k);
-    env.screen.frame();
-    CHECK_EQ(chapters->first_visible(), first);
+    source::SManga seed{"/manga/d2d22b38-4b3f-4ffb-9387-d18f870d5a91", kTitle, "", "", "", "", {}, 0};
+    int64_t id = 0;
+    env.data->open_manga(env.data->sources()[0].id, seed, [&](app::MangaView v, bool, std::string) { id = v.manga.id; });
+    env.data->set_favorite(id, true, [](bool) {});
+    env.tap(env.nav_cell(1));                                     // Updates
+    env.tap(env.nav_cell(0));                                     // Library reloads from the DB
+    CHECK(env.shows(kTitle));
+    CHECK(env.golden("library_one"));
+    env.tap(env.find(kTitle));
+    CHECK(env.shows("In library"));
+    CHECK(env.shell->on_back());
+    CHECK(env.shows(kTitle));
 }
 
-void test_display_sheet_toggle_rebuilds_library()
+void test_updates_refresh_reports()
 {
     Env env;
-    Node* bar = env.root()->children()[0].get();
-    Rect tune = bar->children()[2]->frame();                            // [title, search, tune, more]
-    env.tap({tune.x + tune.w / 2, tune.y + tune.h / 2});
-    CHECK(env.screen.overlay() != nullptr);
-    CHECK(env.golden("library_display_sheet"));
-    Node* first_switch_row = env.screen.overlay()->children()[2].get(); // [handle, title, row, row, row]
-    Rect r = first_switch_row->frame();
-    env.display.calls.clear();
-    env.tap({r.x + 300, r.y + 50});
-    bool body_refresh = false;
-    for (const auto& c : env.display.calls) body_refresh = body_refresh || c.mode == Wave::GL16;
-    CHECK(body_refresh);
+    env.tap(env.nav_cell(1));
+    CHECK(env.shows("No new chapters yet.\nTap refresh to check your library."));
+    env.tap(env.root()->children()[0]->children().back().get()); // app bar: refresh
+    CHECK(env.shows("No new chapters"));
 }
 
-void test_more_exit_row()
+void test_more_exit()
 {
     Env env;
     env.tap(env.nav_cell(4));
-    auto* list = static_cast<PagedList*>(env.root()->children()[1].get());
-    Node* exit_row = list->children().back().get();
-    if (!exit_row->visible) {                                          // page to it if needed
-        RawEvent k; k.kind = RawKind::Key; k.key = Key::PageNext; k.pressed = true;
-        env.screen.on_event(k); env.screen.frame();
-    }
-    Rect r = exit_row->frame();
-    env.tap({r.x + 300, r.y + 50});
+    env.tap(env.find("Exit Sumiyomi"));
     CHECK(env.exited);
 }
 
@@ -218,12 +222,11 @@ int main()
         return 1;
     }
     g_fonts = &fonts;
-    RUN(test_library_is_entry_screen);
-    RUN(test_nav_switches_screens_with_one_flash);
-    RUN(test_category_tab_swaps_body_only);
-    RUN(test_open_manga_back_and_toggle_chapter);
-    RUN(test_paging_in_chapter_list);
-    RUN(test_display_sheet_toggle_rebuilds_library);
-    RUN(test_more_exit_row);
+    RUN(test_library_starts_empty);
+    RUN(test_browse_source_popular_grid_and_load_more_error);
+    RUN(test_search_with_keyboard_detail_and_library_state);
+    RUN(test_library_shows_saved_manga_and_reopens_detail);
+    RUN(test_updates_refresh_reports);
+    RUN(test_more_exit);
     return check_result();
 }

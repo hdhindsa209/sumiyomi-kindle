@@ -1,65 +1,89 @@
 #pragma once
+#include <cstdint>
 #include <functional>
 #include <memory>
+#include <string>
 #include <vector>
 
-#include "app/fake_data.h"
+#include "app/app_data.h"
+#include "ui/keyboard.h"
 #include "ui/paged_list.h"
 #include "ui/screen.h"
 
 namespace sumi::app {
 
-// The M2 deliverable: a navigable Mihon-shaped shell over fake data (design doc §8).
-// Library (category tabs + cover grid) → manga detail (chapters, sticky CTA), Updates, History,
-// Browse (tabs), More (settings switches, exit), a Display sheet, paged scroll everywhere.
+// The app shell on real data (M3): Library / Updates / History / Browse / More, source browsing,
+// search with the on-screen keyboard, manga detail with persisted library + read state.
+//
+// Screens build immediately with loading placeholders; AppData results fill them in place when
+// they arrive. Every async callback checks the generation it was started in, so results for a
+// screen the user already left are dropped.
 class Shell {
 public:
-    Shell(ui::Screen& screen, int32_t width, std::function<void()> on_exit);
+    // `now_ms`: wall clock for relative dates (injectable so tests render deterministic dates).
+    Shell(ui::Screen& screen, AppData& data, int32_t width, std::function<void()> on_exit,
+          std::function<int64_t()> now_ms = nullptr);
 
     void start();
-    // System back (simulator Esc): returns false when already at a top-level tab.
+    // System back (simulator Esc): returns false at a top-level tab.
     bool on_back();
 
 private:
     enum Tab { kLibrary, kUpdates, kHistory, kBrowse, kMore };
 
-    void show_tab(int tab);
-    std::unique_ptr<ui::Node> scaffold(std::unique_ptr<ui::Node> app_bar, std::unique_ptr<ui::Node> body, int nav_index);
+    struct Route {
+        enum Kind { TabRoot, Source, Search, Detail };
+        Route(Kind k = TabRoot, int tab_index = kLibrary) : kind(k), tab(tab_index) {}
+        Kind           kind;
+        int            tab;
+        int64_t        source = 0;
+        Browse         mode = Browse::Popular;
+        std::string    query;         // Search: the last query run, restored on back
+        source::SManga seed;          // Detail from a source listing
+        int64_t        manga_id = 0;  // Detail from the library / updates / history
+    };
 
-    std::unique_ptr<ui::Node> library_screen();
-    std::unique_ptr<ui::Node> library_body();
-    void set_category(int category);
-    void show_display_sheet();
+    void go(Route r, bool push = true);
+    void show(const Route& r);
+    uint64_t begin();   // new screen generation
+    bool current(uint64_t gen) const { return gen == generation_; }
 
-    std::unique_ptr<ui::Node> updates_screen();
-    std::unique_ptr<ui::Node> history_screen();
-    std::unique_ptr<ui::Node> browse_screen();
-    std::unique_ptr<ui::Node> browse_body();
-    void set_browse_tab(int tab);
-    std::unique_ptr<ui::Node> more_screen();
+    std::unique_ptr<ui::Node> scaffold(std::unique_ptr<ui::Node> bar, std::unique_ptr<ui::Node> body, int nav_index);
+    void set_body_items(std::vector<std::unique_ptr<ui::Node>> items);
 
-    void open_manga(size_t index);
-    std::unique_ptr<ui::Node> chapter_row(size_t manga, size_t chapter);
-    void toggle_read(size_t manga, size_t chapter);
-    std::string cta_label(const FakeManga& m) const;
+    void show_library();
+    void show_updates();
+    void show_history();
+    void show_browse();
+    void show_more();
+    void show_source(int64_t source, Browse mode);
+    void load_source_page(uint64_t gen, int64_t source, Browse mode, const std::string& query, int page);
+    void show_search(const Route& r);
+    void run_search(uint64_t gen, int64_t source);
+    void show_detail(const Route& r);
+    void fill_detail(uint64_t gen, MangaView view, bool refreshed, const std::string& err);
 
-    ui::Screen&   screen_;
-    int32_t       width_;
+    ui::Screen& screen_;
+    AppData&    data_;
+    int32_t     width_;
     std::function<void()> on_exit_;
+    std::function<int64_t()> now_ms_;
 
-    std::vector<FakeManga> library_;
-    int  tab_          = kLibrary;
-    int  category_     = 0;
-    int  browse_tab_   = 0;
-    long open_manga_   = -1;
-    bool downloaded_only_ = false;
-    bool incognito_       = false;
-    bool show_badges_     = true;
+    std::vector<Route> stack_;
+    uint64_t generation_ = 0;
+    int      browse_tab_ = 0;
+    bool     downloaded_only_ = false;
+    bool     incognito_ = false;
 
-    ui::Node*      body_         = nullptr;   // swapped in place on category / browse tab changes
-    ui::PagedList* chapter_list_ = nullptr;
-    ui::Label*     cta_label_    = nullptr;
-    size_t         chapter_row_offset_ = 0;   // header items before the first chapter row
+    // Current screen's live parts (valid for the current generation only).
+    ui::PagedList* list_ = nullptr;
+    ui::Node*      status_bar_ = nullptr;   // Updates: "Updating…" line
+    std::vector<source::SManga> results_;
+    int            next_page_ = 1;
+    ui::TextField* field_ = nullptr;
+    ui::Node*      keyboard_ = nullptr;
+    std::string    query_;
+    MangaView      view_;
 };
 
 } // namespace sumi::app

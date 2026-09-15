@@ -40,5 +40,6 @@ inline constexpr char32_t info = 0xe88e;
 inline constexpr char32_t bar_chart = 0xe26b;
 inline constexpr char32_t storage = 0xe1db;
 inline constexpr char32_t label = 0xe893;
+inline constexpr char32_t backspace = 0xe14a;
 
 } // namespace sumi::icon

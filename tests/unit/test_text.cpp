@@ -124,6 +124,24 @@ void test_wrap_max_lines_ellipsizes()
     CHECK(t.wrap("   ", s, 300, 3).empty());
 }
 
+void test_wrap_hard_newlines()
+{
+    GlyphCache cache;
+    Text t(*g_fonts, cache);
+    TextStyle s = body();
+    auto lines = t.wrap("Your library is empty.\nAdd manga from Browse.", s, 900, 3);
+    CHECK_EQ(lines.size(), 2);
+    if (lines.size() == 2) {
+        CHECK(lines[0] == "Your library is empty.");
+        CHECK(lines[1] == "Add manga from Browse.");
+    }
+    auto cut = t.wrap("one\ntwo\nthree", s, 900, 2);
+    CHECK_EQ(cut.size(), 2);
+    if (cut.size() == 2) CHECK(cut[1].compare(cut[1].size() - 3, 3, "\xE2\x80\xA6") == 0);
+    CHECK_EQ(t.wrap("a\n\nb", s, 900, 5).size(), 3);                // blank line kept
+    CHECK(t.ellipsize("one\ntwo", s, 900) == "one two");
+}
+
 void test_wrap_breaks_long_word()
 {
     GlyphCache cache;
@@ -249,6 +267,7 @@ int main()
     RUN(test_ellipsize);
     RUN(test_wrap_basic_and_width);
     RUN(test_wrap_max_lines_ellipsizes);
+    RUN(test_wrap_hard_newlines);
     RUN(test_wrap_breaks_long_word);
     RUN(test_draw_places_ink);
     RUN(test_draw_respects_clip);
