@@ -10,6 +10,7 @@
 #include "core/executor.h"
 #include "data/repo.h"
 #include "image/page_cache.h"
+#include "net/fetch_pool.h"
 #include "net/http.h"
 #include "source/extension.h"
 
@@ -88,6 +89,12 @@ public:
     // `downloads_dir`: where downloaded chapters are kept (empty: downloads fail).
     AppData(Executor& exec, data::Db& db, std::vector<std::unique_ptr<source::Extension>> extensions,
             net::Client* images = nullptr, image::PageCache* cache = nullptr, std::string downloads_dir = "");
+
+    // Device threading for the reader (main): `pool` fetches chapter images several at a time; `pages`
+    // is a thread that only reads the page cache, so turning to a loaded page never waits behind the
+    // worker (a download, a library check). Either may be null (tests): everything uses the worker.
+    // Call before any job runs.
+    void set_reader_threads(net::FetchPool* pool, Executor* pages) { pool_ = pool; pages_ = pages; }
 
     // UI-thread safe: fixed at construction.
     const std::vector<SourceInfo>& sources() const { return sources_; }
@@ -170,8 +177,10 @@ public:
     // page cache, starting at `start` and continuing to the end, then the pages before it. This is
     // *loading* for reading, not downloading: pages live in the evictable cache. Cached pages are
     // skipped. Stops when `cancel` is set. `progress` runs on the UI thread after each page.
+    // `done` (UI thread) runs once every page was tried, with how many failed; never after a cancel.
     void load_chapter(int64_t source, std::vector<std::string> urls, int start, const image::ProcessOptions& opt,
-                      std::shared_ptr<std::atomic<bool>> cancel, std::function<void(int loaded, int total)> progress);
+                      std::shared_ptr<std::atomic<bool>> cancel, std::function<void(int loaded, int total)> progress,
+                      std::function<void(int loaded, int failed)> done = nullptr);
     // --- downloads (M5) ---
     // Downloading keeps a chapter on the device: the original image files, in downloads_dir, never
     // evicted, used by the reader instead of the network. Only ever started by the user.
@@ -199,6 +208,10 @@ private:
     source::Extension* extension(int64_t source);
     bool fetch_page(int64_t source, const std::string& url, const image::ProcessOptions& opt, bool into_ram,
                     std::vector<image::Gray>& parts, std::string& err);
+    net::Request image_request(int64_t source, const std::string& url);
+    // Worker: decode + process a fetched image and cache every part.
+    bool process_page_bytes(const std::string& url, const net::Response& res, uint64_t fetch_ms, const image::ProcessOptions& opt,
+                            bool into_ram, std::vector<image::Gray>& parts, std::string& err);
     void refresh(source::Extension* ext, data::Manga manga,
                  const std::function<void(MangaView, bool, std::string)>& update);
 
@@ -209,6 +222,8 @@ private:
     std::vector<SourceInfo> sources_;
     net::Client*       images_;
     image::PageCache*  cache_;
+    net::FetchPool*    pool_ = nullptr;
+    Executor*          pages_ = nullptr;
     std::string        downloads_dir_;
     std::function<void(const data::DownloadItem&, bool)> download_listener_;
     bool               downloading_ = false;   // worker: a download chain is running

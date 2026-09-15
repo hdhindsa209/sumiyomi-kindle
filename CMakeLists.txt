@@ -187,6 +187,7 @@ target_link_libraries(sumi_data PUBLIC sumi_core sqlite3)
 # Net: HTTP client over libcurl + mbedTLS (M3 S2).
 add_library(sumi_net STATIC
   src/net/http.cpp
+  src/net/fetch_pool.cpp
   src/net/curl_transport.cpp)
 target_link_libraries(sumi_net PUBLIC sumi_core libcurl_static)
 

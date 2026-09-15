@@ -147,25 +147,38 @@ void Reader::start(int64_t chapter_id, int start_page, bool from_end)
             Pos p;
             p.image = from_end ? n - 1 : std::clamp(start_page, 0, n - 1);
             pos_ = p;
-            show(p, Change::NewScreen, from_end);
-            load_chapter();
+            load_chapter("Loading chapter", [this, p, from_end] { show(p, Change::NewScreen, from_end); });
         });
     });
 }
 
-void Reader::load_chapter()
+void Reader::load_chapter(const std::string& title, std::function<void()> then)
 {
     if (!alive_ || view_.pages.empty()) return;
     if (load_cancel_) load_cancel_->store(true);
     load_cancel_ = std::make_shared<std::atomic<bool>>(false);
     loaded_ = 0;
+    ++request_;
+    waiting_ = true;
+    int total = static_cast<int>(view_.pages.size());
+    loading(title + kEllipsis);
     std::weak_ptr<int> alive = alive_;
+    uint64_t req = request_;
     data_.load_chapter(view_.manga.source_id, view_.pages, pos_.image, process_options(), load_cancel_,
-                       [this, alive](int loaded, int) {
-                           if (alive.expired()) return;
-                           loaded_ = loaded;
-                           if (menu_open_ && subtitle_) subtitle_->set_text(subtitle());   // only the bar refreshes
-                       });
+        [this, alive, req, title, total](int loaded, int) {
+            if (alive.expired()) return;
+            loaded_ = loaded;
+            // Only the count changes, in place: no flash while pages arrive.
+            if (req == request_ && loading_shown_ && loading_label_) {
+                loading_label_->set_text(title + "\n" + std::to_string(loaded) + " of " + std::to_string(total) + " pages");
+                screen_.relayout(loading_label_);
+            }
+        },
+        [this, alive, req, then](int loaded, int) {
+            if (alive.expired() || req != request_) return;
+            loaded_ = loaded;
+            then();   // pages that failed show their own error with a retry when reached
+        });
 }
 
 std::string Reader::subtitle() const
@@ -213,7 +226,9 @@ void Reader::loading(const std::string& text)
         subtitle_ = nullptr;
         menu_open_ = false;
         loading_shown_ = true;
-        screen_.set_root(loading_page(text, [this] { cb_.exit(); }), Change::Loading);
+        auto page = loading_page(text, [this] { cb_.exit(); });
+        loading_label_ = static_cast<Label*>(page->children()[0].get());
+        screen_.set_root(std::move(page), Change::Loading);
     };
     // The very first screen always appears at once; later ones only if the page is slow.
     if (schedule_ && shown_) schedule_(kLoadingDelayMs, show_page);
@@ -498,7 +513,11 @@ void Reader::set_menu(bool open)
         screen_.repaint(b, Wave::GL16);
         if (pages_changed_) {
             pages_changed_ = false;
-            load_chapter();
+            // The page under the menu already shows the new settings: it only comes back if a loading page covered it.
+            load_chapter("Applying settings", [this] {
+                if (loading_shown_) show(pos_, Change::NewScreen);
+                else waiting_ = false;
+            });
         }
     }
 }

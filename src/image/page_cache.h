@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <list>
+#include <mutex>
 #include <map>
 #include <string>
 #include <utility>
@@ -38,10 +39,10 @@ public:
     // In RAM or on disk, without reading it.
     bool contains(const std::string& key) const;
 
-    uint64_t disk_bytes() const { return disk_bytes_; }
-    size_t   disk_files() const { return index_.size(); }
-    size_t   ram_pages() const { return ram_.size(); }
-    void     clear_ram() { ram_.clear(); }
+    uint64_t disk_bytes() const { std::lock_guard<std::mutex> l(mu_); return disk_bytes_; }
+    size_t   disk_files() const { std::lock_guard<std::mutex> l(mu_); return index_.size(); }
+    size_t   ram_pages() const { std::lock_guard<std::mutex> l(mu_); return ram_.size(); }
+    void     clear_ram() { std::lock_guard<std::mutex> l(mu_); ram_.clear(); }
 
 private:
     struct DiskEntry { uint64_t size; uint64_t stamp; };
@@ -51,6 +52,7 @@ private:
     void touch(const std::string& key);
     void evict();
 
+    mutable std::mutex mu_;   // the reader's page thread reads while the worker writes
     std::string dir_;
     uint64_t    cap_;
     size_t      ram_cap_;

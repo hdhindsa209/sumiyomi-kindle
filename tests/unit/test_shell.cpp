@@ -58,6 +58,16 @@ struct Env {
     std::unique_ptr<app::AppData> data;
     std::unique_ptr<app::Shell>   shell;
     FakeFrontlight light;
+    // Device loop: the reader's threads as on the Kindle (fetch pool + page-cache thread).
+    struct Locked final : net::Transport {
+        explicit Locked(net::Transport& t, std::mutex& m) : inner(t), mu(m) {}
+        net::Response perform(const net::Request& r) override { std::lock_guard<std::mutex> l(mu); return inner.perform(r); }
+        net::Transport& inner;
+        std::mutex& mu;
+    };
+    std::mutex     transport_mu;
+    Worker         pages_worker{loop};
+    std::unique_ptr<net::FetchPool> pool;
     bool           exited = false;
     uint64_t       t = 10000;
 
@@ -74,6 +84,8 @@ struct Env {
         if (device_loop) {
             CHECK(loop.init(err) && worker.start(err));
             app::paint_on_results(worker, loop, screen);
+            CHECK(pages_worker.start(err));
+            app::paint_on_results(pages_worker, loop, screen);
             exec = &worker;
         }
         std::string rm = "rm -rf " + cache_dir;
@@ -81,6 +93,10 @@ struct Env {
         (void)rc;
         CHECK(page_cache.init(err));
         data = std::make_unique<app::AppData>(*exec, db, std::move(exts), &images, &page_cache, cache_dir + "/downloads");
+        if (device_loop) {
+            pool = std::make_unique<net::FetchPool>(3, [this] { return std::make_unique<Locked>(image_transport, transport_mu); }, no_wait);
+            data->set_reader_threads(pool.get(), &pages_worker);
+        }
         // Fixed "now" (2026-09-14 13:00 UTC) so relative dates in goldens never drift.
         app::Shell::Schedule schedule;
         if (device_loop)   // as main.cpp: one-shot timers on the event loop, painting after they run
@@ -115,6 +131,8 @@ struct Env {
     }
     ~Env()
     {
+        pool.reset();
+        pages_worker.stop();
         worker.stop();
         std::string rm = "rm -rf " + cache_dir;
         int rc = std::system(rm.c_str());
@@ -507,8 +525,8 @@ void test_reader_page_error_and_cancel()
 
 void test_device_loop_reader()
 {
-    // Real event loop + worker + deferred loading pages: the page must reach the panel on its own,
-    // and a turn to a page that's already cached must not show a loading page at all.
+    // Real event loop + worker + fetch pool + page thread + deferred loading pages: the chapter loads
+    // whole, the page reaches the panel on its own, and turns never show a loading page.
     Env env(true);
     CHECK(env.run_until([&] { return env.shows("Browse sources"); }));
     source::SManga seed{"/series/01KTEH8Z2TJ9NQ2NDZ75EM36SS/neechan-no-tomodachi-ga-uzai-hanashi", kTitle, "", "", "", "", {}, 0};
@@ -527,8 +545,11 @@ void test_device_loop_reader()
     CHECK(env.run_until([&] { return bars_on_panel(env) == 1; }));
     CHECK_EQ(env.display.stale_pixels(), 0);
 
-    env.tap(Point{100, 700});                                   // uncached page 2
+    CHECK_EQ(env.image_transport.total_hits(), 33);             // every page, fetched once, before page 1 showed
+    size_t turn_calls = env.display.calls.size();
+    env.tap(Point{100, 700});                                   // page 2: already loaded
     CHECK(env.run_until([&] { return bars_on_panel(env) == 2; }));
+    CHECK(env.display.calls.size() - turn_calls <= 2);          // no loading page in between
     CHECK_EQ(env.display.stale_pixels(), 0);
     env.tap(Point{kW - 100, 700});                              // back to cached page 1
     size_t calls = env.display.calls.size();

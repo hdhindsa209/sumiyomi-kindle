@@ -28,8 +28,10 @@ namespace sumi::app {
 //                  full refresh), Zoom (fit page / width, double pages), Crop (auto crop, margins),
 //                  Contrast (contrast, darkness, dithering). Only the bars refresh; a setting that changes
 //                  the page re-renders it under the open menu, and the chapter reloads when the menu closes.
-//   Loading        opening a chapter loads all its pages in the background (from the current page
-//                  on), so turns rarely wait. This is the evictable page cache, not a download.
+//   Loading        opening a chapter loads all of its pages before the first one is shown: one loading
+//                  page counting pages ("12 of 33"), then every turn comes straight from the page cache.
+//                  Settings that change the pages load the chapter again the same way when the menu
+//                  closes. This is the evictable page cache, not a download.
 //   Progress       every page shown is saved; reaching the last page marks the chapter read.
 class Reader {
 public:
@@ -79,7 +81,9 @@ private:
     const data::Chapter* neighbor(int step) const;   // +1 = next (newer), -1 = previous (older)
     void save_progress();
     void loading(const std::string& text);
-    void load_chapter();                 // (re)start background loading of every page from the current one
+    // Load every page of the chapter (from the current one on) behind a loading page that counts pages,
+    // then run `then`. Pages already cached are skipped, so a loaded chapter goes straight through.
+    void load_chapter(const std::string& title, std::function<void()> then);
     std::string subtitle() const;        // top bar second line: manga · page · loading progress
 
     ui::Screen& screen_;
@@ -103,6 +107,7 @@ private:
     std::shared_ptr<std::atomic<bool>> load_cancel_;
     int            loaded_ = 0;        // pages of this chapter ready in the cache
     ui::Label*     subtitle_ = nullptr;
+    ui::Label*     loading_label_ = nullptr;   // the loading page's text while it's up
     ui::Node*      top_bar_ = nullptr;
     ui::Node*      bottom_bar_ = nullptr;
 };

@@ -540,6 +540,17 @@ void AppData::open_chapter(int64_t chapter_id, std::function<void(ChapterView, s
     });
 }
 
+net::Request AppData::image_request(int64_t source, const std::string& url)
+{
+    net::Request req;
+    req.url = url;
+    req.total_timeout_ms = 45000;   // §9.1: images
+    source::Extension* ext = extension(source);
+    if (ext && !ext->manifest().base_url.empty()) req.headers.push_back({"Referer", ext->manifest().base_url + "/"});
+    req.headers.push_back({"Accept", "image/jpeg,image/png,image/*;q=0.8"});
+    return req;
+}
+
 bool AppData::fetch_page(int64_t source, const std::string& url, const image::ProcessOptions& opt, bool into_ram,
                          std::vector<image::Gray>& parts, std::string& err)
 {
@@ -548,12 +559,6 @@ bool AppData::fetch_page(int64_t source, const std::string& url, const image::Pr
         err = "network unavailable";
         return false;
     }
-    net::Request req;
-    req.url = url;
-    req.total_timeout_ms = 45000;   // §9.1: images
-    source::Extension* ext = extension(source);
-    if (ext && !ext->manifest().base_url.empty()) req.headers.push_back({"Referer", ext->manifest().base_url + "/"});
-    req.headers.push_back({"Accept", "image/jpeg,image/png,image/*;q=0.8"});
     uint64_t t0 = mono_ms();
     net::Response res;
     if (url.rfind("file://", 0) == 0) {   // a downloaded page
@@ -565,9 +570,15 @@ bool AppData::fetch_page(int64_t source, const std::string& url, const image::Pr
             res.error = "downloaded page missing: " + url.substr(7);
         }
     } else {
-        res = images_->fetch(req);
+        res = images_->fetch(image_request(source, url));
     }
-    uint64_t t_fetch = mono_ms() - t0;
+    return process_page_bytes(url, res, mono_ms() - t0, opt, into_ram, parts, err);
+}
+
+bool AppData::process_page_bytes(const std::string& url, const net::Response& res, uint64_t t_fetch,
+                                 const image::ProcessOptions& opt, bool into_ram, std::vector<image::Gray>& parts,
+                                 std::string& err)
+{
     if (!res.transport_ok()) err = res.error;
     else if (!res.http_ok()) err = "HTTP " + std::to_string(res.status);
     image::Gray decoded;
@@ -600,52 +611,80 @@ bool AppData::fetch_page(int64_t source, const std::string& url, const image::Pr
 void AppData::load_page(int64_t source, const std::string& url, int part, const image::ProcessOptions& opt,
                         std::function<void(PageImage, std::string)> done)
 {
-    exec_.submit([this, source, url, part, opt, done = std::move(done)] {
-        PageImage result;
-        std::string err;
+    // Cached pages come from the page thread (never queued behind the worker); the rest are fetched on the worker.
+    Executor& fast = pages_ ? *pages_ : exec_;
+    fast.submit([this, source, url, part, opt, done = std::move(done)]() mutable {
         image::PageCache::Entry hit;
-        std::vector<image::Gray> parts;
         if (cache_ && cache_->get(image::PageCache::key(url, part, opt), hit)) {
+            PageImage result;
             result.page = std::move(hit.page);
             result.parts = hit.parts;
-        } else if (fetch_page(source, url, opt, true, parts, err)) {
-            result.parts = static_cast<int>(parts.size());
-            result.page = std::move(parts[static_cast<size_t>(std::clamp(part, 0, result.parts - 1))]);
+            exec_.post([done, result = std::move(result)]() mutable { done(std::move(result), ""); });
+            return;
         }
-        exec_.post([done, result = std::move(result), err = std::move(err)]() mutable { done(std::move(result), std::move(err)); });
+        exec_.submit([this, source, url, part, opt, done = std::move(done)] {
+            PageImage result;
+            std::string err;
+            std::vector<image::Gray> parts;
+            if (fetch_page(source, url, opt, true, parts, err)) {
+                result.parts = static_cast<int>(parts.size());
+                result.page = std::move(parts[static_cast<size_t>(std::clamp(part, 0, result.parts - 1))]);
+            }
+            exec_.post([done, result = std::move(result), err = std::move(err)]() mutable { done(std::move(result), std::move(err)); });
+        });
     });
 }
 
 void AppData::load_chapter(int64_t source, std::vector<std::string> urls, int start, const image::ProcessOptions& opt,
-                           std::shared_ptr<std::atomic<bool>> cancel, std::function<void(int loaded, int total)> progress)
+                           std::shared_ptr<std::atomic<bool>> cancel, std::function<void(int loaded, int total)> progress,
+                           std::function<void(int loaded, int failed)> done)
 {
-    // Order: from the reading position to the end, then the pages before it.
-    auto order = std::make_shared<std::vector<size_t>>();
-    for (size_t i = static_cast<size_t>(std::max(0, start)); i < urls.size(); ++i) order->push_back(i);
-    for (size_t i = std::min(static_cast<size_t>(std::max(0, start)), urls.size()); i-- > 0;) order->push_back(i);
-    auto shared_urls = std::make_shared<std::vector<std::string>>(std::move(urls));
-    auto loaded = std::make_shared<int>(0);
-    // One page per worker job, each queuing the next: pages the reader asks for meanwhile get in
-    // between instead of waiting for the whole chapter.
-    auto step = std::make_shared<std::function<void(size_t)>>();
-    std::weak_ptr<std::function<void(size_t)>> weak_step = step;
-    *step = [this, source, opt, cancel, progress, order, shared_urls, loaded, weak_step](size_t k) {
-        auto self = weak_step.lock();
-        if (!self || cancel->load()) return;
-        if (k >= order->size()) return;
-        const std::string& url = (*shared_urls)[(*order)[k]];
-        std::string err;
-        bool ok = cache_ && cache_->contains(image::PageCache::key(url, 0, opt));
-        if (!ok) {
-            std::vector<image::Gray> parts;
-            ok = !cancel->load() && fetch_page(source, url, opt, false, parts, err);
+    exec_.submit([this, source, urls = std::move(urls), start, opt, cancel, progress = std::move(progress), done = std::move(done)] {
+        // Order: from the reading position to the end, then the pages before it.
+        std::vector<size_t> order;
+        for (size_t i = static_cast<size_t>(std::max(0, start)); i < urls.size(); ++i) order.push_back(i);
+        for (size_t i = std::min(static_cast<size_t>(std::max(0, start)), urls.size()); i-- > 0;) order.push_back(i);
+
+        // Counters live on the worker: every page finishes in a worker job.
+        struct State { int loaded = 0, failed = 0, total = 0; };
+        auto st = std::make_shared<State>();
+        st->total = static_cast<int>(order.size());
+        auto finish_one = [this, st, cancel, progress, done](bool ok) {
+            if (cancel->load()) return;
+            ++(ok ? st->loaded : st->failed);
+            int n = st->loaded, total = st->total, failed = st->failed;
+            exec_.post([progress, cancel, n, total] { if (progress && !cancel->load()) progress(n, total); });
+            if (n + failed == total && done) exec_.post([done, cancel, n, failed] { if (!cancel->load()) done(n, failed); });
+        };
+        if (order.empty() && done) exec_.post([done] { done(0, 0); });
+
+        for (size_t idx : order) {
+            const std::string& url = urls[idx];
+            if (cache_ && cache_->contains(image::PageCache::key(url, 0, opt))) {
+                finish_one(true);
+                continue;
+            }
+            if (pool_ && url.rfind("file://", 0) != 0) {
+                // Network wait on the pool, processing back on the worker as each image arrives.
+                pool_->fetch(image_request(source, url), [this, url, opt, cancel, finish_one](net::Response res) {
+                    exec_.submit([this, url, opt, cancel, finish_one, res = std::move(res)] {
+                        if (cancel->load()) return;
+                        std::vector<image::Gray> parts;
+                        std::string err;
+                        finish_one(process_page_bytes(url, res, 0, opt, false, parts, err));
+                    });
+                }, cancel);
+                continue;
+            }
+            // One page per job, so the reader's own requests get in between.
+            exec_.submit([this, source, url, opt, cancel, finish_one] {
+                if (cancel->load()) return;
+                std::vector<image::Gray> parts;
+                std::string err;
+                finish_one(fetch_page(source, url, opt, false, parts, err));
+            });
         }
-        if (ok) ++*loaded;
-        int n = *loaded, total = static_cast<int>(order->size());
-        exec_.post([progress, cancel, n, total] { if (!cancel->load()) progress(n, total); });
-        exec_.submit([self, k] { (*self)(k + 1); });
-    };
-    exec_.submit([step] { (*step)(0); });   // each queued job holds the chain alive until it ends
+    });
 }
 
 void AppData::save_progress(int64_t chapter_id, int page, int pages_total, bool finished)

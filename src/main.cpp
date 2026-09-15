@@ -9,6 +9,7 @@
 #include "core/loop.h"
 #include "core/worker.h"
 #include "data/db.h"
+#include "net/fetch_pool.h"
 #include "net/http.h"
 #include "source/extension.h"
 #include "platform/display.h"
@@ -150,6 +151,19 @@ int main(int argc, char** argv)
     // Images share the source client: both are used only on the worker thread.
     sumi::app::AppData app_data(worker, db, load_extensions(env_or("SUMI_SOURCES", SUMI_SOURCES_DIR), http), &http,
                                 cache_ok ? &page_cache : nullptr, data_dir + "/downloads");
+    // Reader threads: a page-cache thread (turns never wait behind the worker) and three connections that
+    // fetch a chapter's images at once. Declared after app_data so they stop first.
+    sumi::Worker pages_worker(loop);
+    bool pages_worker_ok = pages_worker.start(err);
+    if (!pages_worker_ok) SUMI_LOGW("main", "page thread: %s (pages read on the worker)", err.c_str());
+    sumi::net::CurlOptions image_opts{assets + "/certs/cacert.pem", "", "Sumiyomi/0.3 (manga reader for Kindle)"};
+    auto image_pool = std::make_unique<sumi::net::FetchPool>(3, [image_opts] {
+        std::string e;
+        auto t = sumi::net::make_curl_transport(image_opts, e);
+        if (!t) SUMI_LOGE("main", "image connection: %s", e.c_str());
+        return t;
+    });
+    app_data.set_reader_threads(transport ? image_pool.get() : nullptr, pages_worker_ok ? &pages_worker : nullptr);
     app_data.resume_downloads();   // a queue interrupted by exiting continues
     std::unique_ptr<sumi::Frontlight> light = sumi::make_frontlight();
     sumi::app::Shell shell(screen, app_data, [&loop] { loop.stop(); }, nullptr,
@@ -207,6 +221,7 @@ int main(int argc, char** argv)
         for (int fd : input->fds()) loop.add_fd(fd, drain);
     }
     sumi::app::paint_on_results(worker, loop, screen);
+    sumi::app::paint_on_results(pages_worker, loop, screen);
 
     // The home screen can still redraw over our first frame while the framework winds down after
     // the KUAL launch (seen on the device). Repaint everything once with a flash after it settles.
@@ -223,6 +238,8 @@ int main(int argc, char** argv)
 
     loop.run();
 
+    sumi::net::FetchPool::abandon(std::move(image_pool));   // no more results; a slow image doesn't delay quitting
+    pages_worker.stop();
     worker.stop();   // before the data the jobs use goes away
     input->close();
     display->close();   // one GC16 flashing clear

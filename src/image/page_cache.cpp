@@ -80,6 +80,7 @@ std::string PageCache::path_for(const std::string& k) const
 
 bool PageCache::init(std::string& err)
 {
+    std::lock_guard<std::mutex> lock(mu_);
     if (!mkdirs(dir_)) {
         err = "page cache: cannot create " + dir_ + ": " + std::strerror(errno);
         return false;
@@ -149,6 +150,7 @@ void PageCache::evict()
 
 bool PageCache::get(const std::string& k, Entry& out)
 {
+    std::lock_guard<std::mutex> lock(mu_);
     for (auto it = ram_.begin(); it != ram_.end(); ++it) {
         if (it->first != k) continue;
         ram_.splice(ram_.begin(), ram_, it);
@@ -201,6 +203,7 @@ bool PageCache::get(const std::string& k, Entry& out)
 
 bool PageCache::contains(const std::string& k) const
 {
+    std::lock_guard<std::mutex> lock(mu_);
     for (const auto& e : ram_)
         if (e.first == k) return true;
     std::string path = path_for(k);
@@ -214,7 +217,6 @@ bool PageCache::put(const std::string& k, const Entry& entry, std::string& err, 
         err = "page cache: empty page";
         return false;
     }
-    if (into_ram) remember(k, entry);
 
     std::vector<uint8_t> bytes(kMagic, kMagic + 4);
     bytes.push_back(kVersion);
@@ -244,6 +246,9 @@ bool PageCache::put(const std::string& k, const Entry& entry, std::string& err, 
         return false;
     }
 
+    // Encoding and writing ran unlocked: a page read on the reader's thread never waits for a write.
+    std::lock_guard<std::mutex> lock(mu_);
+    if (into_ram) remember(k, entry);
     std::string name = path.substr(dir_.size() + 1);
     auto it = index_.find(name);
     if (it != index_.end()) disk_bytes_ -= std::min(disk_bytes_, it->second.size);

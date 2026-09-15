@@ -1,9 +1,15 @@
 // Network logic without a network: a scripted transport and a fake clock.
+#include "net/fetch_pool.h"
 #include "net/http.h"
 
 #include "check.h"
 
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <deque>
+#include <mutex>
+#include <thread>
 #include <string>
 #include <vector>
 
@@ -160,6 +166,55 @@ void test_header_lookup()
 
 } // namespace
 
+// Requests run at the same time on separate connections; a cancelled one is skipped.
+void test_fetch_pool_parallel_and_cancel()
+{
+    struct Slow final : Transport {
+        std::atomic<int>* running;
+        std::atomic<int>* peak;
+        Response perform(const Request& req) override
+        {
+            int now = ++*running;
+            int p = peak->load();
+            while (now > p && !peak->compare_exchange_weak(p, now)) {}
+            std::this_thread::sleep_for(std::chrono::milliseconds(60));
+            --*running;
+            return Response{200, req.url, {}, req.url, "", false};
+        }
+    };
+    std::atomic<int> running{0}, peak{0}, made{0};
+    std::mutex mu;
+    std::condition_variable cv;
+    std::vector<std::string> got;
+    {
+        FetchPool pool(3, [&] {
+            ++made;
+            auto t = std::make_unique<Slow>();
+            t->running = &running;
+            t->peak = &peak;
+            return t;
+        }, [] { return Client::Clock{[] { return uint64_t{0}; }, [](uint64_t) {}, [] { return 0.5; }}; });
+        auto cancelled = std::make_shared<std::atomic<bool>>(true);
+        for (int i = 0; i < 6; ++i) {
+            Request r;
+            r.url = "u" + std::to_string(i);
+            pool.fetch(r, [&](Response res) {
+                std::lock_guard<std::mutex> l(mu);
+                got.push_back(res.body);
+                cv.notify_all();
+            }, i == 5 ? cancelled : nullptr);
+        }
+        std::unique_lock<std::mutex> l(mu);
+        CHECK(cv.wait_for(l, std::chrono::seconds(5), [&] { return got.size() == 5; }));
+        l.unlock();
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        l.lock();
+        CHECK_EQ(got.size(), 5);                               // u5 was cancelled before it started
+    }
+    CHECK_EQ(made.load(), 3);
+    CHECK(peak.load() >= 2);
+}
+
 int main()
 {
     RUN(test_success_first_try);
@@ -172,5 +227,6 @@ int main()
     RUN(test_client_honors_limiter);
     RUN(test_curl_transport_requires_ca_bundle);
     RUN(test_header_lookup);
+    RUN(test_fetch_pool_parallel_and_cancel);
     return check_result();
 }
