@@ -86,6 +86,53 @@ set(LEXBOR_BUILD_SHARED OFF CACHE BOOL "" FORCE)
 set(LEXBOR_BUILD_STATIC ON CACHE BOOL "" FORCE)
 add_subdirectory(third_party/lexbor EXCLUDE_FROM_ALL SYSTEM)
 
+# Image decoding (design doc §7.1), static. zlib + libpng compile straight from source (their
+# CMake builds bring tests, installers and shared variants we don't want). libpng's ARM NEON
+# filter code stays off: PNG pages are rare (WeebCentral serves JPEG) and it complicates the build.
+file(GLOB ZLIB_SOURCES "${CMAKE_SOURCE_DIR}/third_party/zlib/*.c")
+add_library(zlib_static STATIC ${ZLIB_SOURCES})
+target_include_directories(zlib_static SYSTEM PUBLIC third_party/zlib)
+target_compile_definitions(zlib_static PRIVATE HAVE_UNISTD_H)
+target_compile_options(zlib_static PRIVATE -w)
+
+set(PNG_DIR "${CMAKE_SOURCE_DIR}/third_party/libpng")
+set(PNG_GEN "${CMAKE_BINARY_DIR}/libpng")
+configure_file("${PNG_DIR}/scripts/pnglibconf.h.prebuilt" "${PNG_GEN}/pnglibconf.h" COPYONLY)
+set(PNG_SOURCES png.c pngerror.c pngget.c pngmem.c pngpread.c pngread.c pngrio.c pngrtran.c pngrutil.c pngset.c
+                pngtrans.c pngwio.c pngwrite.c pngwtran.c pngwutil.c)
+list(TRANSFORM PNG_SOURCES PREPEND "${PNG_DIR}/")
+add_library(png_static STATIC ${PNG_SOURCES})
+target_include_directories(png_static SYSTEM PUBLIC "${PNG_DIR}" "${PNG_GEN}")
+target_compile_definitions(png_static PUBLIC PNG_ARM_NEON_OPT=0)
+target_compile_options(png_static PRIVATE -w)
+target_link_libraries(png_static PUBLIC zlib_static)
+
+# libjpeg-turbo refuses add_subdirectory(); build it as an external project with the same toolchain
+# (and so the same -mcpu/-mfpu flags). SIMD on: NEON on the Kindle, NEON/ASIMD on Apple silicon.
+include(ExternalProject)
+set(JPEG_PREFIX "${CMAKE_BINARY_DIR}/libjpeg-turbo")
+set(JPEG_LIB "${JPEG_PREFIX}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}jpeg${CMAKE_STATIC_LIBRARY_SUFFIX}")
+set(JPEG_ARGS -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=${JPEG_PREFIX} -DCMAKE_INSTALL_LIBDIR=lib
+              -DENABLE_SHARED=OFF -DENABLE_STATIC=ON -DWITH_TURBOJPEG=OFF -DWITH_TOOLS=OFF -DWITH_TESTS=OFF
+              -DCMAKE_POSITION_INDEPENDENT_CODE=ON)
+if(CMAKE_TOOLCHAIN_FILE)
+  list(APPEND JPEG_ARGS -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE})
+endif()
+if(CMAKE_OSX_ARCHITECTURES)
+  list(APPEND JPEG_ARGS -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES})
+endif()
+ExternalProject_Add(libjpeg_turbo_ext
+  SOURCE_DIR "${CMAKE_SOURCE_DIR}/third_party/libjpeg-turbo"
+  PREFIX "${JPEG_PREFIX}/build"
+  CMAKE_ARGS ${JPEG_ARGS}
+  BUILD_BYPRODUCTS "${JPEG_LIB}"
+  UPDATE_COMMAND "" )
+file(MAKE_DIRECTORY "${JPEG_PREFIX}/include")
+add_library(jpeg_static STATIC IMPORTED GLOBAL)
+set_target_properties(jpeg_static PROPERTIES IMPORTED_LOCATION "${JPEG_LIB}"
+                                             INTERFACE_INCLUDE_DIRECTORIES "${JPEG_PREFIX}/include")
+add_dependencies(jpeg_static libjpeg_turbo_ext)
+
 set(SUMI_ASSETS_DIR "${CMAKE_SOURCE_DIR}/assets")
 
 # Backend-independent core: builds for host and device.
@@ -114,6 +161,14 @@ add_library(sumi_text STATIC
 target_link_libraries(sumi_text PUBLIC sumi_core harfbuzz)
 
 # UI: tone scale, node tree + layout, screen host (M2 S4).
+# Image pipeline (M4): decode, process, cache.
+add_library(sumi_image STATIC src/image/decode.cpp)
+target_link_libraries(sumi_image PUBLIC sumi_core PRIVATE jpeg_static png_static)
+
+add_executable(page_bench tools/image/page_bench.cpp)
+target_link_libraries(page_bench PRIVATE sumi_image)
+set_target_properties(page_bench PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
 add_library(sumi_ui STATIC
   src/ui/node.cpp
   src/ui/screen.cpp
@@ -171,6 +226,10 @@ if(NOT CMAKE_CROSSCOMPILING)
                                              SUMI_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/tests/golden")
   target_link_libraries(test_ui PRIVATE sumi_ui)
   add_test(NAME ui COMMAND test_ui)
+
+  add_executable(test_image_decode tests/unit/test_image_decode.cpp)
+  target_link_libraries(test_image_decode PRIVATE sumi_image jpeg_static png_static)
+  add_test(NAME image_decode COMMAND test_image_decode)
 
   add_executable(test_widgets tests/unit/test_widgets.cpp)
   target_compile_definitions(test_widgets PRIVATE SUMI_ASSETS_DIR="${SUMI_ASSETS_DIR}"
