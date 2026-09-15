@@ -5,12 +5,16 @@
 set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PKG="$ROOT/build/package/sumiyomi"
+# One version for everything: CMakeLists.txt's project(... VERSION).
+VERSION="$(sed -n 's/^project(sumiyomi VERSION \([0-9.]*\).*/\1/p' "$ROOT/CMakeLists.txt")"
 
 "$ROOT/tools/kbuild.sh"
 
 rm -rf "$PKG"
 mkdir -p "$PKG/bin"
 cp "$ROOT/tools/kual/config.xml" "$ROOT/tools/kual/menu.json" "$ROOT/tools/kual/run.sh" "$PKG/"
+sed -i.bak "s|<version>.*</version>|<version>$VERSION</version>|" "$PKG/config.xml" && rm -f "$PKG/config.xml.bak"
+cp "$ROOT/README.md" "$PKG/README.md"
 chmod +x "$PKG/run.sh"
 
 # UI fonts (design doc §3.3 layout: assets/fonts/), with their licenses.
@@ -27,5 +31,11 @@ cp -R "$ROOT/sources" "$PKG/sources"
 "$ROOT/tools/kbuild.sh" sh -c 'for b in sumiyomi http_smoke page_bench; do arm-kindlehf-linux-gnueabihf-strip -o build/package/sumiyomi/bin/$b build/kindle/bin/$b; done'
 chmod +x "$PKG/bin/sumiyomi" "$PKG/bin/http_smoke" "$PKG/bin/page_bench"
 
+# A zip to hand out: unzip it into /mnt/us/extensions/ on a jailbroken Kindle with KUAL.
+ZIP="$ROOT/build/package/sumiyomi-$VERSION.zip"
+rm -f "$ZIP"
+(cd "$ROOT/build/package" && zip -qr "$ZIP" sumiyomi)
+
 echo "packaged: $PKG"
+echo "release:  $ZIP"
 ls -l "$PKG" "$PKG/bin"

@@ -1,2 +1,5 @@
 /build/
 .DS_Store
+*.actual.pgm
+shell_cache_*/
+page_cache_test_*/

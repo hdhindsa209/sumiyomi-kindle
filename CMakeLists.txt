@@ -203,6 +203,9 @@ target_link_libraries(sumi_source PUBLIC sumi_net lua lexbor_static mbedcrypto)
 target_include_directories(sumi_source SYSTEM PRIVATE third_party/lexbor/source)
 
 # App services: data access for the UI over worker jobs (M3 S6).
+# One version string for the whole app (user agent, About, the packaged zip).
+add_compile_definitions(SUMI_VERSION="${PROJECT_VERSION}")
+
 add_library(sumi_app_data STATIC
   src/app/app_data.cpp
   src/app/format.cpp)

@@ -1282,7 +1282,11 @@ void test_settings_and_storage()
     Env env;
     data::Repo repo(env.db);
     env.tap(env.nav_cell(4));
-    CHECK(env.shows("Downloaded only") && env.shows("Incognito mode") && env.shows("Sumiyomi 0.5 \xC2\xB7 WeebCentral"));
+    CHECK(env.shows("Downloaded only") && env.shows("Incognito mode"));
+    CHECK(env.shows(std::string("Sumiyomi ") + SUMI_VERSION + " \xC2\xB7 1 source"));
+    env.tap(env.find("About"));
+    CHECK(env.shows(std::string("Version ") + SUMI_VERSION) && env.shows("WeebCentral"));
+    env.tap(env.find("Done"));
     env.tap(env.find("Incognito mode"));
     CHECK(env.data->incognito());
 

@@ -139,7 +139,7 @@ int main(int argc, char** argv)
         return 1;
     }
     auto transport = sumi::net::make_curl_transport(
-        {assets + "/certs/cacert.pem", data_dir + "/cookies.txt", "Sumiyomi/0.3 (manga reader for Kindle)"}, err);
+        {assets + "/certs/cacert.pem", data_dir + "/cookies.txt", "Sumiyomi/" SUMI_VERSION " (manga reader for Kindle)"}, err);
     if (!transport) SUMI_LOGE("main", "network: %s", err.c_str());
     sumi::net::FailingTransport offline("network unavailable: " + err);
     sumi::net::Client http(transport ? *transport : static_cast<sumi::net::Transport&>(offline));
@@ -166,7 +166,7 @@ int main(int argc, char** argv)
     sumi::Worker pages_worker(loop);
     bool pages_worker_ok = pages_worker.start(err);
     if (!pages_worker_ok) SUMI_LOGW("main", "page thread: %s (pages read on the worker)", err.c_str());
-    sumi::net::CurlOptions image_opts{assets + "/certs/cacert.pem", "", "Sumiyomi/0.3 (manga reader for Kindle)"};
+    sumi::net::CurlOptions image_opts{assets + "/certs/cacert.pem", "", "Sumiyomi/" SUMI_VERSION " (manga reader for Kindle)"};
     auto image_pool = std::make_unique<sumi::net::FetchPool>(3, [image_opts] {
         std::string e;
         auto t = sumi::net::make_curl_transport(image_opts, e);

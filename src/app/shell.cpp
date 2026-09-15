@@ -1798,7 +1798,9 @@ void Shell::show_more()
         entry(icon::label, "Categories", "Group your library into tabs", [this] { go(Route{Route::Categories}); });
         entry(icon::settings, "Settings", "Reader defaults, library checks, downloads", [this] { go(Route{Route::Settings}); });
         entry(icon::storage, "Data and storage", "Page cache and downloaded chapters", [this] { go(Route{Route::Storage}); });
-        entry(icon::info, "About", "Sumiyomi 0.5 \xC2\xB7 WeebCentral", nullptr);
+        std::string about = std::string("Sumiyomi ") + SUMI_VERSION + kDot + std::to_string(data_.sources().size())
+                          + (data_.sources().size() == 1 ? " source" : " sources");
+        entry(icon::info, "About", about, [this] { show_about_sheet(); });
         entry(icon::close, "Exit Sumiyomi", "Return to the Kindle home screen", [this] { on_exit_(); });
         present(scaffold(app_bar("More", nullptr, with_light({})), paged(std::move(items)), kMore));
     });
@@ -1829,6 +1831,24 @@ void Shell::confirm(const std::string& title, const std::string& action, std::fu
     }, true));
     rows.push_back(std::move(box));
     screen_.show_overlay(sheet(title, std::move(rows)));
+}
+
+void Shell::show_about_sheet()
+{
+    std::vector<std::unique_ptr<Node>> rows;
+    rows.push_back(text_block("A manga reader for this Kindle, in the shape of Mihon. Not connected with Mihon or Amazon. "
+                              "Manga come from the sources you install; nothing is hosted by the app.",
+                              type::LIST_SECONDARY, FontId::InterRegular, 4, Insets{32, 8, 32, 8}));
+    rows.push_back(list_row({std::string("Version ") + SUMI_VERSION,
+                             "Extension api level " + std::to_string(source::Extension::kApiLevel), false, false, 0, nullptr}));
+    for (const SourceInfo& s : data_.sources())
+        rows.push_back(list_row({s.name, s.version + kDot + s.lang + kDot + (s.installed ? "Installed" : "Built in"),
+                                 false, false, 0, nullptr}));
+    auto done = std::make_unique<Node>();
+    done->padding = Insets{32, 8, 32, 8};
+    done->add(button("Done", [this] { screen_.hide_overlay(); }, true));
+    rows.push_back(std::move(done));
+    screen_.show_overlay(sheet("About", std::move(rows)));
 }
 
 void Shell::show_settings(Change change)
