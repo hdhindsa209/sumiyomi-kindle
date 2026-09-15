@@ -224,9 +224,10 @@ public:
     // page cache, starting at `start` and continuing to the end, then the pages before it. This is
     // *loading* for reading, not downloading: pages live in the evictable cache. Cached pages are
     // skipped. Stops when `cancel` is set. `progress` runs on the UI thread after each page.
-    // `done` (UI thread) runs once every page was tried, with how many failed; never after a cancel.
+    // `progress` also reports `ready`: pages settled in reading order from `start` with no gap (what can be read
+    // without waiting). `done` (UI thread) runs once every page was tried, with how many failed; never after a cancel.
     void load_chapter(int64_t source, std::vector<std::string> urls, int start, const image::ProcessOptions& opt,
-                      std::shared_ptr<std::atomic<bool>> cancel, std::function<void(int loaded, int total)> progress,
+                      std::shared_ptr<std::atomic<bool>> cancel, std::function<void(int loaded, int total, int ready)> progress,
                       std::function<void(int loaded, int failed)> done = nullptr);
     // Drop a chapter's processed pages from the page cache (every part), for these options. Downloads are untouched.
     void evict_chapter(std::vector<std::string> urls, const image::ProcessOptions& opt);

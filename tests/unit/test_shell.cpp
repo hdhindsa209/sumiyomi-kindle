@@ -18,7 +18,10 @@
 #include "fixture_transport.h"
 #include "golden.h"
 
+#include <atomic>
+#include <chrono>
 #include <functional>
+#include <thread>
 #include <cstdlib>
 #include <string>
 #include <unistd.h>
@@ -62,11 +65,18 @@ struct Env {
     FakeBattery    battery;
     // Device loop: the reader's threads as on the Kindle (fetch pool + page-cache thread).
     struct Locked final : net::Transport {
-        explicit Locked(net::Transport& t, std::mutex& m) : inner(t), mu(m) {}
-        net::Response perform(const net::Request& r) override { std::lock_guard<std::mutex> l(mu); return inner.perform(r); }
+        explicit Locked(net::Transport& t, std::mutex& m, std::atomic<int>& d) : inner(t), mu(m), delay(d) {}
+        net::Response perform(const net::Request& r) override
+        {
+            if (int ms = delay.load()) std::this_thread::sleep_for(std::chrono::milliseconds(ms));   // a slow server
+            std::lock_guard<std::mutex> l(mu);
+            return inner.perform(r);
+        }
         net::Transport& inner;
         std::mutex& mu;
+        std::atomic<int>& delay;
     };
+    std::atomic<int> image_delay_ms{0};
     std::mutex     transport_mu;
     Worker         pages_worker{loop};
     std::unique_ptr<net::FetchPool> pool;
@@ -96,7 +106,7 @@ struct Env {
         CHECK(page_cache.init(err));
         data = std::make_unique<app::AppData>(*exec, db, std::move(exts), &images, &page_cache, cache_dir + "/downloads");
         if (device_loop) {
-            pool = std::make_unique<net::FetchPool>(3, [this] { return std::make_unique<Locked>(image_transport, transport_mu); }, no_wait);
+            pool = std::make_unique<net::FetchPool>(3, [this] { return std::make_unique<Locked>(image_transport, transport_mu, image_delay_ms); }, no_wait);
             data->set_reader_threads(pool.get(), &pages_worker);
         }
         // Fixed "now" (2026-09-14 13:00 UTC) so relative dates in goldens never drift.
@@ -601,11 +611,14 @@ void test_device_loop_reader()
     CHECK(env.run_until([&] { return env.shows(kTitle); }));
     env.tap(env.find(kTitle));
     CHECK(env.run_until([&] { return env.shows("Chapter 25") && env.shows("In library"); }));
+    env.image_delay_ms = 400;                                   // each image takes a while: the chapter can't be done early
     env.tap(env.find("Chapter 25"));
     CHECK(env.run_until([&] { return bars_on_panel(env) == 1; }));
     CHECK_EQ(env.display.stale_pixels(), 0);
+    int at_open = env.image_transport.total_hits();
+    CHECK(at_open >= 10 && at_open < 33);                       // opened after the first 10, not the whole chapter
 
-    CHECK_EQ(env.image_transport.total_hits(), 33);             // every page, fetched once, before page 1 showed
+    CHECK(env.run_until([&] { return env.image_transport.total_hits() == 33; }));   // the rest of the chapter, in the background
     size_t turn_calls = env.display.calls.size();
     env.tap(Point{100, 700});                                   // page 2: already loaded
     CHECK(env.run_until([&] { return bars_on_panel(env) == 2; }));

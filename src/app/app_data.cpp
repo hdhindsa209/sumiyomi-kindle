@@ -832,7 +832,7 @@ void AppData::load_page(int64_t source, const std::string& url, int part, const 
 }
 
 void AppData::load_chapter(int64_t source, std::vector<std::string> urls, int start, const image::ProcessOptions& opt,
-                           std::shared_ptr<std::atomic<bool>> cancel, std::function<void(int loaded, int total)> progress,
+                           std::shared_ptr<std::atomic<bool>> cancel, std::function<void(int loaded, int total, int ready)> progress,
                            std::function<void(int loaded, int failed)> done)
 {
     exec_.submit([this, source, urls = std::move(urls), start, opt, cancel, progress = std::move(progress), done = std::move(done)] {
@@ -842,38 +842,42 @@ void AppData::load_chapter(int64_t source, std::vector<std::string> urls, int st
         for (size_t i = std::min(static_cast<size_t>(std::max(0, start)), urls.size()); i-- > 0;) order.push_back(i);
 
         // Counters live on the worker: every page finishes in a worker job.
-        struct State { int loaded = 0, failed = 0, total = 0; };
+        // `ready`: pages settled (loaded or failed) in reading order with no gap, counted from the start page.
+        struct State { int loaded = 0, failed = 0, total = 0, ready = 0; std::vector<char> settled; };
         auto st = std::make_shared<State>();
         st->total = static_cast<int>(order.size());
-        auto finish_one = [this, st, cancel, progress, done](bool ok) {
+        st->settled.assign(order.size(), 0);
+        auto finish_one = [this, st, cancel, progress, done](size_t k, bool ok) {
             if (cancel->load()) return;
             ++(ok ? st->loaded : st->failed);
-            int n = st->loaded, total = st->total, failed = st->failed;
-            exec_.post([progress, cancel, n, total] { if (progress && !cancel->load()) progress(n, total); });
+            st->settled[k] = 1;
+            while (st->ready < st->total && st->settled[static_cast<size_t>(st->ready)]) ++st->ready;
+            int n = st->loaded, total = st->total, failed = st->failed, ready = st->ready;
+            exec_.post([progress, cancel, n, total, ready] { if (progress && !cancel->load()) progress(n, total, ready); });
             if (n + failed == total && done) exec_.post([done, cancel, n, failed] { if (!cancel->load()) done(n, failed); });
         };
         if (order.empty() && done) exec_.post([done] { done(0, 0); });
 
-        auto local = std::make_shared<std::vector<std::string>>();
-        for (size_t idx : order) {
-            const std::string& url = urls[idx];
+        auto local = std::make_shared<std::vector<std::pair<std::string, size_t>>>();
+        for (size_t k = 0; k < order.size(); ++k) {
+            const std::string& url = urls[order[k]];
             if (cache_ && cache_->contains(image::PageCache::key(url, 0, opt))) {
-                finish_one(true);
+                finish_one(k, true);
                 continue;
             }
             if (pool_ && url.rfind("file://", 0) != 0) {
                 // Network wait on the pool, processing back on the worker as each image arrives.
-                pool_->fetch(image_request(source, url), [this, url, opt, cancel, finish_one](net::Response res) {
-                    exec_.submit([this, url, opt, cancel, finish_one, res = std::move(res)] {
+                pool_->fetch(image_request(source, url), [this, url, k, opt, cancel, finish_one](net::Response res) {
+                    exec_.submit([this, url, k, opt, cancel, finish_one, res = std::move(res)] {
                         if (cancel->load()) return;
                         std::vector<image::Gray> parts;
                         std::string err;
-                        finish_one(process_page_bytes(url, res, 0, opt, false, parts, err));
+                        finish_one(k, process_page_bytes(url, res, 0, opt, false, parts, err));
                     });
                 }, cancel);
                 continue;
             }
-            local->push_back(url);
+            local->push_back({url, k});
         }
         // Local files (and everything without a pool): one page per job, each queuing the next, so a page the
         // reader asks for meanwhile waits for at most one page, not the rest of the chapter.
@@ -884,8 +888,9 @@ void AppData::load_chapter(int64_t source, std::vector<std::string> urls, int st
             if (!self || k >= local->size() || cancel->load()) return;
             std::vector<image::Gray> parts;
             std::string err;
-            const std::string& url = (*local)[k];
-            finish_one((cache_ && cache_->contains(image::PageCache::key(url, 0, opt))) || fetch_page(source, url, opt, false, parts, err));
+            const std::string& url = (*local)[k].first;
+            finish_one((*local)[k].second,
+                       (cache_ && cache_->contains(image::PageCache::key(url, 0, opt))) || fetch_page(source, url, opt, false, parts, err));
             exec_.submit([self, k] { (*self)(k + 1); });
         };
         if (!local->empty()) exec_.submit([step] { (*step)(0); });

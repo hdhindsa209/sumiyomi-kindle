@@ -29,10 +29,10 @@ namespace sumi::app {
 //                  full refresh), Zoom (fit page / width, double pages), Crop (auto crop, margins),
 //                  Contrast (contrast, darkness, dithering). Only the bars refresh; a setting that changes
 //                  the page re-renders it under the open menu, and the chapter reloads when the menu closes.
-//   Loading        opening a chapter loads all of its pages before the first one is shown: one loading
-//                  page counting pages ("12 of 33"), then every turn comes straight from the page cache.
-//                  A downloaded chapter opens at once instead: its local files are prepared in the background
-//                  far faster than pages are read. Leaving a chapter that was read to the end drops its pages
+//   Loading        opening a chapter shows one loading page counting pages ("4 of 10") until the next
+//                  kReadyPages pages are ready, then the page; the rest of the chapter keeps loading behind it,
+//                  so turns come straight from the page cache. A downloaded chapter opens as soon as its
+//                  current page is prepared: local files are prepared far faster than pages are read. Leaving a chapter that was read to the end drops its pages
 //                  from the page cache.
 //                  Settings that change the pages load the chapter again the same way when the menu
 //                  closes. This is the evictable page cache, not a download.
@@ -62,6 +62,9 @@ public:
     void detach();
 
     static constexpr uint32_t kLoadingDelayMs = 300;
+    // A chapter from the network opens once this many pages from the current one are ready; the rest load
+    // in the background while reading (three images at a time, far ahead of any reader).
+    static constexpr int kReadyPages = 10;
 
 private:
     enum class Place { Start, Page, End };

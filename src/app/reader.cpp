@@ -169,49 +169,47 @@ void Reader::load_chapter(const std::string& title, std::function<void()> then, 
     load_cancel_ = std::make_shared<std::atomic<bool>>(false);
     loaded_ = 0;
     int total = static_cast<int>(view_.pages.size());
-    if (background) {
-        // Pages are prepared in reading order from the current one: it's ready first (a fraction of a second),
-        // shows then, and the rest follow while reading.
-        std::weak_ptr<int> alive = alive_;
-        auto started = std::make_shared<bool>(false);
-        auto start_once = [alive, started, then] {
-            if (alive.expired() || *started) return;
-            *started = true;
-            then();
-        };
-        data_.load_chapter(view_.manga.source_id, view_.pages, pos_.image, process_options(), load_cancel_,
-                           [this, alive, start_once](int loaded, int) {
-                               if (alive.expired()) return;
-                               loaded_ = loaded;
-                               start_once();
-                           },
-                           [start_once](int, int) { start_once(); });   // even if the first page failed
-        return;
-    }
-    ++request_;
-    waiting_ = true;
-    if (loading_shown_ && loading_label_) {   // "Opening chapter" is up: just change its words
-        loading_label_->set_text(title + kEllipsis);
-        screen_.relayout(loading_label_);
-    } else {
-        loading(title + kEllipsis);
-    }
+    // Reading starts once the next `target` pages (in order, from the current one) are ready; the rest of the
+    // chapter keeps loading behind the page. Local files are ready almost at once, so they only wait for one.
+    int target = std::min(total, background ? 1 : kReadyPages);
     std::weak_ptr<int> alive = alive_;
     uint64_t req = request_;
+    if (!background) {
+        req = ++request_;
+        waiting_ = true;
+        if (loading_shown_ && loading_label_) {   // "Opening chapter" is up: just change its words
+            loading_label_->set_text(title + kEllipsis);
+            screen_.relayout(loading_label_);
+        } else {
+            loading(title + kEllipsis);
+        }
+    }
+    auto started = std::make_shared<bool>(false);
+    auto start_once = [this, alive, req, started, then, background] {
+        if (alive.expired() || *started) return;
+        if (!background && req != request_) return;
+        *started = true;
+        then();   // pages that failed show their own error with a retry when reached
+    };
     data_.load_chapter(view_.manga.source_id, view_.pages, pos_.image, process_options(), load_cancel_,
-        [this, alive, req, title, total](int loaded, int) {
+        [this, alive, req, title, target, started, start_once](int loaded, int, int ready) {
             if (alive.expired()) return;
             loaded_ = loaded;
+            if (*started) return;
+            if (ready >= target) {
+                start_once();
+                return;
+            }
             // Only the count changes, in place: no flash while pages arrive.
             if (req == request_ && loading_shown_ && loading_label_) {
-                loading_label_->set_text(title + "\n" + std::to_string(loaded) + " of " + std::to_string(total) + " pages");
+                loading_label_->set_text(title + "\n" + std::to_string(ready) + " of " + std::to_string(target) + " pages");
                 screen_.relayout(loading_label_);
             }
         },
-        [this, alive, req, then](int loaded, int) {
-            if (alive.expired() || req != request_) return;
+        [this, alive, start_once](int loaded, int) {
+            if (alive.expired()) return;
             loaded_ = loaded;
-            then();   // pages that failed show their own error with a retry when reached
+            start_once();
         });
 }
 

@@ -377,7 +377,16 @@ void test_open_chapter_and_load_pages()
     auto cancel = std::make_shared<std::atomic<bool>>(false);
     int last_loaded = -1, last_total = -1;
     env.cache.clear_ram();
-    env.app->load_chapter(env.dex, ch.pages, 10, opt, cancel, [&](int n, int total) { last_loaded = n; last_total = total; });
+    int last_ready = 0;
+    bool ready_in_order = true;
+    env.app->load_chapter(env.dex, ch.pages, 10, opt, cancel, [&](int n, int total, int ready) {
+        last_loaded = n;
+        last_total = total;
+        ready_in_order = ready_in_order && ready >= last_ready && ready <= n;   // never ahead of what's loaded
+        last_ready = ready;
+    });
+    CHECK(ready_in_order);
+    CHECK_EQ(last_ready, 33);
     CHECK_EQ(last_total, 33);
     CHECK_EQ(last_loaded, 33);
     CHECK_EQ(env.image_transport.total_hits(), 32);
@@ -385,14 +394,14 @@ void test_open_chapter_and_load_pages()
     CHECK_EQ(env.cache.ram_pages(), 0);
     for (const std::string& url : ch.pages) CHECK(env.cache.contains(image::PageCache::key(url, 0, opt)));
     // Loading again finds everything cached: no requests.
-    env.app->load_chapter(env.dex, ch.pages, 0, opt, cancel, [](int, int) {});
+    env.app->load_chapter(env.dex, ch.pages, 0, opt, cancel, [](int, int, int) {});
     CHECK_EQ(env.image_transport.total_hits(), 32);
     // Cancelled before it starts: nothing fetched.
     env.image_transport.hits.clear();
     auto stop = std::make_shared<std::atomic<bool>>(true);
     image::ProcessOptions other = opt;
     other.dither = image::Dither::Smooth;
-    env.app->load_chapter(env.dex, ch.pages, 0, other, stop, [](int, int) {});
+    env.app->load_chapter(env.dex, ch.pages, 0, other, stop, [](int, int, int) {});
     CHECK_EQ(env.image_transport.total_hits(), 0);
 
     // Progress and finishing.
