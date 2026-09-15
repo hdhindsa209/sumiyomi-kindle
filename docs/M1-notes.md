@@ -404,3 +404,13 @@ explains, and the README says so.
 ## Test inventory (host, `ctest --test-dir build/host`): 12 suites
 canvas, dirty, gesture, refresh_policy, loop, frame, display_sdl, text_smoke, text, ui (golden), widgets (7 goldens),
 shell (8 screen goldens). Every golden was visually reviewed before it was committed.
+
+## M2 device check (2026-09-14) — PASSED
+- User: "everything was working well and quite smooth". Navigation, tabs, Display sheet, detail, chapter toggles, paging, and
+  exit via More all worked. No warnings or errors logged.
+- **First frame: 250 ms** (cold: font faces, glyph rasterization, layout, and a full-screen paint on the single-core A9).
+- **Slow frames (> 30 ms): 33–45 ms typical, one at 68 ms.** These are full-screen repaints (screen changes, library
+  body swaps). Every other frame was under 30 ms.
+- Against §10.1: opening detail is ≈ 68 + 478 ms GC16 ≈ 550 ms (budget 600 ✓). Tab switch ≈ 45 + 478 ms full GL16 ≈ 520 ms.
+  That's **over the 400 ms budget**, which assumed DU; the GL16 choice for gray covers costs it. Revisit with real covers in M3/M4.
+- Not specifically reported: how DU text lists look vs GL16, or ghosting. Still worth a deliberate look.
