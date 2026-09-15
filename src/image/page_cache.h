@@ -43,6 +43,11 @@ public:
     size_t   disk_files() const { std::lock_guard<std::mutex> l(mu_); return index_.size(); }
     size_t   ram_pages() const { std::lock_guard<std::mutex> l(mu_); return ram_.size(); }
     void     clear_ram() { std::lock_guard<std::mutex> l(mu_); ram_.clear(); }
+    uint64_t cap() const { std::lock_guard<std::mutex> l(mu_); return cap_; }
+    // New size limit; evicts the oldest pages at once if over it.
+    void     set_cap(uint64_t bytes);
+    // Deletes every cached page (disk and RAM).
+    void     clear();
 
 private:
     struct DiskEntry { uint64_t size; uint64_t stamp; };

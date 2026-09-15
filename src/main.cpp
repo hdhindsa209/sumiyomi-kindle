@@ -165,7 +165,7 @@ int main(int argc, char** argv)
         return t;
     });
     app_data.set_reader_threads(transport ? image_pool.get() : nullptr, pages_worker_ok ? &pages_worker : nullptr);
-    app_data.resume_downloads();   // a queue interrupted by exiting continues
+    app_data.startup(nullptr);   // saved cache limit; a download queue interrupted by exiting continues
     std::unique_ptr<sumi::Frontlight> light = sumi::make_frontlight();
     std::unique_ptr<sumi::Battery> battery = sumi::make_battery();
     sumi::app::Shell shell(screen, app_data, [&loop] { loop.stop(); }, nullptr,

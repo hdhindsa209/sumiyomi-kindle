@@ -66,6 +66,26 @@ struct ReaderSettings {
     }
 };
 
+// App-wide settings (M5 S5), persisted in the preferences table.
+struct AppSettings {
+    bool check_on_start = false;     // check the library for new chapters in the background at startup
+    bool delete_after_read = false;  // a downloaded chapter's files go once it's marked read by finishing it
+    bool downloaded_only = false;    // the Library lists only manga with downloaded chapters
+    int  cache_limit_mb = 512;       // processed page cache size limit
+    bool operator==(const AppSettings& o) const
+    {
+        return check_on_start == o.check_on_start && delete_after_read == o.delete_after_read
+            && downloaded_only == o.downloaded_only && cache_limit_mb == o.cache_limit_mb;
+    }
+};
+
+struct StorageInfo {
+    uint64_t cache_bytes = 0, cache_limit = 0;
+    size_t   cache_pages = 0;
+    uint64_t download_bytes = 0;
+    int      downloaded_chapters = 0;
+};
+
 struct ChapterView {
     data::Manga                manga;
     data::Chapter              chapter;
@@ -109,6 +129,7 @@ public:
     struct LibraryScreen {
         bool covers = false;
         int64_t category = 0;
+        bool downloaded_only = false;   // items were filtered to manga with downloads
         std::vector<data::Category> categories;
         std::vector<data::LibraryItem> items;
     };
@@ -158,6 +179,21 @@ public:
     void auto_download(std::function<void(int mode, std::vector<data::Category>)> done);
     void save_auto_download(int mode);
     void set_category_auto_download(int64_t category, bool on, std::function<void(bool ok)> done);
+
+    // --- settings and storage (M5 S5) ---
+    // At startup: applies saved settings (cache limit), continues interrupted downloads, and reports the settings.
+    void startup(std::function<void(AppSettings)> done);
+    void app_settings(std::function<void(AppSettings)> done);
+    void save_app_settings(const AppSettings& s);
+    // Change settings from their current saved values (never a stale copy), then save.
+    void edit_app_settings(std::function<void(AppSettings&)> edit, std::function<void()> done = nullptr);
+    void edit_reader_settings(std::function<void(ReaderSettings&)> edit, std::function<void()> done = nullptr);
+    void storage(std::function<void(StorageInfo)> done);
+    void clear_page_cache(std::function<void()> done);
+    void delete_all_downloads(std::function<void()> done);
+    // Incognito (this session only): opening chapters leaves no history. Reading positions are still kept.
+    void set_incognito(bool on) { incognito_ = on; }
+    bool incognito() const { return incognito_; }
 
     // --- library selection (several manga at once) ---
     // Leaves the library; `delete_downloads` also removes their downloaded chapters.
@@ -234,6 +270,11 @@ private:
     net::Client*       images_;
     image::PageCache*  cache_;
     net::FetchPool*    pool_ = nullptr;
+    std::atomic<bool>  incognito_{false};
+    AppSettings        load_settings();   // worker
+    ReaderSettings     load_reader_settings();   // worker
+    void               store_reader_settings(const ReaderSettings& s);   // worker
+    void               store_settings(const AppSettings& s);   // worker
     Executor*          pages_ = nullptr;
     std::string        downloads_dir_;
     std::function<void(const data::DownloadItem&, bool)> download_listener_;

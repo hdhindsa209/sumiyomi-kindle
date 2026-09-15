@@ -29,6 +29,10 @@ S4 device-verified. User requests (2026-09-15), built on host: (1) no "Loading p
 completely behind one counting loading page (3-connection FetchPool + worker processing), cached pages read on a
 separate page thread; (2) battery level in app bars and the reader menu (powerd lipc, sysfs fallback — to confirm on
 device); (3) Library selection: hold a manga (list or cover) → select more / select all → Categories, Download
-unread, Mark read/unread, Remove (optionally deleting downloads).
+unread, Mark read/unread, Remove (optionally deleting downloads). All three device-verified.
+S5 built on host: More → Settings (reader defaults; check for new chapters at startup, in the background; auto-download
+sheet; delete chapters after reading; downloaded only), More → Data and storage (cache used / limit 256 MB–2 GB / clear;
+downloads size / delete all). "Downloaded only" and "Incognito mode" on More now work (incognito = no history, this
+session). Settings are edited from their saved values on the worker, so separate changes never undo each other.
 
 Deferred to M6 (design doc): trackers, migration, statistics, backup/restore.

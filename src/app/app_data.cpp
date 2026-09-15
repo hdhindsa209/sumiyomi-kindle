@@ -13,6 +13,7 @@
 #include <dirent.h>
 #include <fstream>
 #include <iterator>
+#include <set>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -108,6 +109,15 @@ void AppData::library_screen(std::function<void(LibraryScreen)> done)
                 if (cat.id == id) out.category = id;
         }
         out.items = out.category ? repo_.library(out.category) : repo_.library();
+        if (repo_.pref("library.downloaded_only") == std::string("1")) {
+            std::set<int64_t> have;
+            for (const data::DownloadItem& d : repo_.downloads())
+                if (d.state == data::DownloadState::Done) have.insert(d.manga_id);
+            out.items.erase(std::remove_if(out.items.begin(), out.items.end(),
+                                           [&](const data::LibraryItem& it) { return !have.count(it.manga.id); }),
+                            out.items.end());
+            out.downloaded_only = true;
+        }
         exec_.post([done, out = std::move(out)]() mutable { done(std::move(out)); });
     });
 }
@@ -434,6 +444,113 @@ void AppData::set_category_auto_download(int64_t category, bool on, std::functio
     });
 }
 
+AppSettings AppData::load_settings()
+{
+    AppSettings s;
+    auto flag = [&](const char* key) { return repo_.pref(key) == std::string("1"); };
+    s.check_on_start = flag("updates.on_start");
+    s.delete_after_read = flag("downloads.delete_after_read");
+    s.downloaded_only = flag("library.downloaded_only");
+    if (auto v = repo_.pref("cache.limit_mb")) s.cache_limit_mb = std::clamp(std::atoi(v->c_str()), 128, 4096);
+    return s;
+}
+
+void AppData::startup(std::function<void(AppSettings)> done)
+{
+    exec_.submit([this, done = std::move(done)] {
+        AppSettings s = load_settings();
+        if (cache_) cache_->set_cap(static_cast<uint64_t>(s.cache_limit_mb) << 20);
+        exec_.post([done, s] { if (done) done(s); });
+    });
+    resume_downloads();
+}
+
+void AppData::app_settings(std::function<void(AppSettings)> done)
+{
+    exec_.submit([this, done = std::move(done)] {
+        AppSettings s = load_settings();
+        exec_.post([done, s] { done(s); });
+    });
+}
+
+void AppData::store_settings(const AppSettings& s)
+{
+    repo_.set_pref("updates.on_start", s.check_on_start ? "1" : "0");
+    repo_.set_pref("downloads.delete_after_read", s.delete_after_read ? "1" : "0");
+    repo_.set_pref("library.downloaded_only", s.downloaded_only ? "1" : "0");
+    int mb = std::clamp(s.cache_limit_mb, 128, 4096);
+    repo_.set_pref("cache.limit_mb", std::to_string(mb));
+    if (cache_) cache_->set_cap(static_cast<uint64_t>(mb) << 20);
+}
+
+void AppData::save_app_settings(const AppSettings& s)
+{
+    exec_.submit([this, s] { store_settings(s); });
+}
+
+void AppData::edit_app_settings(std::function<void(AppSettings&)> edit, std::function<void()> done)
+{
+    exec_.submit([this, edit = std::move(edit), done = std::move(done)] {
+        AppSettings s = load_settings();
+        edit(s);
+        store_settings(s);
+        exec_.post([done] { if (done) done(); });
+    });
+}
+
+namespace {
+
+uint64_t dir_bytes(const std::string& dir)
+{
+    uint64_t total = 0;
+    DIR* d = opendir(dir.c_str());
+    if (!d) return 0;
+    while (dirent* e = readdir(d)) {
+        std::string name = e->d_name;
+        if (name == "." || name == "..") continue;
+        std::string path = dir + "/" + name;
+        struct stat st {};
+        if (stat(path.c_str(), &st) != 0) continue;
+        total += S_ISDIR(st.st_mode) ? dir_bytes(path) : static_cast<uint64_t>(st.st_size);
+    }
+    closedir(d);
+    return total;
+}
+
+} // namespace
+
+void AppData::storage(std::function<void(StorageInfo)> done)
+{
+    exec_.submit([this, done = std::move(done)] {
+        StorageInfo info;
+        if (cache_) {
+            info.cache_bytes = cache_->disk_bytes();
+            info.cache_pages = cache_->disk_files();
+            info.cache_limit = cache_->cap();
+        }
+        if (!downloads_dir_.empty()) info.download_bytes = dir_bytes(downloads_dir_);
+        for (const data::DownloadItem& d : repo_.downloads()) info.downloaded_chapters += d.state == data::DownloadState::Done;
+        exec_.post([done, info] { done(info); });
+    });
+}
+
+void AppData::clear_page_cache(std::function<void()> done)
+{
+    exec_.submit([this, done = std::move(done)] {
+        if (cache_) cache_->clear();
+        exec_.post([done] { if (done) done(); });
+    });
+}
+
+void AppData::delete_all_downloads(std::function<void()> done)
+{
+    exec_.submit([this, done = std::move(done)] {
+        std::vector<int64_t> ids;
+        for (const data::DownloadItem& d : repo_.downloads()) ids.push_back(d.chapter_id);
+        delete_downloads(std::move(ids), std::move(done));
+    });
+}
+
 void AppData::remove_from_library(std::vector<int64_t> manga_ids, bool delete_downloads, std::function<void()> done)
 {
     exec_.submit([this, ids = std::move(manga_ids), delete_downloads, done = std::move(done)] {
@@ -512,40 +629,59 @@ void AppData::clear_history(std::function<void()> done)
 
 // ---------------------------------------------------------------- reader
 
+ReaderSettings AppData::load_reader_settings()
+{
+    ReaderSettings s;
+    auto num = [&](const char* key, int fallback) {
+        auto v = repo_.pref(key);
+        return v ? std::atoi(v->c_str()) : fallback;
+    };
+    if (auto v = repo_.pref("reader.direction")) s.rtl = *v != "ltr";
+    s.flash_every = std::clamp(num("reader.flash_every", s.flash_every), 0, 30);
+    s.fit = num("reader.fit", 0) == 1 ? image::Fit::Width : image::Fit::Screen;
+    s.dither = static_cast<image::Dither>(std::clamp(num("reader.dither", static_cast<int>(s.dither)), 0, 2));
+    s.crop_borders = num("reader.crop", 1) != 0;
+    s.split_spreads = num("reader.split", 1) != 0;
+    s.contrast = std::clamp(num("reader.contrast", 1), 0, 3);
+    s.darkness = std::clamp(num("reader.darkness", 1), 0, 3);
+    s.margin = std::clamp(num("reader.margin", 0), 0, 3);
+    return s;
+}
+
+void AppData::store_reader_settings(const ReaderSettings& s)
+{
+    bool ok = repo_.set_pref("reader.direction", s.rtl ? "rtl" : "ltr")
+           && repo_.set_pref("reader.flash_every", std::to_string(s.flash_every))
+           && repo_.set_pref("reader.fit", std::to_string(static_cast<int>(s.fit)))
+           && repo_.set_pref("reader.dither", std::to_string(static_cast<int>(s.dither)))
+           && repo_.set_pref("reader.crop", s.crop_borders ? "1" : "0")
+           && repo_.set_pref("reader.split", s.split_spreads ? "1" : "0")
+           && repo_.set_pref("reader.contrast", std::to_string(s.contrast))
+           && repo_.set_pref("reader.darkness", std::to_string(s.darkness))
+           && repo_.set_pref("reader.margin", std::to_string(s.margin));
+    if (!ok) SUMI_LOGW("app", "cannot save reader settings: %s", db_.error().c_str());
+}
+
 void AppData::reader_settings(std::function<void(ReaderSettings)> done)
 {
     exec_.submit([this, done = std::move(done)] {
-        ReaderSettings s;
-        auto num = [&](const char* key, int fallback) {
-            auto v = repo_.pref(key);
-            return v ? std::atoi(v->c_str()) : fallback;
-        };
-        if (auto v = repo_.pref("reader.direction")) s.rtl = *v != "ltr";
-        s.flash_every = std::clamp(num("reader.flash_every", s.flash_every), 0, 30);
-        s.fit = num("reader.fit", 0) == 1 ? image::Fit::Width : image::Fit::Screen;
-        s.dither = static_cast<image::Dither>(std::clamp(num("reader.dither", static_cast<int>(s.dither)), 0, 2));
-        s.crop_borders = num("reader.crop", 1) != 0;
-        s.split_spreads = num("reader.split", 1) != 0;
-        s.contrast = std::clamp(num("reader.contrast", 1), 0, 3);
-        s.darkness = std::clamp(num("reader.darkness", 1), 0, 3);
-        s.margin = std::clamp(num("reader.margin", 0), 0, 3);
+        ReaderSettings s = load_reader_settings();
         exec_.post([done, s] { done(s); });
     });
 }
 
 void AppData::save_reader_settings(const ReaderSettings& s)
 {
-    exec_.submit([this, s] {
-        bool ok = repo_.set_pref("reader.direction", s.rtl ? "rtl" : "ltr")
-               && repo_.set_pref("reader.flash_every", std::to_string(s.flash_every))
-               && repo_.set_pref("reader.fit", std::to_string(static_cast<int>(s.fit)))
-               && repo_.set_pref("reader.dither", std::to_string(static_cast<int>(s.dither)))
-               && repo_.set_pref("reader.crop", s.crop_borders ? "1" : "0")
-               && repo_.set_pref("reader.split", s.split_spreads ? "1" : "0")
-               && repo_.set_pref("reader.contrast", std::to_string(s.contrast))
-               && repo_.set_pref("reader.darkness", std::to_string(s.darkness))
-               && repo_.set_pref("reader.margin", std::to_string(s.margin));
-        if (!ok) SUMI_LOGW("app", "cannot save reader settings: %s", db_.error().c_str());
+    exec_.submit([this, s] { store_reader_settings(s); });
+}
+
+void AppData::edit_reader_settings(std::function<void(ReaderSettings&)> edit, std::function<void()> done)
+{
+    exec_.submit([this, edit = std::move(edit), done = std::move(done)] {
+        ReaderSettings s = load_reader_settings();
+        edit(s);
+        store_reader_settings(s);
+        exec_.post([done] { if (done) done(); });
     });
 }
 
@@ -592,7 +728,7 @@ void AppData::open_chapter(int64_t chapter_id, std::function<void(ChapterView, s
                 std::sort(pages.begin(), pages.end(), [](const auto& a, const auto& b) { return a.index < b.index; });
                 for (auto& p : pages) view.pages.push_back(std::move(p.url));
                 if (view.pages.empty()) err = "this chapter has no pages";
-                else if (!repo_.record_read(chapter_id, wall_ms(), 0))
+                else if (!incognito_ && !repo_.record_read(chapter_id, wall_ms(), 0))
                     SUMI_LOGW("app", "cannot record history: %s", db_.error().c_str());
             }
         }
@@ -752,6 +888,10 @@ void AppData::save_progress(int64_t chapter_id, int page, int pages_total, bool 
     exec_.submit([this, chapter_id, page, pages_total, finished] {
         bool ok = repo_.set_progress(chapter_id, page, pages_total) && (!finished || repo_.set_read(chapter_id, true));
         if (!ok) SUMI_LOGW("app", "cannot save progress for chapter %lld: %s", static_cast<long long>(chapter_id), db_.error().c_str());
+        if (ok && finished && repo_.pref("downloads.delete_after_read") == std::string("1")) {
+            auto d = repo_.download(chapter_id);
+            if (d && d->state == data::DownloadState::Done) delete_downloads({chapter_id});   // pages stay in the page cache
+        }
     });
 }
 

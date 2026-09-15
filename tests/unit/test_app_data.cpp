@@ -215,6 +215,78 @@ void test_update_library_auto_download()
     CHECK(r.cancelled && r.added == 0);
 }
 
+void test_settings_storage_incognito()
+{
+    Env env;
+    source::SManga seed{kSeedUrl, "Nee-chan", "", "", "", "", {}, 0};
+    MangaView view;
+    env.app->open_manga(env.dex, seed, [&](MangaView v, bool, std::string) { view = std::move(v); });
+    int64_t ch25 = view.chapters[0].id;
+
+    // Defaults, edits from the saved values, cache limit applied.
+    AppSettings st;
+    env.app->app_settings([&](AppSettings s) { st = s; });
+    CHECK(!st.check_on_start && !st.delete_after_read && !st.downloaded_only && st.cache_limit_mb == 512);
+    env.app->edit_app_settings([](AppSettings& n) { n.cache_limit_mb = 256; });
+    env.app->edit_app_settings([](AppSettings& n) { n.delete_after_read = true; });
+    env.app->app_settings([&](AppSettings s) { st = s; });
+    CHECK(st.cache_limit_mb == 256 && st.delete_after_read);   // the second edit kept the first
+    CHECK_EQ(env.cache.cap(), 256ull << 20);
+    ReaderSettings rs;
+    env.app->edit_reader_settings([](ReaderSettings& n) { n.contrast = 3; });
+    env.app->edit_reader_settings([](ReaderSettings& n) { n.rtl = false; });
+    env.app->reader_settings([&](ReaderSettings s) { rs = s; });
+    CHECK(rs.contrast == 3 && !rs.rtl);
+
+    // Download, storage counts, delete after reading.
+    env.app->download_chapters({ch25});
+    StorageInfo info;
+    env.app->storage([&](StorageInfo i) { info = i; });
+    CHECK_EQ(info.downloaded_chapters, 1);
+    CHECK(info.download_bytes > 0);
+    env.app->save_progress(ch25, 20, 33, false);
+    data::Repo repo(env.db);
+    CHECK_EQ(repo.downloads().size(), 1);                          // not finished yet
+    env.app->save_progress(ch25, 32, 33, true);
+    CHECK(repo.downloads().empty());
+    env.app->storage([&](StorageInfo i) { info = i; });
+    CHECK(info.downloaded_chapters == 0 && info.download_bytes == 0);
+
+    // Downloaded only filters the library.
+    bool ok = false;
+    env.app->set_favorite(view.manga.id, true, [&](bool r) { ok = r; });
+    env.app->edit_app_settings([](AppSettings& n) { n.downloaded_only = true; });
+    AppData::LibraryScreen lib;
+    env.app->library_screen([&](AppData::LibraryScreen l) { lib = std::move(l); });
+    CHECK(ok && lib.downloaded_only && lib.items.empty());
+    env.app->edit_app_settings([](AppSettings& n) { n.downloaded_only = false; });
+    env.app->library_screen([&](AppData::LibraryScreen l) { lib = std::move(l); });
+    CHECK(!lib.downloaded_only && lib.items.size() == 1);
+
+    // Incognito: no history.
+    std::string err;
+    CHECK(env.db.exec("DELETE FROM history", err));
+    env.app->set_incognito(true);
+    env.app->open_chapter(ch25, [](ChapterView, std::string) {});
+    CHECK(repo.history().empty());
+    env.app->set_incognito(false);
+    env.app->open_chapter(ch25, [](ChapterView, std::string) {});
+    CHECK_EQ(repo.history().size(), 1);
+
+    // Delete all downloads; clear the cache.
+    env.app->download_chapters({ch25});
+    CHECK_EQ(repo.downloads().size(), 1);
+    bool deleted = false;
+    env.app->delete_all_downloads([&] { deleted = true; });
+    CHECK(deleted && repo.downloads().empty());
+    ChapterView cv;
+    env.app->open_chapter(ch25, [&](ChapterView v, std::string) { cv = std::move(v); });
+    env.app->load_page(env.dex, cv.pages.at(0), 0, image::ProcessOptions{}, [](PageImage, std::string) {});
+    CHECK(env.cache.disk_files() > 0);
+    env.app->clear_page_cache(nullptr);
+    CHECK_EQ(env.cache.disk_files(), 0);
+}
+
 void test_format_helpers()
 {
     constexpr int64_t day = 86400000;
@@ -428,6 +500,7 @@ int main()
     RUN(test_open_manga_persists_then_serves_local_first);
     RUN(test_favorite_read_and_library);
     RUN(test_update_library_auto_download);
+    RUN(test_settings_storage_incognito);
     RUN(test_format_helpers);
     RUN(test_reader_settings_persist);
     RUN(test_open_chapter_and_load_pages);

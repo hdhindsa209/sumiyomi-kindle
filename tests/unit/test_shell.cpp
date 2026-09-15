@@ -1086,6 +1086,47 @@ void test_battery_status()
     CHECK_EQ(env.display.stale_pixels(), 0);
 }
 
+void test_settings_and_storage()
+{
+    Env env;
+    data::Repo repo(env.db);
+    env.tap(env.nav_cell(4));
+    CHECK(env.shows("Downloaded only") && env.shows("Incognito mode") && env.shows("Sumiyomi 0.5 \xC2\xB7 WeebCentral"));
+    env.tap(env.find("Incognito mode"));
+    CHECK(env.data->incognito());
+
+    // Settings: reader defaults (a choice redraws in place), then switches further down.
+    env.tap(env.find("Settings"));
+    CHECK(env.shows("Reader defaults") && env.shows("Reading direction"));
+    CHECK(env.golden("settings"));
+    env.tap(env.find("Left to right"));
+    CHECK(repo.pref("reader.direction") == std::string("ltr"));
+    CHECK(env.display.calls.back().mode != Wave::GC16_FLASH);           // no flash for a setting
+    CHECK_EQ(env.display.stale_pixels(), 0);
+    for (int i = 0; i < 4 && !env.shows("Check for new chapters at startup"); ++i) env.tap(env.pager_arrow(1));
+    CHECK(env.shows("Check for new chapters at startup"));
+    env.tap(env.find("Check for new chapters at startup"));
+    CHECK(repo.pref("updates.on_start") == std::string("1"));
+    CHECK(repo.pref("reader.direction") == std::string("ltr"));         // untouched by the other save
+    CHECK_EQ(env.display.stale_pixels(), 0);
+
+    // Data and storage.
+    CHECK(env.shell->on_back());
+    env.screen.frame();
+    env.tap(env.find("Data and storage"));
+    CHECK(env.shows("0 MB of 512 MB used") && env.shows("0 pages") && env.shows("0 chapters"));
+    env.tap(env.find("1 GB"));
+    CHECK(repo.pref("cache.limit_mb") == std::string("1024"));
+    CHECK(env.shows("0 MB of 1.0 GB used"));
+    CHECK_EQ(env.page_cache.cap(), 1024ull << 20);
+    env.tap(env.find("Clear page cache"));
+    CHECK(env.shows("Clear the page cache?"));
+    env.tap(env.find("Clear"));
+    CHECK(env.screen.overlay() == nullptr);
+    CHECK_EQ(env.display.stale_pixels(), 0);
+    CHECK(env.golden("storage"));
+}
+
 void test_more_exit()
 {
     Env env;
@@ -1124,6 +1165,7 @@ int main()
     RUN(test_history_resume_and_remove);
     RUN(test_library_selection);
     RUN(test_battery_status);
+    RUN(test_settings_and_storage);
     RUN(test_more_exit);
     return check_result();
 }

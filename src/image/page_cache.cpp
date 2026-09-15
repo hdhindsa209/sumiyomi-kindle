@@ -148,6 +148,22 @@ void PageCache::evict()
     }
 }
 
+void PageCache::set_cap(uint64_t bytes)
+{
+    std::lock_guard<std::mutex> lock(mu_);
+    cap_ = bytes;
+    evict();
+}
+
+void PageCache::clear()
+{
+    std::lock_guard<std::mutex> lock(mu_);
+    for (const auto& kv : index_) unlink((dir_ + "/" + kv.first).c_str());
+    index_.clear();
+    ram_.clear();
+    disk_bytes_ = 0;
+}
+
 bool PageCache::get(const std::string& k, Entry& out)
 {
     std::lock_guard<std::mutex> lock(mu_);

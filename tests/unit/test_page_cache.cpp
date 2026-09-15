@@ -156,6 +156,29 @@ void test_corrupt_file_is_a_miss_and_removed()
 
 } // namespace
 
+void test_cap_change_and_clear()
+{
+    std::string dir = temp_dir("cap");
+    std::string err;
+    PageCache cache(dir);
+    CHECK(cache.init(err));
+    for (int i = 0; i < 4; ++i) CHECK(cache.put("k" + std::to_string(i), page(100, 100, static_cast<uint8_t>(i)), err));
+    uint64_t one = cache.disk_bytes() / 4;
+    cache.set_cap(one * 2);                                    // smaller limit: the oldest go now
+    CHECK_EQ(cache.disk_files(), 2);
+    CHECK_EQ(cache.cap(), one * 2);
+    PageCache::Entry e;
+    cache.clear_ram();
+    CHECK(!cache.get("k0", e) && cache.get("k3", e));
+    cache.clear();
+    CHECK_EQ(cache.disk_files(), 0);
+    CHECK_EQ(cache.disk_bytes(), 0);
+    CHECK(!cache.get("k3", e));
+    PageCache again(dir);                                      // nothing left on disk either
+    CHECK(again.init(err));
+    CHECK_EQ(again.disk_files(), 0);
+}
+
 int main()
 {
     RUN(test_round_trip_is_exact_and_compact);
@@ -163,6 +186,7 @@ int main()
     RUN(test_ram_tier_and_lru_eviction);
     RUN(test_restart_rebuilds_index);
     RUN(test_corrupt_file_is_a_miss_and_removed);
+    RUN(test_cap_change_and_clear);
     int rc = check_result();
     int cleanup = std::system("rm -rf page_cache_test_*");
     (void)cleanup;

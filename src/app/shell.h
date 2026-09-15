@@ -55,7 +55,7 @@ private:
     enum Tab { kLibrary, kUpdates, kHistory, kBrowse, kMore };
 
     struct Route {
-        enum Kind { TabRoot, Source, Search, Detail, Reader, Downloads, Categories, CategoryName };
+        enum Kind { TabRoot, Source, Search, Detail, Reader, Downloads, Categories, CategoryName, Settings, Storage };
         Route(Kind k = TabRoot, int tab_index = kLibrary) : kind(k), tab(tab_index) {}
         Kind           kind;
         int            tab;
@@ -115,6 +115,11 @@ private:
     void show_auto_download_sheet();
     void show_browse();
     void show_more();
+    void show_settings(ui::Change change = ui::Change::NewScreen);
+    void show_storage(ui::Change change = ui::Change::NewScreen);
+    // A titled control for settings lists (a label over a segmented control).
+    std::unique_ptr<ui::Node> setting(const std::string& title, std::unique_ptr<ui::Node> control);
+    void confirm(const std::string& title, const std::string& action, std::function<void()> on_confirm);
     void show_source(int64_t source, Browse mode);
     void load_source_page(uint64_t gen, int64_t source, Browse mode, const std::string& query, int page);
     // `focus_item`: open the page showing this result (after "Load more": the first new one).
@@ -156,8 +161,6 @@ private:
     std::vector<Route> stack_;
     uint64_t generation_ = 0;
     int      browse_tab_ = 0;
-    bool     downloaded_only_ = false;
-    bool     incognito_ = false;
 
     // Current screen's live parts (valid for the current generation only).
     bool           waiting_ = false;          // a loading page is (or is about to be) up

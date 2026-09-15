@@ -1,6 +1,7 @@
 #include "app/shell.h"
 
 #include "app/format.h"
+#include "core/log.h"
 #include "icons.h"
 #include "ui/widgets.h"
 
@@ -108,6 +109,12 @@ Shell::Shell(Screen& screen, AppData& data, std::function<void()> on_exit, std::
 void Shell::start()
 {
     go({Route::TabRoot, kLibrary});
+    // Optional background check at startup: nothing on screen; new chapters show up in Updates.
+    data_.app_settings([this](AppSettings st) {
+        if (st.check_on_start) data_.update_library(0, nullptr, nullptr, [](AppData::UpdateResult r) {
+            SUMI_LOGI("app", "startup library check: %d new, %d failed", r.added, r.failed);
+        });
+    });
     if (battery_ && schedule_) schedule_(kBatteryCheckMs, [this] { watch_battery(); });
 }
 
@@ -225,6 +232,8 @@ void Shell::show(const Route& r)
     case Route::Downloads: show_downloads(); break;
     case Route::Categories: show_categories(); break;
     case Route::CategoryName: show_category_name(r); break;
+    case Route::Settings: show_settings(); break;
+    case Route::Storage: show_storage(); break;
     }
 }
 
@@ -453,6 +462,10 @@ void Shell::present_library(Change change)
         for (const data::Category& c : lib_.categories)
             if (c.id == lib_.category) name = c.name;
         nodes.push_back(message("Nothing in " + name + " yet.\nAdd manga to it from a manga's page."));
+    } else if (lib_.items.empty() && lib_.downloaded_only) {
+        nodes.push_back(message("No manga with downloaded chapters.\nDownloaded only is on in More.", "Show everything", [this] {
+            data_.edit_app_settings([](AppSettings& n) { n.downloaded_only = false; }, [this] { go({Route::TabRoot, kLibrary}); });
+        }));
     } else if (lib_.items.empty()) {
         nodes.push_back(message("Your library is empty.\nAdd manga from a source in Browse.", "Browse sources",
                                 [this] { go({Route::TabRoot, kBrowse}); }));
@@ -461,6 +474,7 @@ void Shell::present_library(Change change)
         for (size_t i = 0; i < lib_.items.size(); i += step) nodes.push_back(library_item(i));
         if (!lib_selecting_) nodes.push_back(message("Hold a manga to select it."));
     }
+    if (lib_.downloaded_only && !lib_.items.empty()) nodes.insert(nodes.begin(), section_header("Downloaded only"));
     auto body = column();
     body->opaque = true;
     if (!lib_.categories.empty() && !lib_selecting_) body->add(category_tabs(lib_));
@@ -483,7 +497,7 @@ void Shell::toggle_library_selected(int64_t manga_id)
     // Just that row (or row of covers) and the title.
     for (size_t i = 0; i < lib_.items.size() && list_; ++i) {
         if (lib_.items[i].manga.id != manga_id) continue;
-        size_t item = lib_.covers ? i / kLibraryColumns : i;
+        size_t item = (lib_.covers ? i / kLibraryColumns : i) + (lib_.downloaded_only ? 1 : 0);   // after the header
         screen_.relayout(list_->replace_child(item, library_item(i)));
         break;
     }
@@ -1615,32 +1629,172 @@ void Shell::show_downloads()
 
 void Shell::show_more()
 {
-    begin();
-    std::vector<std::unique_ptr<Node>> items;
-    items.push_back(switch_row("Downloaded only", "Filters all entries in your library", downloaded_only_,
-                               [this](bool on) { downloaded_only_ = on; }));
-    items.push_back(switch_row("Incognito mode", "Pauses reading history", incognito_, [this](bool on) { incognito_ = on; }));
-    struct Entry { char32_t icon; const char* title; const char* subtitle; };
-    RowSpec queue{"Download queue", "Chapters kept on this Kindle", false, false, icon::chevron_right, [this] {
-        go(Route{Route::Downloads});
-    }};
-    queue.leading = icon::download;
-    items.push_back(list_row(queue));
-    RowSpec categories{"Categories", "Group your library into tabs", false, false, icon::chevron_right, [this] {
-        go(Route{Route::Categories});
-    }};
-    categories.leading = icon::label;
-    items.push_back(list_row(categories));
-    for (const Entry& e : {Entry{icon::storage, "Data and storage", ""}, Entry{icon::settings, "Settings", ""},
-                           Entry{icon::info, "About", "Sumiyomi 0.3 (M3: data + WeebCentral)"}}) {
-        RowSpec r{e.title, e.subtitle, false, false, 0, [] {}};
-        r.leading = e.icon;
-        items.push_back(list_row(r));
+    uint64_t gen = begin();
+    data_.app_settings([this, gen](AppSettings st) {
+        if (!current(gen)) return;
+        std::vector<std::unique_ptr<Node>> items;
+        items.push_back(switch_row("Downloaded only", "The library lists only manga with downloaded chapters", st.downloaded_only,
+                                   [this](bool on) { data_.edit_app_settings([on](AppSettings& n) { n.downloaded_only = on; }); }));
+        items.push_back(switch_row("Incognito mode", "Chapters you open aren't added to History", data_.incognito(),
+                                   [this](bool on) { data_.set_incognito(on); }));
+        auto entry = [&](char32_t leading, const std::string& title, const std::string& sub, std::function<void()> fn) {
+            RowSpec r{title, sub, false, false, fn ? icon::chevron_right : 0, fn ? std::move(fn) : [] {}};
+            r.leading = leading;
+            items.push_back(list_row(r));
+        };
+        entry(icon::download, "Download queue", "Chapters kept on this Kindle", [this] { go(Route{Route::Downloads}); });
+        entry(icon::label, "Categories", "Group your library into tabs", [this] { go(Route{Route::Categories}); });
+        entry(icon::settings, "Settings", "Reader defaults, library checks, downloads", [this] { go(Route{Route::Settings}); });
+        entry(icon::storage, "Data and storage", "Page cache and downloaded chapters", [this] { go(Route{Route::Storage}); });
+        entry(icon::info, "About", "Sumiyomi 0.5 \xC2\xB7 WeebCentral", nullptr);
+        entry(icon::close, "Exit Sumiyomi", "Return to the Kindle home screen", [this] { on_exit_(); });
+        present(scaffold(app_bar("More", nullptr, with_light({})), paged(std::move(items)), kMore));
+    });
+}
+
+std::unique_ptr<Node> Shell::setting(const std::string& title, std::unique_ptr<Node> control)
+{
+    auto box = std::make_unique<Node>();
+    box->layout = Layout::Column;
+    box->padding = Insets{32, 12, 32, 12};
+    box->gap = 8;
+    box->emplace<Label>(title, type::LIST_SECONDARY, FontId::InterSemiBold, tone::BLACK)->width = Dim::fill();
+    box->add(std::move(control));
+    return box;
+}
+
+void Shell::confirm(const std::string& title, const std::string& action, std::function<void()> on_confirm)
+{
+    std::vector<std::unique_ptr<Node>> rows;
+    auto box = std::make_unique<Node>();
+    box->layout = Layout::Row;
+    box->padding = Insets{32, 8, 32, 16};
+    box->gap = 16;
+    box->add(button("Cancel", [this] { screen_.hide_overlay(); }));
+    box->add(button(action, [this, on_confirm] {
+        screen_.hide_overlay();
+        on_confirm();
+    }, true));
+    rows.push_back(std::move(box));
+    screen_.show_overlay(sheet(title, std::move(rows)));
+}
+
+void Shell::show_settings(Change change)
+{
+    uint64_t gen = change == Change::Update ? generation_ : begin();
+    int page = change == Change::Update && list_ ? list_->page() : 0;
+    data_.reader_settings([this, gen, page, change](ReaderSettings rs) {
+        if (!current(gen)) return;
+        data_.app_settings([this, gen, page, change, rs](AppSettings st) {
+            if (!current(gen)) return;
+            std::vector<std::unique_ptr<Node>> items;
+            // Each change is saved at once; a choice redraws the list in place (no flash), a switch redraws itself.
+            items.push_back(section_header("Reader defaults"));
+            items.push_back(text_block("Used for every manga without its own setting. The reader's menu changes them too.",
+                                       type::LIST_SECONDARY, FontId::InterRegular, 2, Insets{32, 8, 32, 8}));
+            items.push_back(setting("Reading direction", segmented({"Right to left", "Left to right"}, rs.rtl ? 0 : 1,
+                [this](int i) { data_.edit_reader_settings([i](ReaderSettings& n) { n.rtl = i == 0; }, [this] { show_settings(Change::Update); }); })));
+            static constexpr int kFlash[] = {1, 2, 5, 10, 0};
+            int flash = 0;
+            for (int i = 0; i < 5; ++i)
+                if (kFlash[i] == rs.flash_every) flash = i;
+            items.push_back(setting("Full refresh", segmented({"Every page", "Every 2", "Every 5", "Every 10", "Never"}, flash,
+                [this](int i) { data_.edit_reader_settings([i](ReaderSettings& n) { n.flash_every = kFlash[i]; }, [this] { show_settings(Change::Update); }); })));
+            items.push_back(setting("Fit", segmented({"Fit page", "Fit width"}, rs.fit == image::Fit::Width ? 1 : 0,
+                [this](int i) { data_.edit_reader_settings([i](ReaderSettings& n) { n.fit = i == 1 ? image::Fit::Width : image::Fit::Screen; }, [this] { show_settings(Change::Update); }); })));
+            items.push_back(setting("Double pages", segmented({"Split in two", "Keep whole"}, rs.split_spreads ? 0 : 1,
+                [this](int i) { data_.edit_reader_settings([i](ReaderSettings& n) { n.split_spreads = i == 0; }, [this] { show_settings(Change::Update); }); })));
+            items.push_back(setting("Crop blank borders", segmented({"Auto", "Off"}, rs.crop_borders ? 0 : 1,
+                [this](int i) { data_.edit_reader_settings([i](ReaderSettings& n) { n.crop_borders = i == 0; }, [this] { show_settings(Change::Update); }); })));
+            items.push_back(setting("Margins", segmented({"None", "Small", "Medium", "Large"}, rs.margin,
+                [this](int i) { data_.edit_reader_settings([i](ReaderSettings& n) { n.margin = i; }, [this] { show_settings(Change::Update); }); })));
+            items.push_back(setting("Contrast", segmented({"Low", "Normal", "High", "Max"}, rs.contrast,
+                [this](int i) { data_.edit_reader_settings([i](ReaderSettings& n) { n.contrast = i; }, [this] { show_settings(Change::Update); }); })));
+            items.push_back(setting("Darkness", segmented({"Light", "Normal", "Dark", "Darker"}, rs.darkness,
+                [this](int i) { data_.edit_reader_settings([i](ReaderSettings& n) { n.darkness = i; }, [this] { show_settings(Change::Update); }); })));
+            items.push_back(setting("Dithering", segmented({"Sharp", "Balanced", "Smooth"}, static_cast<int>(rs.dither),
+                [this](int i) { data_.edit_reader_settings([i](ReaderSettings& n) { n.dither = static_cast<image::Dither>(i); }, [this] { show_settings(Change::Update); }); })));
+
+            auto app = [this](std::function<void(AppSettings&, bool)> edit) {
+                return [this, edit](bool on) { data_.edit_app_settings([edit, on](AppSettings& n) { edit(n, on); }); };
+            };
+            items.push_back(section_header("Library"));
+            items.push_back(switch_row("Check for new chapters at startup", "Runs in the background; new chapters appear in Updates",
+                                       st.check_on_start, app([](AppSettings& n, bool on) { n.check_on_start = on; })));
+            RowSpec auto_dl{"Download new chapters", "When a check finds them: off, all, or chosen categories", false, false,
+                            icon::chevron_right, [this] { show_auto_download_sheet(); }};
+            items.push_back(list_row(auto_dl));
+            items.push_back(section_header("Downloads"));
+            items.push_back(switch_row("Delete chapters after reading", "A downloaded chapter's files go when you finish it",
+                                       st.delete_after_read, app([](AppSettings& n, bool on) { n.delete_after_read = on; })));
+            items.push_back(switch_row("Downloaded only", "The library lists only manga with downloaded chapters",
+                                       st.downloaded_only, app([](AppSettings& n, bool on) { n.downloaded_only = on; })));
+            present(scaffold(app_bar("Settings", [this] { on_back(); }, {}), paged(std::move(items), page), -1), change);
+        });
+    });
+}
+
+namespace {
+
+std::string megabytes(uint64_t bytes)
+{
+    uint64_t mb = (bytes + (1u << 19)) >> 20;
+    if (mb >= 1024) {
+        char buf[32];
+        std::snprintf(buf, sizeof buf, "%.1f GB", static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0));
+        return buf;
     }
-    RowSpec exit_row{"Exit Sumiyomi", "Return to the Kindle home screen", false, false, 0, [this] { on_exit_(); }};
-    exit_row.leading = icon::close;
-    items.push_back(list_row(exit_row));
-    present(scaffold(app_bar("More", nullptr, with_light({})), paged(std::move(items)), kMore));
+    return std::to_string(mb) + " MB";
+}
+
+} // namespace
+
+void Shell::show_storage(Change change)
+{
+    uint64_t gen = change == Change::Update ? generation_ : begin();
+    data_.storage([this, gen, change](StorageInfo info) {
+        if (!current(gen)) return;
+        data_.app_settings([this, gen, change, info](AppSettings st) {
+            if (!current(gen)) return;
+            std::vector<std::unique_ptr<Node>> items;
+            items.push_back(section_header("Page cache"));
+            items.push_back(text_block("Pages ready to read, kept so opening a chapter again is instant. The oldest go first "
+                                       "when it's full. Clearing it never touches downloads.",
+                                       type::LIST_SECONDARY, FontId::InterRegular, 3, Insets{32, 8, 32, 8}));
+            items.push_back(list_row({megabytes(info.cache_bytes) + " of " + megabytes(info.cache_limit) + " used",
+                                      std::to_string(info.cache_pages) + " pages", false, false, 0, nullptr}));
+            static constexpr int kLimits[] = {256, 512, 1024, 2048};
+            int limit = 1;
+            for (int i = 0; i < 4; ++i)
+                if (kLimits[i] == st.cache_limit_mb) limit = i;
+            items.push_back(setting("Size limit", segmented({"256 MB", "512 MB", "1 GB", "2 GB"}, limit, [this, gen](int i) {
+                data_.edit_app_settings([i](AppSettings& n) { n.cache_limit_mb = kLimits[i]; },
+                                        [this, gen] { if (current(gen)) show_storage(Change::Update); });
+            })));
+            auto clear = std::make_unique<Node>();
+            clear->padding = Insets{32, 8, 32, 16};
+            clear->add(button("Clear page cache", [this, gen] {
+                confirm("Clear the page cache?", "Clear", [this, gen] {
+                    data_.clear_page_cache([this, gen] { if (current(gen)) show_storage(Change::Update); });
+                });
+            }));
+            items.push_back(std::move(clear));
+
+            items.push_back(section_header("Downloads"));
+            items.push_back(list_row({megabytes(info.download_bytes) + " used",
+                                      std::to_string(info.downloaded_chapters) + (info.downloaded_chapters == 1 ? " chapter" : " chapters"),
+                                      false, false, 0, nullptr}));
+            auto del = std::make_unique<Node>();
+            del->padding = Insets{32, 8, 32, 16};
+            del->add(button("Delete all downloads", [this, gen] {
+                confirm("Delete every downloaded chapter?", "Delete", [this, gen] {
+                    data_.delete_all_downloads([this, gen] { if (current(gen)) show_storage(Change::Update); });
+                });
+            }));
+            items.push_back(std::move(del));
+            present(scaffold(app_bar("Data and storage", [this] { on_back(); }, {}), paged(std::move(items)), -1), change);
+        });
+    });
 }
 
 } // namespace sumi::app
