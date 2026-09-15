@@ -44,6 +44,10 @@ void PagedList::layout_in(Text& text, Fonts& fonts, const Rect& frame)
             used += need;
         }
     }
+    if (focus_item_ >= 0) {
+        page_ = static_cast<int>(std::upper_bound(starts_.begin(), starts_.end(), focus_item_) - starts_.begin()) - 1;
+        focus_item_ = -1;
+    }
     page_ = std::clamp(page_, 0, page_count() - 1);
     first_ = starts_[static_cast<size_t>(page_)];
     const int end = page_ + 1 < page_count() ? starts_[static_cast<size_t>(page_ + 1)] : n;
@@ -91,9 +95,11 @@ PagerBar::PagerBar(const PagedList* list, std::function<void(bool)> on_page) : l
     height = Dim::px(104);
     align_cross = Align::Stretch;
     opaque = true;
-    background = tone::SURFACE_2;
-    border.top = 1;
-    prev_ = add(arrow(icon::chevron_left, [this] { if (list_ && list_->can_page_back()) on_page_(false); }));
+    background = tone::SURFACE;
+    border.top = tone::RULE;
+    prev_tap_ = [this] { if (list_ && list_->can_page_back()) on_page_(false); };
+    next_tap_ = [this] { if (list_ && list_->can_page_forward()) on_page_(true); };
+    prev_ = add(arrow(icon::chevron_left, prev_tap_));
     auto mid = std::make_unique<Node>();
     mid->layout = Layout::Stack;
     mid->width = Dim::fill();
@@ -102,20 +108,25 @@ PagerBar::PagerBar(const PagedList* list, std::function<void(bool)> on_page) : l
     mid->align_cross = Align::Center;
     label_ = mid->emplace<Label>("", type::LIST_SECONDARY, FontId::InterMedium, tone::ON_SURFACE);
     add(std::move(mid));
-    next_ = add(arrow(icon::chevron_right, [this] { if (list_ && list_->can_page_forward()) on_page_(true); }));
+    next_ = add(arrow(icon::chevron_right, next_tap_));
 }
 
 void PagerBar::layout_in(Text& text, Fonts& fonts, const Rect& frame)
 {
     // The list is laid out before this bar (it sits above it in the column), so its page split is current.
     int page = list_ ? list_->page() : 0, count = list_ ? list_->page_count() : 1;
-    label_->set_text("Page " + std::to_string(page + 1) + " of " + std::to_string(count));
-    auto style = [](Node* b, bool enabled) {
-        auto* icon = static_cast<Icon*>(b->children()[0].get());
-        icon->gray = enabled ? tone::ON_SURFACE : tone::OUTLINE_VARIANT;
+    // A list that fits on one page gets no pager at all: blank space, no rule, no "Page 1 of 1".
+    // (The bar keeps its height so hiding it can't change the page split it depends on.)
+    bool shown = count > 1;
+    label_->set_text(shown ? "Page " + std::to_string(page + 1) + " of " + std::to_string(count) : std::string());
+    border.top = shown ? tone::RULE : 0;
+    // No gray "disabled" state: an arrow that can't be used isn't drawn (and isn't tappable).
+    auto style = [](Node* b, bool enabled, const std::function<void()>& tap) {
+        b->children()[0]->visible = enabled;
+        b->on_tap = enabled ? tap : nullptr;
     };
-    style(prev_, list_ && list_->can_page_back());
-    style(next_, list_ && list_->can_page_forward());
+    style(prev_, list_ && list_->can_page_back(), prev_tap_);
+    style(next_, list_ && list_->can_page_forward(), next_tap_);
     Node::layout_in(text, fonts, frame);
 }
 

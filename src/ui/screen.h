@@ -14,21 +14,27 @@ namespace sumi::ui {
 // Hosts one node tree on the display. Turns input into press feedback and taps, and turns
 // dirty nodes into repaints + FrameScheduler damage (design doc §5.1 paint pipeline).
 //
-// Refresh rules (§5.4, e-ink):
-//   - screen entry, page change, content swap: full-screen repaint + one full-screen REAGL
-//     refresh (kFullWave). REAGL clears ghosting without the black flash; the RefreshPolicy still
-//     turns every Nth full refresh into a real GC16 flash for a deep clean.
-//   - press: the node is binarized + inverted and refreshed with A2 immediately (tap feedback
-//     is the only deliberately partial update, so it stays fast)
-//   - release: the node repaints normally with GL16 (content may contain grays)
-//   - other dirty nodes: their own `refresh` / `bw` hints
+// Refresh rules (e-ink). Every whole-screen repaint says *why* it happens (Change), and the
+// reason alone picks the waveform:
+//   NewScreen  different screen, or real content replacing a loading screen
+//              -> full-screen GC16 flash. A clean slate, once per screen.
+//   Loading    the full-screen "Loading…" placeholder -> full-screen GL16, no flash
+//              (almost all white: nothing to clean up, and the content flash follows).
+//   PageTurn   next/previous page of the same list -> full-screen GL16, no flash; every
+//              kPagesPerFlash-th consecutive page turn flashes to clear accumulated ghosting.
+//   Update     small in-place change that needed a relayout (a label, a toggle) -> GL16.
+// Local changes don't repaint the screen at all: a pressed button inverts with A2 (fast, B&W),
+// released it repaints with GL16, and other dirty nodes refresh only their own rect.
+// When several changes land in one frame, the strongest wins (NewScreen > PageTurn > Update > Loading).
 // Swipes don't navigate: paging goes through turn_page (pager bar arrows) and the page keys.
+enum class Change : uint8_t { Loading, Update, PageTurn, NewScreen };
+
 class Screen {
 public:
     Screen(Canvas& canvas, Text& text, Fonts& fonts, FrameScheduler& frames, int32_t width, int32_t height);
 
-    // Replaces the tree. Layout + full paint + GC16 flash happen on the next frame().
-    void set_root(std::unique_ptr<Node> root);
+    // Replaces the tree. Layout + full paint + a full refresh (per `change`) happen on the next frame().
+    void set_root(std::unique_ptr<Node> root, Change change = Change::NewScreen);
     Node* root() const { return root_.get(); }
 
     // A bottom sheet over the current root (§5.4): appears in place with one refresh of its own
@@ -41,9 +47,10 @@ public:
     // (in-place content swaps: tab switches, a replaced row). Call from tap handlers, not mid-event.
     void relayout(Node* n);
 
-    // Re-run layout and repaint everything next frame, with `mode` (structure changed in place).
-    static constexpr Wave kFullWave = Wave::REAGL;
-    void invalidate_layout(Wave mode = kFullWave);
+    // Re-run layout and repaint everything next frame (structure changed in place).
+    void invalidate_layout(Change change = Change::Update);
+
+    static constexpr int kPagesPerFlash = 5;
 
     // Move `list` (a paging node) one page; on success the whole screen repaints and refreshes.
     void turn_page(Node* list, bool forward);
@@ -79,7 +86,9 @@ private:
     bool overlay_shown_  = false;        // needs its entry refresh
     Rect overlay_hidden_;                // area to restore after hide_overlay
     bool  needs_layout_ = false;
-    Wave  full_mode_    = kFullWave;
+    Change pending_change_ = Change::NewScreen;
+    int    pages_since_flash_ = 0;
+    Wave   full_wave(Change change);
 
     GestureRecognizer gestures_;
     Node*  pressed_  = nullptr;

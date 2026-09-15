@@ -119,9 +119,7 @@ int main(int argc, char** argv)
     sumi::GlyphCache     glyphs;
     sumi::Text           text(fonts, glyphs);
     sumi::RefreshPolicy  policy;
-    // Screens and pages refresh with REAGL (no flash, low ghosting); a real flash every 10th
-    // full refresh cleans up what REAGL leaves behind without flashing on every change.
-    policy.set_flash_interval(10);
+    policy.set_flash_interval(0);   // Screen decides flashes from what changed (see ui/screen.h)
     sumi::FrameScheduler frames(*display, policy);
     sumi::ui::Screen     screen(canvas, text, fonts, frames, di.width, di.height);
 
@@ -145,7 +143,14 @@ int main(int argc, char** argv)
         return 1;
     }
     sumi::app::AppData app_data(worker, db, load_extensions(env_or("SUMI_SOURCES", SUMI_SOURCES_DIR), http));
-    sumi::app::Shell shell(screen, app_data, [&loop] { loop.stop(); });
+    sumi::app::Shell shell(screen, app_data, [&loop] { loop.stop(); }, nullptr,
+                           [&loop, &screen](uint32_t ms, std::function<void()> fn) {
+                               loop.add_timeout([&loop, &screen, fn] {
+                                   fn();
+                                   screen.frame();
+                                   loop.arm_tick(screen.wants_tick());
+                               }, ms);
+                           });
 
     uint64_t t_start = sumi::mono_ms();
     shell.start();
@@ -197,7 +202,7 @@ int main(int argc, char** argv)
     // the KUAL launch (seen on the device). Repaint everything once with a flash after it settles.
     loop.add_timeout([&] {
         SUMI_LOGI("main", "startup repaint (clears any home screen drawn after launch)");
-        screen.invalidate_layout(sumi::Wave::GC16_FLASH);
+        screen.invalidate_layout(sumi::ui::Change::NewScreen);
         screen.frame();
     }, kStartupRepaintMs);
     loop.set_tick([&](uint64_t now) {

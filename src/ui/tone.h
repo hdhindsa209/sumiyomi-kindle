@@ -3,18 +3,25 @@
 
 namespace sumi::ui {
 
-// Material 3 roles translated to grayscale (design doc §5.3). Values are logical 8-bit gray
-// (0 = black) chosen to land exactly on the panel's 16 levels (multiples of 17).
+// E-ink palette: pure black and white. No gray fills, no gray text, no tinted states: every
+// pixel the UI draws (except antialiased glyph edges) is 0 or 255, so screens stay crisp and
+// legible under any waveform and ghost as little as possible. Emphasis comes from weight
+// (SemiBold), rules (2 px lines, 6 px indicator bars) and inversion (black fill, white text).
+// The Material role names are kept so call sites say what a color is *for*.
 namespace tone {
-inline constexpr uint8_t SURFACE            = 255;   // level 15: page background
-inline constexpr uint8_t SURFACE_1          = 238;   // level 14: cards, bottom sheets
-inline constexpr uint8_t SURFACE_2          = 221;   // level 13: scrolled app bar, chips, nav bar
-inline constexpr uint8_t SURFACE_3          = 204;   // level 12: pressed/selected, active nav pill
-inline constexpr uint8_t OUTLINE_VARIANT    = 187;   // level 11: dividers, card borders
-inline constexpr uint8_t OUTLINE            = 136;   // level 8: unselected icon strokes, switch off stroke
-inline constexpr uint8_t ON_SURFACE_VARIANT = 102;   // level 6: secondary text, inactive nav
-inline constexpr uint8_t ON_SURFACE         = 34;    // level 2: primary text
-inline constexpr uint8_t PRIMARY            = 0;     // level 0: active item, selection, filled controls
+inline constexpr uint8_t WHITE = 255;
+inline constexpr uint8_t BLACK = 0;
+inline constexpr uint8_t SURFACE            = WHITE;   // page background
+inline constexpr uint8_t SURFACE_1          = WHITE;   // sheets
+inline constexpr uint8_t SURFACE_2          = WHITE;   // bars, chips
+inline constexpr uint8_t SURFACE_3          = WHITE;   // (no tinted selected state)
+inline constexpr uint8_t OUTLINE_VARIANT    = BLACK;   // dividers
+inline constexpr uint8_t OUTLINE            = BLACK;   // strokes
+inline constexpr uint8_t ON_SURFACE_VARIANT = BLACK;   // secondary text: smaller, not lighter
+inline constexpr uint8_t ON_SURFACE         = BLACK;   // primary text
+inline constexpr uint8_t PRIMARY            = BLACK;   // selection, filled controls
+inline constexpr int32_t RULE  = 2;                    // divider / outline thickness, px
+inline constexpr int32_t BAR   = 6;                    // active indicator thickness, px
 } // namespace tone
 
 // Type scale (design doc §5.3), in sp; convert with Fonts::sp().

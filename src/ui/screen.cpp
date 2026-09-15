@@ -9,7 +9,7 @@ Screen::Screen(Canvas& canvas, Text& text, Fonts& fonts, FrameScheduler& frames,
 {
 }
 
-void Screen::set_root(std::unique_ptr<Node> root)
+void Screen::set_root(std::unique_ptr<Node> root, Change change)
 {
     pressed_ = nullptr;
     retired_overlay_ = std::move(overlay_);
@@ -18,8 +18,8 @@ void Screen::set_root(std::unique_ptr<Node> root)
     released_.clear();
     retired_      = std::move(root_);
     root_         = std::move(root);
+    pending_change_ = needs_layout_ ? std::max(pending_change_, change) : change;
     needs_layout_ = true;
-    full_mode_    = kFullWave;
 }
 
 void Screen::show_overlay(std::unique_ptr<Node> overlay)
@@ -54,10 +54,29 @@ void Screen::relayout(Node* n)
     n->mark_dirty();
 }
 
-void Screen::invalidate_layout(Wave mode)
+void Screen::invalidate_layout(Change change)
 {
+    pending_change_ = needs_layout_ ? std::max(pending_change_, change) : change;
     needs_layout_ = true;
-    full_mode_    = mode;
+}
+
+Wave Screen::full_wave(Change change)
+{
+    switch (change) {
+    case Change::NewScreen:
+        pages_since_flash_ = 0;
+        return Wave::GC16_FLASH;
+    case Change::PageTurn:
+        if (++pages_since_flash_ >= kPagesPerFlash) {
+            pages_since_flash_ = 0;
+            return Wave::GC16_FLASH;
+        }
+        return Wave::GL16;
+    case Change::Loading:
+    case Change::Update:
+        break;
+    }
+    return Wave::GL16;
 }
 
 void Screen::on_event(const RawEvent& e)
@@ -124,7 +143,7 @@ void Screen::page(Node* start, bool forward)
 
 void Screen::turn_page(Node* list, bool forward)
 {
-    if (list && list->on_page(forward)) invalidate_layout();   // whole screen: pager label changes too
+    if (list && list->on_page(forward)) invalidate_layout(Change::PageTurn);   // whole screen: pager label changes too
 }
 
 void Screen::on_tick(uint64_t now_ms)
@@ -180,8 +199,7 @@ void Screen::frame()
         root_->collect_dirty(dirty_);   // everything is repainted; drop individual damage
         dirty_.clear();
         released_.clear();
-        frames_.damage(screen_, full_mode_);
-        full_mode_ = kFullWave;
+        frames_.damage(screen_, full_wave(pending_change_));
     } else {
         if (!overlay_hidden_.empty()) {
             // Sheet dismissed: repaint what was under it.

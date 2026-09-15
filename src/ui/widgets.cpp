@@ -73,8 +73,9 @@ std::unique_ptr<Node> app_bar(const std::string& title, std::function<void()> on
     bar->gap = 8;
     bar->align_cross = Align::Center;
     bar->opaque = true;
-    bar->background = scrolled ? tone::SURFACE_2 : tone::SURFACE;
-    if (scrolled) bar->border.bottom = 1;
+    bar->background = tone::SURFACE;
+    bar->border.bottom = tone::RULE;
+    (void)scrolled;
     bar->refresh = Wave::DU;
 
     // Touch targets can't be sized in sp here (no Fonts yet): 48 sp at 300 dpi = 90 px.
@@ -94,8 +95,8 @@ std::unique_ptr<Node> nav_bar(const std::vector<NavItem>& items, int active, std
     auto bar = container(Layout::Row);
     bar->height = Dim::px(128);
     bar->opaque = true;
-    bar->background = tone::SURFACE_2;
-    bar->border.top = 1;
+    bar->background = tone::SURFACE;
+    bar->border.top = tone::RULE;
     bar->refresh = Wave::DU;
 
     for (size_t i = 0; i < items.size(); ++i) {
@@ -104,6 +105,8 @@ std::unique_ptr<Node> nav_bar(const std::vector<NavItem>& items, int active, std
         cell->width = Dim::fill();
         cell->height = Dim::fill();
         cell->padding = Insets{0, 12, 0, 8};
+        if (on) cell->border.top = tone::BAR;   // active tab: a black bar along the top edge
+        cell->border_gray = tone::PRIMARY;
         cell->gap = 4;
         cell->align_main = Align::Center;
         cell->align_cross = Align::Center;
@@ -114,11 +117,6 @@ std::unique_ptr<Node> nav_bar(const std::vector<NavItem>& items, int active, std
         pill->height = Dim::px(64);
         pill->align_main = Align::Center;
         pill->align_cross = Align::Center;
-        if (on) {
-            pill->opaque = true;
-            pill->radius = 32;
-            pill->background = tone::SURFACE_3;
-        }
         pill->emplace<Icon>(items[i].icon, kIconSp, on ? tone::PRIMARY : tone::ON_SURFACE_VARIANT, on);
         cell->add(std::move(pill));
 
@@ -139,8 +137,8 @@ std::unique_ptr<Node> list_row(const RowSpec& spec)
     row->padding = Insets{32, 0, 24, 0};
     row->gap = 24;
     row->align_cross = Align::Center;
-    row->border.bottom = 1;          // transparent: shows whatever it sits on (page or sheet)
-    row->refresh = Wave::DU;
+    row->border.bottom = tone::RULE; // transparent: shows whatever it sits on (page or sheet)
+    row->refresh = Wave::GL16;       // text: antialiased edges need the gray waveform to stay legible
     row->on_tap = spec.on_tap;
 
     if (spec.unread_dot) row->add(dot(16, tone::PRIMARY));
@@ -302,12 +300,13 @@ std::unique_ptr<Node> chip(const std::string& label, bool selected, std::functio
     c->align_main = Align::Center;
     c->align_cross = Align::Center;
     c->opaque = true;
-    c->radius = 16;
-    c->background = selected ? tone::SURFACE_3 : tone::SURFACE_2;
+    c->background = selected ? tone::BLACK : tone::WHITE;
+    c->border = Insets::all(tone::RULE);
+    c->border_gray = tone::BLACK;
     c->on_tap = std::move(on_tap);
     c->refresh = Wave::DU;
     c->emplace<Label>(label, type::CHIP, selected ? FontId::InterSemiBold : FontId::InterMedium,
-                      selected ? tone::PRIMARY : tone::ON_SURFACE);
+                      selected ? tone::WHITE : tone::BLACK);
     return c;
 }
 
@@ -318,7 +317,7 @@ std::unique_ptr<Node> tabs(const std::vector<std::string>& labels, int active, s
     auto strip = container(Layout::Row);
     strip->height = Dim::px(88);
     strip->opaque = true;
-    strip->border.bottom = 1;
+    strip->border.bottom = tone::RULE;
     strip->refresh = Wave::DU;
     for (size_t i = 0; i < labels.size(); ++i) {
         bool on = static_cast<int>(i) == active;
@@ -328,7 +327,7 @@ std::unique_ptr<Node> tabs(const std::vector<std::string>& labels, int active, s
         tab->align_main = Align::Center;
         tab->align_cross = Align::Center;
         tab->on_tap = [on_select, i] { on_select(static_cast<int>(i)); };
-        if (on) tab->border.bottom = 4;
+        if (on) tab->border.bottom = tone::BAR;
         tab->border_gray = tone::PRIMARY;
         tab->emplace<Label>(labels[i], type::LIST_SECONDARY, on ? FontId::InterSemiBold : FontId::InterMedium,
                             on ? tone::PRIMARY : tone::ON_SURFACE_VARIANT);
@@ -374,7 +373,7 @@ std::unique_ptr<Node> sheet(const std::string& title, std::vector<std::unique_pt
     s->height = Dim::wrap();
     s->opaque = true;
     s->background = tone::SURFACE_1;
-    s->border.top = 1;
+    s->border.top = tone::RULE;
     s->border_gray = tone::OUTLINE;
     s->padding = Insets{0, 16, 0, 24};
     s->refresh = Wave::GL16;
@@ -387,7 +386,7 @@ std::unique_ptr<Node> sheet(const std::string& title, std::vector<std::unique_pt
     grip->width = Dim::px(64);
     grip->height = Dim::px(8);
     grip->opaque = true;
-    grip->radius = 4;
+    grip->radius = 0;
     grip->background = tone::OUTLINE_VARIANT;
     handle->add(std::move(grip));
     s->add(std::move(handle));

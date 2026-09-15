@@ -18,6 +18,8 @@ public:
     void layout_in(Text& text, Fonts& fonts, const Rect& frame) override;
 
     int  page() const { return page_; }
+    void set_page(int page) { page_ = page < 0 ? 0 : page; }   // clamped at the next layout
+    void show_item(int index) { focus_item_ = index; }          // next layout opens the page containing it
     int  page_count() const { return static_cast<int>(starts_.size()); }   // valid after layout; >= 1
     bool can_page_forward() const { return page_ + 1 < page_count(); }
     bool can_page_back() const { return page_ > 0; }
@@ -29,6 +31,7 @@ protected:
 
 private:
     int page_ = 0;
+    int focus_item_ = -1;
     int first_ = 0, last_ = -1;
     std::vector<int> starts_{0};   // first item index of each page
 };
@@ -43,6 +46,7 @@ public:
 
 private:
     const PagedList* list_;
+    std::function<void()> prev_tap_, next_tap_;
     Node*  prev_ = nullptr;
     Node*  next_ = nullptr;
     Label* label_ = nullptr;

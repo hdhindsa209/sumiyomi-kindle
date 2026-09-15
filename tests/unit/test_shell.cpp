@@ -261,12 +261,21 @@ void test_device_loop_results_reach_the_panel()
 {
     // As on the Kindle: real event loop and worker thread, no simulator timer painting frames.
     Env env(true);
+    CHECK(env.shows("Loading library\xE2\x80\xA6"));                // whole-screen loading page first
+    CHECK(env.run_until([&] { return env.shows("Browse sources"); }));
     env.tap(env.nav_cell(3));
     env.tap(env.find("WeebCentral"));
     CHECK(env.shows("Loading WeebCentral\xE2\x80\xA6"));
-    size_t full = env.display.full_refreshes();
+    CHECK(env.shows("Cancel"));
+    CHECK(!env.shows("Popular"));                                     // nothing half-built behind it
+    size_t calls = env.display.calls.size();
     CHECK(env.run_until([&] { return env.shows("One Piece"); }));   // no tap: the result must paint itself
-    CHECK(env.display.full_refreshes() > full);                     // content swap = whole panel
+    // Exactly one refresh for the finished screen: a full-screen flash.
+    CHECK_EQ(env.display.calls.size(), calls + 1);
+    if (env.display.calls.size() == calls + 1) {
+        CHECK(env.display.calls.back().mode == Wave::GC16_FLASH);
+        CHECK_EQ(env.display.calls.back().rect.h, kH);
+    }
     CHECK_EQ(env.display.stale_pixels(), 0);
     CHECK(env.golden("source_popular"));
 }

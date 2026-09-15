@@ -1,3 +1,4 @@
+#include "ui/paged_list.h"
 #include "ui/screen.h"
 
 #include "check.h"
@@ -238,7 +239,7 @@ void test_screen_entry_is_one_full_refresh()
     env.screen.set_root(sample_tree(&taps));
     env.screen.frame();
     CHECK_EQ(env.display.calls.size(), 1);
-    CHECK(env.display.calls[0].mode == Wave::REAGL);     // clears ghosting without the black flash
+    CHECK(env.display.calls[0].mode == Wave::GC16_FLASH);
     CHECK_EQ(env.display.calls[0].rect.w, 1072);
     env.screen.frame();                                  // nothing changed: nothing submitted
     CHECK_EQ(env.display.calls.size(), 1);
@@ -337,8 +338,52 @@ void test_tap_replacing_root_renders_new_screen()
     env.screen.on_event(e);
     env.screen.frame();                                  // release + tap + new root, same wake
     CHECK(!env.display.calls.empty());
-    CHECK(env.display.calls.back().mode == Wave::REAGL);
+    CHECK(env.display.calls.back().mode == Wave::GC16_FLASH);
     CHECK_EQ(env.display.fb[500 * 1072 + 500], tone::SURFACE_2);
+}
+
+void test_refresh_follows_the_reason_for_the_change()
+{
+    // ui/screen.h refresh rules: the reason for a whole-screen repaint picks the waveform.
+    Env env;
+    auto full = [&](Wave w) {
+        const auto& c = env.display.calls;
+        return !c.empty() && c.back().mode == w && c.back().rect.w == 1072 && c.back().rect.h == 1448;
+    };
+    auto list = [] {
+        auto l = std::make_unique<PagedList>();
+        for (int i = 0; i < 100; ++i) l->add(box(Dim::fill(), Dim::px(200)));
+        return l;
+    };
+    auto root = list();
+    PagedList* l = root.get();
+    env.screen.set_root(std::move(root), Change::Loading);
+    env.screen.frame();
+    CHECK(full(Wave::GL16));                                    // loading page: no flash
+
+    env.screen.set_root(list());
+    env.screen.frame();
+    CHECK(full(Wave::GC16_FLASH));                              // new screen: one flash
+    l = static_cast<PagedList*>(env.screen.root());
+
+    for (int turn = 1; turn <= Screen::kPagesPerFlash * 2; ++turn) {
+        size_t before = env.display.calls.size();
+        env.screen.turn_page(l, true);
+        env.screen.frame();
+        CHECK_EQ(env.display.calls.size(), before + 1);          // one refresh per page
+        CHECK(full(turn % Screen::kPagesPerFlash == 0 ? Wave::GC16_FLASH : Wave::GL16));
+    }
+
+    size_t before = env.display.calls.size();
+    env.screen.invalidate_layout(Change::Update);
+    env.screen.set_root(list());                                // same frame: the stronger reason wins
+    env.screen.frame();
+    CHECK_EQ(env.display.calls.size(), before + 1);
+    CHECK(full(Wave::GC16_FLASH));
+
+    before = env.display.calls.size();
+    env.screen.frame();                                         // nothing changed: nothing refreshed
+    CHECK_EQ(env.display.calls.size(), before);
 }
 
 void test_rounded_rect_corners()
@@ -381,6 +426,7 @@ int main()
     RUN(test_press_cancelled_by_move);
     RUN(test_dirty_label_damages_its_frame_with_hint);
     RUN(test_tap_replacing_root_renders_new_screen);
+    RUN(test_refresh_follows_the_reason_for_the_change);
     RUN(test_rounded_rect_corners);
     return check_result();
 }
