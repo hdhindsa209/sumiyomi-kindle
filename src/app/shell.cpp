@@ -97,14 +97,56 @@ bool same_view(const MangaView& a, const MangaView& b)
 } // namespace
 
 Shell::Shell(Screen& screen, AppData& data, std::function<void()> on_exit, std::function<int64_t()> now_ms, Schedule schedule,
-             Frontlight* light)
+             Frontlight* light, Battery* battery)
     : screen_(screen), data_(data), on_exit_(std::move(on_exit)),
-      now_ms_(now_ms ? std::move(now_ms) : std::function<int64_t()>(wall_ms)), schedule_(std::move(schedule)), light_(light)
+      now_ms_(now_ms ? std::move(now_ms) : std::function<int64_t()>(wall_ms)), schedule_(std::move(schedule)), light_(light),
+      battery_(battery)
 {
     data_.set_download_listener([this](const data::DownloadItem& item, bool removed) { on_download_changed(item, removed); });
 }
 
-void Shell::start() { go({Route::TabRoot, kLibrary}); }
+void Shell::start()
+{
+    go({Route::TabRoot, kLibrary});
+    if (battery_ && schedule_) schedule_(kBatteryCheckMs, [this] { watch_battery(); });
+}
+
+std::unique_ptr<Node> Shell::battery_node()
+{
+    if (!battery_ || battery_->percent() < 0) return nullptr;
+    return std::make_unique<BatteryStatus>(battery_->percent(), battery_->charging());
+}
+
+void Shell::watch_battery()
+{
+    check_battery();
+    schedule_(kBatteryCheckMs, [this] { watch_battery(); });
+}
+
+void Shell::check_battery()
+{
+    if (!battery_) return;
+    // Whatever is on screen (a list, the reader's open menu): swap each visible battery status whose reading
+    // changed, and refresh just that spot.
+    std::function<void(Node*)> walk = [&](Node* n) {
+        if (!n->visible) return;
+        if (n->node_tag == BatteryStatus::kTag) {
+            auto* b = static_cast<BatteryStatus*>(n);
+            if ((b->percent() != battery_->percent() || b->charging() != battery_->charging()) && n->parent())
+                if (auto fresh = battery_node()) {
+                    Node* parent = n->parent();
+                    for (size_t i = 0; i < parent->children().size(); ++i)
+                        if (parent->children()[i].get() == n) {
+                            screen_.relayout(parent->replace_child(i, std::move(fresh)));
+                            break;
+                        }
+                }
+            return;
+        }
+        for (auto& c : n->children()) walk(c.get());
+    };
+    if (Node* root = screen_.root()) walk(root);
+}
 
 bool Shell::on_back()
 {
@@ -204,6 +246,19 @@ std::unique_ptr<Node> Shell::scaffold(std::unique_ptr<Node> bar, std::unique_ptr
 {
     auto root = column();
     root->opaque = true;
+    if (auto status = battery_node()) {
+        // Into the app bar, right after the title (the actions stay last).
+        auto kids = bar->take_children();
+        bool placed = false;
+        for (auto& k : kids) {
+            bool title = !placed && k->label_text() != nullptr;   // the title Label
+            bar->add(std::move(k));
+            if (title) {
+                bar->add(std::move(status));
+                placed = true;
+            }
+        }
+    }
     root->add(std::move(bar));
     body->height = Dim::fill();
     root->add(std::move(body));
@@ -1306,7 +1361,7 @@ void Shell::show_reader(const Route& r)
         stack_.back() = next;   // chapter switches replace the reader route: back still returns to the manga
         show(next);
     };
-    reader_ = std::make_unique<Reader>(screen_, data_, std::move(cb), schedule_, light_);
+    reader_ = std::make_unique<Reader>(screen_, data_, std::move(cb), schedule_, light_, battery_);
     reader_->start(r.chapter_id, r.start_page, r.from_end);
 }
 

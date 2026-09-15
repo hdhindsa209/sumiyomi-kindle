@@ -88,6 +88,9 @@ public:
     Wave refresh = Wave::GL16;      // fastest waveform this node's content allows (§5.4)
     bool bw      = false;           // content is strictly black/white
 
+    // Widget-defined tag for finding a kind of node in a tree (the build has no RTTI). 0 = none.
+    int32_t node_tag = 0;
+
     // --- interaction ---
     std::function<void()> on_tap;   // non-null makes the node pressable (A2 invert on press)
     bool press_feedback = true;     // false: no invert on press (reader tap zones over a page)

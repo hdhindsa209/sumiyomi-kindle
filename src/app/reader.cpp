@@ -111,8 +111,8 @@ Label* big_text(Node* parent, const std::string& text, TypeRole role, FontId fon
 
 } // namespace
 
-Reader::Reader(Screen& screen, AppData& data, Callbacks callbacks, Schedule schedule, Frontlight* light)
-    : screen_(screen), data_(data), cb_(std::move(callbacks)), schedule_(std::move(schedule)), light_(light)
+Reader::Reader(Screen& screen, AppData& data, Callbacks callbacks, Schedule schedule, Frontlight* light, Battery* battery)
+    : screen_(screen), data_(data), cb_(std::move(callbacks)), schedule_(std::move(schedule)), light_(light), battery_(battery)
 {
 }
 
@@ -186,7 +186,7 @@ std::string Reader::subtitle() const
     std::string sub = view_.manga.title;
     int n = static_cast<int>(view_.pages.size());
     if (pos_.place == Place::Page) sub += kDot + std::string("Page ") + std::to_string(pos_.image + 1) + " of " + std::to_string(n);
-    sub += kDot + (loaded_ >= n ? std::string("Chapter loaded") : "Loaded " + std::to_string(loaded_) + " of " + std::to_string(n));
+    if (loaded_ < n) sub += kDot + std::string("Loaded ") + std::to_string(loaded_) + " of " + std::to_string(n);   // some pages failed
     return sub;
 }
 
@@ -335,6 +335,7 @@ std::unique_ptr<Node> Reader::menu_bars()
     subtitle_ = titles->emplace<Label>(subtitle(), type::LIST_SECONDARY, FontId::InterRegular, tone::BLACK);
     subtitle_->width = Dim::fill();
     top->add(std::move(titles));
+    if (battery_ && battery_->percent() >= 0) top->add(std::make_unique<BatteryStatus>(battery_->percent(), battery_->charging()));
     top_bar_ = top_layer->add(std::move(top));
     layers->add(std::move(top_layer));
 

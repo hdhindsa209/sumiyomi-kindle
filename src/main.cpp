@@ -12,6 +12,7 @@
 #include "net/fetch_pool.h"
 #include "net/http.h"
 #include "source/extension.h"
+#include "platform/battery.h"
 #include "platform/display.h"
 #include "platform/input.h"
 #include "platform/power.h"
@@ -166,6 +167,7 @@ int main(int argc, char** argv)
     app_data.set_reader_threads(transport ? image_pool.get() : nullptr, pages_worker_ok ? &pages_worker : nullptr);
     app_data.resume_downloads();   // a queue interrupted by exiting continues
     std::unique_ptr<sumi::Frontlight> light = sumi::make_frontlight();
+    std::unique_ptr<sumi::Battery> battery = sumi::make_battery();
     sumi::app::Shell shell(screen, app_data, [&loop] { loop.stop(); }, nullptr,
                            [&loop, &screen](uint32_t ms, std::function<void()> fn) {
                                loop.add_timeout([&loop, &screen, fn] {
@@ -174,7 +176,7 @@ int main(int argc, char** argv)
                                    loop.arm_tick(screen.wants_tick());
                                }, ms);
                            },
-                           light.get());
+                           light.get(), battery.get());
 
     uint64_t t_start = sumi::mono_ms();
     shell.start();

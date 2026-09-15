@@ -64,6 +64,50 @@ std::unique_ptr<Node> dot(int32_t size, uint8_t gray)
 
 // ---------------------------------------------------------------- AppBar
 
+namespace {
+
+class BatteryGlyph : public Node {
+public:
+    explicit BatteryGlyph(int percent) : percent_(percent)
+    {
+        width = Dim::px(52);
+        height = Dim::px(28);
+    }
+
+protected:
+    void paint_content(PaintCtx& ctx) override
+    {
+        Rect f = frame();
+        Rect body{f.x, f.y, f.w - 6, f.h};
+        Rect nub{f.x + f.w - 6, f.y + f.h / 2 - 6, 6, 12};
+        ctx.canvas.stroke_rect(body.clipped(ctx.clip), tone::BLACK, 3);
+        ctx.canvas.fill_rect(nub.clipped(ctx.clip), tone::BLACK);
+        int32_t inner = body.w - 12;
+        int32_t w = inner * std::clamp(percent_, 0, 100) / 100;
+        if (percent_ > 0) w = std::max<int32_t>(w, 3);
+        ctx.canvas.fill_rect(Rect{body.x + 6, body.y + 6, w, body.h - 12}.clipped(ctx.clip), tone::BLACK);
+    }
+
+private:
+    int percent_;
+};
+
+} // namespace
+
+BatteryStatus::BatteryStatus(int percent, bool charging) : percent_(percent), charging_(charging)
+{
+    node_tag = kTag;
+    layout = Layout::Row;
+    width = Dim::wrap();
+    height = Dim::wrap();
+    gap = 10;
+    align_cross = Align::Center;
+    std::string text = std::to_string(percent) + "%";
+    if (charging) text = "Charging " + text;
+    emplace<Label>(text, type::LIST_SECONDARY, FontId::InterMedium, tone::BLACK)->width = Dim::wrap();
+    add(std::make_unique<BatteryGlyph>(percent));
+}
+
 std::unique_ptr<Node> app_bar(const std::string& title, std::function<void()> on_back,
                               const std::vector<Action>& actions, bool scrolled)
 {

@@ -17,6 +17,20 @@ struct Action {
     std::function<void()> on_tap;
 };
 
+// Battery status: "87%" and a battery outline filled to the level (black on white; "Charging 87%" while
+// charging). The values it was built with are kept so a newer reading can tell whether to redraw it.
+class BatteryStatus : public Node {
+public:
+    static constexpr int32_t kTag = 0x42415454;   // Node::node_tag
+    BatteryStatus(int percent, bool charging);
+    int  percent() const { return percent_; }
+    bool charging() const { return charging_; }
+
+private:
+    int  percent_;
+    bool charging_;
+};
+
 // Top app bar (§8.1): optional back chevron, title, up to 3 actions.
 // `scrolled` switches to SURFACE_2 with a bottom divider.
 std::unique_ptr<Node> app_bar(const std::string& title, std::function<void()> on_back,

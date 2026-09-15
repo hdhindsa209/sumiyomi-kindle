@@ -9,6 +9,7 @@
 #include "app/live_frames.h"
 #include "core/log.h"
 #include "app/shell.h"
+#include "platform/battery.h"
 #include "platform/frontlight.h"
 
 #include "check.h"
@@ -58,6 +59,7 @@ struct Env {
     std::unique_ptr<app::AppData> data;
     std::unique_ptr<app::Shell>   shell;
     FakeFrontlight light;
+    FakeBattery    battery;
     // Device loop: the reader's threads as on the Kindle (fetch pool + page-cache thread).
     struct Locked final : net::Transport {
         explicit Locked(net::Transport& t, std::mutex& m) : inner(t), mu(m) {}
@@ -106,7 +108,7 @@ struct Env {
         else               // inline data is instant: deferred loading pages would never be due
             schedule = [](uint32_t, std::function<void()>) {};
         shell = std::make_unique<app::Shell>(screen, *data, [this] { exited = true; },
-                                             [] { return int64_t{1789344000000LL + 13 * 3600000LL}; }, schedule, &light);
+                                             [] { return int64_t{1789344000000LL + 13 * 3600000LL}; }, schedule, &light, &battery);
         shell->start();
         screen.frame();
     }
@@ -409,7 +411,7 @@ void test_reader_pages_zones_and_refresh()
     middle();
     CHECK(env.shows("Reading") && env.shows("Zoom") && env.shows("Crop") && env.shows("Contrast"));
     CHECK(env.shows("This manga") && env.shows("Full refresh"));
-    CHECK(env.shows(std::string(kTitle) + " \xC2\xB7 Page 1 of 33 \xC2\xB7 Chapter loaded"));
+    CHECK(env.shows(std::string(kTitle) + " \xC2\xB7 Page 1 of 33"));
     CHECK_EQ(env.image_transport.total_hits(), 33);                     // turning pages fetched nothing more
     CHECK(env.display.calls.size() > calls);
     for (size_t i = calls; i < env.display.calls.size(); ++i) CHECK(env.display.calls[i].rect.h < kH / 2);
@@ -711,8 +713,8 @@ void test_downloads_from_manga_page()
 void test_front_light_controls()
 {
     Env env;
-    // Tab screens: the light action (first app bar action) opens the sheet.
-    env.tap(env.root()->children()[0]->children()[1].get());
+    // Tab screens: the light action (first app bar action, after the title and battery) opens the sheet.
+    env.tap(env.root()->children()[0]->children()[2].get());
     CHECK(env.shows("Front light"));
     CHECK(env.shows("Light 8 of 24"));
     env.tap(env.find("+"));
@@ -977,6 +979,35 @@ void test_history_resume_and_remove()
     CHECK(repo.history().empty());
 }
 
+void test_battery_status()
+{
+    Env env;
+    CHECK(env.shows("87%"));                                             // Library app bar
+    env.battery.set(86, false);
+    size_t calls = env.display.calls.size();
+    env.shell->check_battery();
+    env.screen.frame();
+    CHECK(env.shows("86%") && !env.shows("87%"));
+    CHECK(env.display.calls.size() > calls);
+    for (size_t i = calls; i < env.display.calls.size(); ++i) CHECK(env.display.calls[i].rect.h < 200);   // just the status
+    CHECK_EQ(env.display.stale_pixels(), 0);
+    calls = env.display.calls.size();
+    env.shell->check_battery();                                          // same reading: nothing drawn
+    env.screen.frame();
+    CHECK_EQ(env.display.calls.size(), calls);
+    env.battery.set(86, true);
+    env.shell->check_battery();
+    env.screen.frame();
+    CHECK(env.shows("Charging 86%"));
+
+    // The reader's menu shows it too.
+    open_detail(env);
+    env.tap(env.find("Chapter 25"));
+    env.tap(Point{kW / 2, 700});
+    CHECK(env.shows("Charging 86%"));
+    CHECK_EQ(env.display.stale_pixels(), 0);
+}
+
 void test_more_exit()
 {
     Env env;
@@ -1013,6 +1044,7 @@ int main()
     RUN(test_categories);
     RUN(test_updates_refresh_reports);
     RUN(test_history_resume_and_remove);
+    RUN(test_battery_status);
     RUN(test_more_exit);
     return check_result();
 }

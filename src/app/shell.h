@@ -10,6 +10,7 @@
 
 #include "app/app_data.h"
 #include "app/reader.h"
+#include "platform/battery.h"
 #include "platform/frontlight.h"
 #include "ui/keyboard.h"
 #include "ui/paged_list.h"
@@ -36,9 +37,15 @@ public:
 
     // `now_ms`: wall clock for relative dates (injectable so tests render deterministic dates).
     // `schedule`: null shows loading pages immediately (tests).
-    // `light`: front light control (null: no light controls shown).
+    // `light`: front light control (null: no light controls shown). `battery`: level shown in app bars and the
+    // reader menu (null: none).
     Shell(ui::Screen& screen, AppData& data, std::function<void()> on_exit,
-          std::function<int64_t()> now_ms = nullptr, Schedule schedule = nullptr, Frontlight* light = nullptr);
+          std::function<int64_t()> now_ms = nullptr, Schedule schedule = nullptr, Frontlight* light = nullptr,
+          Battery* battery = nullptr);
+    // How often the shown battery level is compared with the latest reading (a change redraws only it).
+    static constexpr uint32_t kBatteryCheckMs = 60000;
+    // Compare the shown battery level with the latest reading now (runs every kBatteryCheckMs on its own).
+    void check_battery();
 
     void start();
     // System back (simulator Esc): returns false at a top-level tab.
@@ -131,6 +138,10 @@ private:
     std::function<int64_t()> now_ms_;
     Schedule    schedule_;
     Frontlight* light_;
+    Battery*    battery_;
+    void watch_battery();
+    // The battery status node for the current reading (null without a battery or while unknown).
+    std::unique_ptr<ui::Node> battery_node();
 
     std::vector<Route> stack_;
     uint64_t generation_ = 0;
