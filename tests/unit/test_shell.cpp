@@ -616,6 +616,48 @@ void test_downloads_from_manga_page()
     CHECK_EQ(env.image_transport.total_hits(), 33);
     CHECK_EQ(env.display.stale_pixels(), 0);
 
+    // This manga's queue is in the download sheet.
+    env.tap(env.root()->children()[0]->children().back().get());
+    CHECK(env.shows("Failed \xC2\xB7 tap to retry"));
+    CHECK(env.shows("Delete downloaded chapters"));
+    CHECK(env.shows("1 kept on this Kindle"));
+    env.screen.hide_overlay();
+    env.screen.frame();
+    CHECK(env.shows("Ongoing \xC2\xB7 WeebCentral \xC2\xB7 28 chapters \xC2\xB7 1 downloaded"));
+
+    // Sort / filter sheet (app bar, left action): Downloaded only, then oldest first.
+    const auto& actions = env.root()->children()[0]->children();
+    env.tap(actions[actions.size() - 2].get());
+    CHECK(env.shows("Sort by") && env.shows("Show"));
+    env.tap(env.find("Downloaded"));
+    CHECK(env.shows("1 of 28 chapters \xC2\xB7 downloaded"));
+    CHECK(env.find("Chapter 24") == nullptr);
+    CHECK(env.find("Sort by") != nullptr);                              // sheet stays open for more changes
+    env.tap(env.find("All"));
+    env.tap(env.find("Oldest first"));
+    env.tap(env.find("Done"));
+    CHECK(!env.shows("Sort by"));
+    CHECK_EQ(env.display.stale_pixels(), 0);
+    {
+        // The first chapter row is now Chapter 1.
+        Node* first = env.find("Chapter 1");
+        Node* last = env.find("Chapter 25");
+        CHECK(first != nullptr && last == nullptr);                     // 25 is on the last page now
+    }
+    data::Repo repo(env.db);
+    bool saved = false;
+    for (const auto& item : repo.library())
+        saved = saved || repo.pref("manga." + std::to_string(item.manga.id) + ".chapters") == std::string("0,0,0");
+    CHECK(saved);
+
+    // Select all, then mark all read.
+    env.tap(env.root()->children()[0]->children().back().get());
+    env.tap(env.find("Select chapters"));
+    env.tap(env.root()->children()[0]->children().back().get());       // select all
+    CHECK(env.shows("28 selected"));
+    env.tap(env.find("Read"));
+    CHECK_EQ(repo.library()[0].unread, 0);
+
     // More -> Download queue lists both.
     CHECK(env.shell->on_back());
     env.screen.frame();

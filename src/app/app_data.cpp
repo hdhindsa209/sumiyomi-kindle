@@ -160,6 +160,7 @@ void AppData::refresh(source::Extension* ext, data::Manga manga,
         if (auto stored = repo_.manga(manga.id)) view.manga = *stored;
         view.chapters = repo_.chapters(manga.id);
         view.downloads = downloads_of(manga.id);
+        view.list = list_prefs_of(manga.id);
     }
     exec_.post([update, view = std::move(view), err = std::move(err)]() mutable { update(std::move(view), true, std::move(err)); });
 }
@@ -171,7 +172,7 @@ void AppData::open_manga(int64_t source, source::SManga seed,
         data::Manga manga;
         if (auto stored = repo_.manga_by_url(source, seed.url)) {
             manga = *stored;
-            MangaView local{manga, repo_.chapters(manga.id), downloads_of(manga.id)};
+            MangaView local{manga, repo_.chapters(manga.id), downloads_of(manga.id), list_prefs_of(manga.id)};
             exec_.post([update, local = std::move(local)]() mutable { update(std::move(local), false, ""); });
         } else {
             manga.source_id = source;
@@ -193,7 +194,7 @@ void AppData::open_manga_id(int64_t manga_id, std::function<void(MangaView, bool
             exec_.post([update] { update({}, true, "manga not found"); });
             return;
         }
-        MangaView local{*stored, repo_.chapters(manga_id), downloads_of(manga_id)};
+        MangaView local{*stored, repo_.chapters(manga_id), downloads_of(manga_id), list_prefs_of(manga_id)};
         exec_.post([update, local]() mutable { update(std::move(local), false, ""); });
         refresh(extension(stored->source_id), *stored, update);
     });
@@ -482,6 +483,29 @@ std::map<int64_t, data::DownloadItem> AppData::downloads_of(int64_t manga_id)
     for (auto& d : repo_.downloads())
         if (d.manga_id == manga_id) out[d.chapter_id] = d;
     return out;
+}
+
+ChapterListPrefs AppData::list_prefs_of(int64_t manga_id)
+{
+    ChapterListPrefs p;
+    if (auto v = repo_.pref("manga." + std::to_string(manga_id) + ".chapters")) {
+        int sort = 0, newest = 1, filter = 0;
+        if (std::sscanf(v->c_str(), "%d,%d,%d", &sort, &newest, &filter) == 3) {
+            p.sort = std::clamp(sort, 0, 2);
+            p.newest_first = newest != 0;
+            p.filter = std::clamp(filter, 0, 2);
+        }
+    }
+    return p;
+}
+
+void AppData::save_chapter_list_prefs(int64_t manga_id, const ChapterListPrefs& prefs)
+{
+    exec_.submit([this, manga_id, prefs] {
+        std::string v = std::to_string(prefs.sort) + "," + (prefs.newest_first ? "1" : "0") + "," + std::to_string(prefs.filter);
+        if (!repo_.set_pref("manga." + std::to_string(manga_id) + ".chapters", v))
+            SUMI_LOGW("app", "cannot save chapter list settings: %s", db_.error().c_str());
+    });
 }
 
 std::string AppData::chapter_dir(int64_t source, int64_t manga, int64_t chapter) const

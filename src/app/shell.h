@@ -123,7 +123,12 @@ private:
     std::string    query_;
     MangaView      view_;
     bool           detail_shown_ = false;
-    size_t         first_chapter_item_ = 0;   // detail: list index of chapter 0's row
+    size_t         first_chapter_item_ = 0;   // detail: list index of the first chapter row shown
+    std::vector<size_t> shown_;               // detail: view_.chapters indices in display order (sorted, filtered)
+    // List index of chapter `i`'s row, or false if the filter hides it.
+    bool row_item(size_t i, size_t& item) const;
+    void replace_chapter_row(uint64_t gen, size_t i);
+    void show_sort_sheet(uint64_t gen);
     size_t         favorite_item_ = 0;        // detail: list index of the action row
     bool           selecting_ = false;        // detail: chapter selection mode
     std::set<int64_t> selected_;

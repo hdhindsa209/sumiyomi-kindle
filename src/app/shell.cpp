@@ -612,7 +612,7 @@ std::unique_ptr<Node> Shell::chapter_row(uint64_t gen, size_t i)
             view_.chapters[i].read = !read;
             if (read) view_.chapters[i].last_page_read = 0;
             // Only this row changes: repaint just it.
-            screen_.relayout(list_->replace_child(first_chapter_item_ + i, chapter_row(gen, i)));
+            replace_chapter_row(gen, i);
         });
     };
     return row;
@@ -622,9 +622,18 @@ std::unique_ptr<Node> Shell::detail_app_bar(uint64_t gen)
 {
     if (selecting_) {
         std::string title = selected_.empty() ? std::string("Select chapters") : std::to_string(selected_.size()) + " selected";
-        return app_bar(title, [this, gen] { set_selecting(gen, false); }, {});
+        // Select all shown chapters; again to select none.
+        return app_bar(title, [this, gen] { set_selecting(gen, false); }, {{icon::check_box, [this, gen] {
+            if (!current(gen)) return;
+            bool all = !shown_.empty() && selected_.size() >= shown_.size();
+            selected_.clear();
+            if (!all)
+                for (size_t i : shown_) selected_.insert(view_.chapters[i].id);
+            present_detail(gen, Change::Update);
+        }}});
     }
-    return app_bar("", [this] { on_back(); }, {{icon::download, [this, gen] { show_download_sheet(gen); }}});
+    return app_bar("", [this] { on_back(); }, {{icon::sort, [this, gen] { show_sort_sheet(gen); }},
+                                               {icon::download, [this, gen] { show_download_sheet(gen); }}});
 }
 
 std::unique_ptr<Node> Shell::selection_bar(uint64_t gen)
@@ -666,6 +675,66 @@ std::unique_ptr<Node> Shell::selection_bar(uint64_t gen)
     return bar;
 }
 
+bool Shell::row_item(size_t i, size_t& item) const
+{
+    for (size_t k = 0; k < shown_.size(); ++k)
+        if (shown_[k] == i) {
+            item = first_chapter_item_ + k;
+            return true;
+        }
+    return false;
+}
+
+void Shell::replace_chapter_row(uint64_t gen, size_t i)
+{
+    size_t item = 0;
+    if (!list_ || i >= view_.chapters.size() || !row_item(i, item)) return;
+    screen_.relayout(list_->replace_child(item, chapter_row(gen, i)));
+}
+
+void Shell::show_sort_sheet(uint64_t gen)
+{
+    // Changes apply at once (the list redraws without a flash) and are kept for this manga.
+    auto apply = [this, gen](ChapterListPrefs p) {
+        if (!current(gen)) return;
+        view_.list = p;
+        data_.save_chapter_list_prefs(view_.manga.id, p);
+        present_detail(gen, Change::Update);
+        show_sort_sheet(gen);
+    };
+    std::vector<std::unique_ptr<Node>> rows;
+    auto section = [&](const std::string& title, std::unique_ptr<Node> control) {
+        auto box = std::make_unique<Node>();
+        box->layout = Layout::Column;
+        box->padding = Insets{32, 8, 32, 12};
+        box->gap = 8;
+        box->emplace<Label>(title, type::LIST_SECONDARY, FontId::InterSemiBold, tone::BLACK)->width = Dim::fill();
+        box->add(std::move(control));
+        rows.push_back(std::move(box));
+    };
+    const ChapterListPrefs lp = view_.list;
+    section("Sort by", segmented({"Source order", "Chapter number", "Upload date"}, lp.sort, [apply, lp](int i) {
+        ChapterListPrefs p = lp;
+        p.sort = i;
+        apply(p);
+    }));
+    section("Order", segmented({"Newest first", "Oldest first"}, lp.newest_first ? 0 : 1, [apply, lp](int i) {
+        ChapterListPrefs p = lp;
+        p.newest_first = i == 0;
+        apply(p);
+    }));
+    section("Show", segmented({"All", "Unread", "Downloaded"}, lp.filter, [apply, lp](int i) {
+        ChapterListPrefs p = lp;
+        p.filter = i;
+        apply(p);
+    }));
+    auto done = std::make_unique<Node>();
+    done->padding = Insets{32, 8, 32, 8};
+    done->add(button("Done", [this] { screen_.hide_overlay(); }, true));
+    rows.push_back(std::move(done));
+    screen_.show_overlay(sheet("Chapters", std::move(rows)));
+}
+
 void Shell::set_selecting(uint64_t gen, bool on)
 {
     if (!current(gen) || !detail_shown_) return;
@@ -680,7 +749,7 @@ void Shell::toggle_selected(uint64_t gen, size_t index)
     int64_t id = view_.chapters[index].id;
     if (!selected_.insert(id).second) selected_.erase(id);
     // Just the row and the title.
-    screen_.relayout(list_->replace_child(first_chapter_item_ + index, chapter_row(gen, index)));
+    replace_chapter_row(gen, index);
     if (Node* root = screen_.root()) screen_.relayout(root->replace_child(0, detail_app_bar(gen)));
 }
 
@@ -713,6 +782,37 @@ void Shell::show_download_sheet(uint64_t gen)
         if (!ids.empty()) data_.download_chapters(ids);
     });
     row("Select chapters", "Choose chapters to download, delete or mark", [this, gen] { set_selecting(gen, true); });
+
+    // This manga's queue, right here.
+    std::vector<int64_t> active, finished;
+    int shown = 0;
+    for (size_t i = view_.chapters.size(); i-- > 0;) {   // oldest first, as the queue runs
+        const data::Chapter& c = view_.chapters[i];
+        auto dl = view_.downloads.find(c.id);
+        if (dl == view_.downloads.end()) continue;
+        const data::DownloadItem& d = dl->second;
+        if (d.state == data::DownloadState::Done) {
+            finished.push_back(c.id);
+            continue;
+        }
+        active.push_back(c.id);
+        if (shown++ >= 4) continue;
+        std::string state = d.state == data::DownloadState::Queued ? "Queued"
+                          : d.state == data::DownloadState::Error ? "Failed" + std::string(kDot) + "tap to retry"
+                          : "Downloading " + std::to_string(d.pages_done) + " of " + std::to_string(d.pages_total);
+        int64_t id = c.id;
+        bool failed = d.state == data::DownloadState::Error;
+        rows.push_back(list_row({c.name, state, false, false, failed ? icon::error : icon::download, [this, id, failed] {
+            screen_.hide_overlay();
+            if (failed) data_.download_chapters({id});
+        }}));
+    }
+    if (!active.empty()) {
+        if (active.size() > 4) rows.push_back(section_header("and " + std::to_string(active.size() - 4) + " more in the queue"));
+        row("Cancel downloads", std::to_string(active.size()) + " queued for this manga", [this, active] { data_.delete_downloads(active); });
+    }
+    if (!finished.empty())
+        row("Delete downloaded chapters", std::to_string(finished.size()) + " kept on this Kindle", [this, finished] { data_.delete_downloads(finished); });
     screen_.show_overlay(sheet("Download", std::move(rows)));
 }
 
@@ -729,7 +829,7 @@ void Shell::on_download_changed(const data::DownloadItem& item, bool removed)
         if (list_ && !selecting_ && (worth_painting || state_changed)) {
             for (size_t i = 0; i < view_.chapters.size(); ++i)
                 if (view_.chapters[i].id == item.chapter_id)
-                    screen_.relayout(list_->replace_child(first_chapter_item_ + i, chapter_row(generation_, i)));
+                    replace_chapter_row(generation_, i);
         }
     }
     if (downloads_shown_ && worth_painting) show_downloads();
@@ -751,6 +851,9 @@ void Shell::present_detail(uint64_t gen, Change change)
     std::string meta = m.status != data::MangaStatus::Unknown ? status_name(static_cast<int>(m.status)) : "";
     if (const SourceInfo* src = data_.source_info(m.source_id)) meta += (meta.empty() ? "" : kDot) + src->name;
     if (!view_.chapters.empty()) meta += kDot + std::to_string(view_.chapters.size()) + " chapters";
+    int done = 0;
+    for (const auto& kv : view_.downloads) done += kv.second.state == data::DownloadState::Done;
+    if (done) meta += kDot + std::to_string(done) + " downloaded";
     if (!meta.empty()) info->emplace<Label>(meta, type::LIST_SECONDARY, FontId::InterRegular, tone::BLACK, 2)->width = Dim::fill();
     items.push_back(std::move(info));
 
@@ -767,12 +870,37 @@ void Shell::present_detail(uint64_t gen, Change change)
         items.push_back(text_block(spaced, type::LIST_SECONDARY, FontId::InterMedium, 2, Insets{32, 8, 32, 16}));
     }
 
+    // Chapters in the manga's chosen order and filter.
+    const ChapterListPrefs& lp = view_.list;
+    shown_.clear();
+    for (size_t i = 0; i < view_.chapters.size(); ++i) {
+        const data::Chapter& c = view_.chapters[i];
+        auto dl = view_.downloads.find(c.id);
+        bool downloaded = dl != view_.downloads.end() && dl->second.state == data::DownloadState::Done;
+        if ((lp.filter == ChapterListPrefs::Unread && c.read) || (lp.filter == ChapterListPrefs::Downloaded && !downloaded)) continue;
+        shown_.push_back(i);
+    }
+    // Source order is newest first; the other keys sort ascending, then reverse for newest first.
+    auto older_first = [this, &lp](size_t a, size_t b) {
+        const data::Chapter& x = view_.chapters[a];
+        const data::Chapter& y = view_.chapters[b];
+        if (lp.sort == ChapterListPrefs::ByNumber && x.chapter_number != y.chapter_number) return x.chapter_number < y.chapter_number;
+        if (lp.sort == ChapterListPrefs::ByDate && x.date_upload != y.date_upload) return x.date_upload < y.date_upload;
+        return a > b;   // source order (and ties): higher index = older
+    };
+    std::stable_sort(shown_.begin(), shown_.end(), older_first);
+    if (lp.newest_first) std::reverse(shown_.begin(), shown_.end());
+
     if (view_.chapters.empty()) {
         items.push_back(message("No chapters available in this language."));
     } else {
-        items.push_back(section_header(std::to_string(view_.chapters.size()) + " chapters"));
+        std::string head = std::to_string(view_.chapters.size()) + " chapters";
+        if (lp.filter != ChapterListPrefs::All)
+            head = std::to_string(shown_.size()) + " of " + head + kDot + (lp.filter == ChapterListPrefs::Unread ? "unread" : "downloaded");
+        items.push_back(section_header(head));
         first_chapter_item_ = items.size();
-        for (size_t i = 0; i < view_.chapters.size(); ++i) items.push_back(chapter_row(gen, i));
+        for (size_t i : shown_) items.push_back(chapter_row(gen, i));
+        if (shown_.empty()) items.push_back(message(lp.filter == ChapterListPrefs::Unread ? "No unread chapters." : "No downloaded chapters."));
     }
 
     detail_shown_ = true;

@@ -26,10 +26,21 @@ struct BrowseResult {
     bool has_next = false;
 };
 
+// How a manga's chapter list is shown (per manga, persisted).
+struct ChapterListPrefs {
+    enum Sort : int { BySource = 0, ByNumber = 1, ByDate = 2 };
+    enum Filter : int { All = 0, Unread = 1, Downloaded = 2 };
+    int  sort = BySource;
+    bool newest_first = true;
+    int  filter = All;
+    bool operator==(const ChapterListPrefs& o) const { return sort == o.sort && newest_first == o.newest_first && filter == o.filter; }
+};
+
 struct MangaView {
     data::Manga                manga;
     std::vector<data::Chapter> chapters;
     std::map<int64_t, data::DownloadItem> downloads;   // by chapter id: chapters with a download
+    ChapterListPrefs           list;
 };
 
 enum class Browse { Popular, Latest, Search };
@@ -98,6 +109,7 @@ public:
     void open_manga_id(int64_t manga_id, std::function<void(MangaView, bool refreshed, std::string err)> update);
 
     void set_favorite(int64_t manga_id, bool favorite, std::function<void(bool ok)> done);
+    void save_chapter_list_prefs(int64_t manga_id, const ChapterListPrefs& prefs);
     // Marking unread also forgets the reading position.
     void set_read(int64_t chapter_id, bool read, std::function<void(bool ok)> done);
 
@@ -158,6 +170,7 @@ private:
 
     std::string chapter_dir(int64_t source, int64_t manga, int64_t chapter) const;
     std::map<int64_t, data::DownloadItem> downloads_of(int64_t manga_id);
+    ChapterListPrefs list_prefs_of(int64_t manga_id);
     void download_step();
     void notify_download(const data::DownloadItem& item, bool removed = false);
 };
