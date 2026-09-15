@@ -1700,6 +1700,8 @@ void Shell::show_settings(Change change)
                 if (kFlash[i] == rs.flash_every) flash = i;
             items.push_back(setting("Full refresh", segmented({"Every page", "Every 2", "Every 5", "Every 10", "Never"}, flash,
                 [this](int i) { data_.edit_reader_settings([i](ReaderSettings& n) { n.flash_every = kFlash[i]; }, [this] { show_settings(Change::Update); }); })));
+            items.push_back(setting("Progress bar", segmented({"Off", "Top", "Bottom", "Left", "Right"}, rs.progress_bar,
+                [this](int i) { data_.edit_reader_settings([i](ReaderSettings& n) { n.progress_bar = i; }, [this] { show_settings(Change::Update); }); })));
             items.push_back(setting("Fit", segmented({"Fit page", "Fit width"}, rs.fit == image::Fit::Width ? 1 : 0,
                 [this](int i) { data_.edit_reader_settings([i](ReaderSettings& n) { n.fit = i == 1 ? image::Fit::Width : image::Fit::Screen; }, [this] { show_settings(Change::Update); }); })));
             items.push_back(setting("Double pages", segmented({"Split in two", "Keep whole"}, rs.split_spreads ? 0 : 1,

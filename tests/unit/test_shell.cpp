@@ -526,6 +526,48 @@ void test_reader_end_of_chapter_marks_read()
     CHECK(again.chapter(chapter25)->read);
 }
 
+// Two rows of the heavy progress bar clear of its thin line: strip 14 px, heavy 8 (rows 3..10 up from the bottom
+// edge), line 2 (rows 7..8) -> rows 10..9.
+int PageView_heavy_y() { return 11; }
+
+void test_reader_progress_bar()
+{
+    Env env;
+    open_detail(env);
+    env.tap(env.find("Chapter 25"));
+    CHECK_EQ(bars_on_panel(env), 1);
+    env.tap(Point{100, 700});                                           // page 2 of 33
+    auto black_in = [&](Rect r) {
+        int n = 0;
+        for (int32_t y = r.y; y < r.y + r.h; ++y)
+            for (int32_t x = r.x; x < r.x + r.w; ++x) n += env.display.panel[static_cast<size_t>(y) * kW + static_cast<size_t>(x)] < 64;
+        return n;
+    };
+    // Menu, Reading tab: turn it on at the bottom. The page comes back from the cache with the bar, menu still open.
+    env.tap(Point{kW / 2, 700});
+    int hits = env.image_transport.total_hits();
+    env.tap(env.find("Bottom"));
+    CHECK(env.shows("This manga"));
+    CHECK_EQ(env.image_transport.total_hits(), hits);
+    CHECK(env.shell->on_back());
+    env.screen.frame();
+    CHECK_EQ(env.display.stale_pixels(), 0);
+    CHECK(env.golden("reader_progress_bottom"));
+    // Right-to-left: the read part starts at the right edge. 2 of 33 pages = about 65 px.
+    Rect heavy_right{kW - 60, kH - PageView_heavy_y(), 50, 2};
+    Rect heavy_left{10, kH - PageView_heavy_y(), 50, 2};
+    CHECK_EQ(black_in(heavy_right), 100);
+    CHECK_EQ(black_in(heavy_left), 0);
+    env.tap(Point{100, 700});                                           // page 3: the bar grows
+    Rect grown{kW - 95, kH - PageView_heavy_y(), 20, 2};
+    CHECK_EQ(black_in(grown), 40);
+
+    // Settings screen has it too; Left puts it down the left side.
+    app::ReaderSettings rs;
+    env.data->reader_settings([&](app::ReaderSettings got) { rs = got; });
+    CHECK_EQ(rs.progress_bar, 2);
+}
+
 void test_downloaded_chapter_opens_at_once()
 {
     // Device loop, so every screen really reaches the panel: a downloaded chapter goes "Opening chapter" ->
@@ -1224,6 +1266,7 @@ int main()
     RUN(test_device_loop_results_reach_the_panel);
     RUN(test_reader_pages_zones_and_refresh);
     RUN(test_reader_end_of_chapter_marks_read);
+    RUN(test_reader_progress_bar);
     RUN(test_downloaded_chapter_opens_at_once);
     RUN(test_reader_page_error_and_cancel);
     RUN(test_device_loop_reader);

@@ -645,6 +645,7 @@ ReaderSettings AppData::load_reader_settings()
     s.contrast = std::clamp(num("reader.contrast", 1), 0, 3);
     s.darkness = std::clamp(num("reader.darkness", 1), 0, 3);
     s.margin = std::clamp(num("reader.margin", 0), 0, 3);
+    s.progress_bar = std::clamp(num("reader.progress_bar", 0), 0, 4);
     return s;
 }
 
@@ -658,7 +659,8 @@ void AppData::store_reader_settings(const ReaderSettings& s)
            && repo_.set_pref("reader.split", s.split_spreads ? "1" : "0")
            && repo_.set_pref("reader.contrast", std::to_string(s.contrast))
            && repo_.set_pref("reader.darkness", std::to_string(s.darkness))
-           && repo_.set_pref("reader.margin", std::to_string(s.margin));
+           && repo_.set_pref("reader.margin", std::to_string(s.margin))
+           && repo_.set_pref("reader.progress_bar", std::to_string(s.progress_bar));
     if (!ok) SUMI_LOGW("app", "cannot save reader settings: %s", db_.error().c_str());
 }
 

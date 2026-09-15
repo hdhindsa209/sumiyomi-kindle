@@ -17,9 +17,19 @@ constexpr const char* kEllipsis = "\xE2\x80\xA6";  // "…"
 constexpr const char* kDot = " \xC2\xB7 ";         // " · "
 
 // A processed page, centered on white.
+// Reading progress along one edge of the page: a white strip so it reads over any artwork, a thin line for the
+// whole chapter and a heavy bar for the part already read (from the right in right-to-left reading).
+struct ProgressBar {
+    int   edge = 0;          // ReaderSettings::progress_bar: 0 off, 1 top, 2 bottom, 3 left, 4 right
+    float fraction = 0;      // 0..1 read, counting the page on screen
+    bool  rtl = false;
+};
+
 class PageView : public Node {
 public:
-    explicit PageView(image::Gray page) : page_(std::move(page))
+    static constexpr int32_t kBarStrip = 14, kBarHeavy = 8, kBarLine = 2;
+
+    explicit PageView(image::Gray page, ProgressBar bar = {}) : page_(std::move(page)), bar_(bar)
     {
         width = Dim::fill();
         height = Dim::fill();
@@ -44,8 +54,32 @@ protected:
         ctx.canvas.blit_gray8(c, src, page_.w);
     }
 
+    void paint_overlay(PaintCtx& ctx) override
+    {
+        if (bar_.edge <= 0) return;
+        Rect f = frame();
+        bool horizontal = bar_.edge <= 2;
+        Rect strip = bar_.edge == 1 ? Rect{f.x, f.y, f.w, kBarStrip}
+                   : bar_.edge == 2 ? Rect{f.x, f.bottom() - kBarStrip, f.w, kBarStrip}
+                   : bar_.edge == 3 ? Rect{f.x, f.y, kBarStrip, f.h}
+                                    : Rect{f.right() - kBarStrip, f.y, kBarStrip, f.h};
+        ctx.canvas.fill_rect(strip.clipped(ctx.clip), tone::WHITE);
+        int32_t length = horizontal ? strip.w : strip.h;
+        int32_t done = static_cast<int32_t>(static_cast<float>(length) * std::clamp(bar_.fraction, 0.0f, 1.0f));
+        int32_t line_at = (kBarStrip - kBarLine) / 2, heavy_at = (kBarStrip - kBarHeavy) / 2;
+        if (horizontal) {
+            ctx.canvas.fill_rect(Rect{strip.x, strip.y + line_at, strip.w, kBarLine}.clipped(ctx.clip), tone::BLACK);
+            int32_t x = bar_.rtl ? strip.right() - done : strip.x;
+            ctx.canvas.fill_rect(Rect{x, strip.y + heavy_at, done, kBarHeavy}.clipped(ctx.clip), tone::BLACK);
+        } else {
+            ctx.canvas.fill_rect(Rect{strip.x + line_at, strip.y, kBarLine, strip.h}.clipped(ctx.clip), tone::BLACK);
+            ctx.canvas.fill_rect(Rect{strip.x + heavy_at, strip.y, kBarHeavy, done}.clipped(ctx.clip), tone::BLACK);
+        }
+    }
+
 private:
     image::Gray page_;
+    ProgressBar bar_;
 };
 
 // The tap-zone row doubles as the screen's pager, so hardware page keys reach the reader.
@@ -438,15 +472,15 @@ std::unique_ptr<Node> Reader::bottom_bar()
         row("This manga", segmented({"Default", "Right to left", "Left to right"}, view_.direction, [this](int i) {
             change([i](ReaderSettings&, int& direction) { direction = i; });
         }));
-        row("Default direction", segmented({"Right to left", "Left to right"}, settings_.rtl ? 0 : 1, [this](int i) {
-            change([i](ReaderSettings& s, int&) { s.rtl = i == 0; });
-        }));
         static constexpr int kFlash[] = {1, 2, 5, 10, 0};
         int flash_index = 0;
         for (int i = 0; i < 5; ++i)
             if (kFlash[i] == settings_.flash_every) flash_index = i;
         row("Full refresh", segmented({"Every page", "Every 2", "Every 5", "Every 10", "Never"}, flash_index, [this](int i) {
             change([i](ReaderSettings& s, int&) { s.flash_every = kFlash[i]; });
+        }));
+        row("Progress bar", segmented({"Off", "Top", "Bottom", "Left", "Right"}, settings_.progress_bar, [this](int i) {
+            change([i](ReaderSettings& s, int&) { s.progress_bar = i; });
         }));
         break;
     }
@@ -503,6 +537,7 @@ void Reader::refresh_bottom_bar()
 void Reader::change(const std::function<void(ReaderSettings&, int& direction)>& edit)
 {
     std::string before = image::PageCache::key("", 0, process_options());
+    int settings_before_bar = settings_.progress_bar;
     ReaderSettings s = settings_;
     int direction = view_.direction;
     edit(s, direction);
@@ -516,7 +551,10 @@ void Reader::change(const std::function<void(ReaderSettings&, int& direction)>& 
         data_.save_reader_settings(s);
     }
     if (image::PageCache::key("", 0, process_options()) == before) {
-        refresh_bottom_bar();   // nothing on the page changes: just the selection
+        // The processed pages are the same. The progress bar is drawn over the page: a change to it shows the
+        // page again from the cache under the open menu; anything else only redraws the bar.
+        if (settings_.progress_bar != settings_before_bar) show(pos_, Change::Update);
+        else refresh_bottom_bar();
         return;
     }
     // The page looks different: re-render it now with the menu still open, so the effect is visible.
@@ -561,7 +599,13 @@ void Reader::present_page(const PageImage& img, Change change)
     // tap_layer builds the bars visible if the menu was open (a settings change re-shows the page).
     waiting_ = false;
     loading_shown_ = false;
-    screen_.set_root(tap_layer(std::make_unique<PageView>(img.page)), change);
+    ProgressBar bar;
+    bar.edge = settings_.progress_bar;
+    bar.rtl = rtl();
+    int n = std::max<int>(1, static_cast<int>(view_.pages.size()));
+    int parts = std::max(1, img.parts);
+    bar.fraction = (static_cast<float>(pos_.image) + static_cast<float>(pos_.part + 1) / static_cast<float>(parts)) / static_cast<float>(n);
+    screen_.set_root(tap_layer(std::make_unique<PageView>(img.page, bar)), change);
     shown_ = true;
 }
 

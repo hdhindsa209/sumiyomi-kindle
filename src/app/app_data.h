@@ -57,12 +57,13 @@ struct ReaderSettings {
     int           contrast = 1;        // 0 low, 1 normal, 2 high, 3 max (black/white points)
     int           darkness = 1;        // 0 light, 1 normal, 2 dark, 3 darker (gamma)
     int           margin = 0;          // 0 none, 1 small, 2 medium, 3 large
+    int           progress_bar = 0;    // 0 off, 1 top, 2 bottom, 3 left, 4 right (drawn over the page's edge)
 
     bool operator==(const ReaderSettings& o) const
     {
         return rtl == o.rtl && flash_every == o.flash_every && fit == o.fit && dither == o.dither
             && crop_borders == o.crop_borders && split_spreads == o.split_spreads && contrast == o.contrast
-            && darkness == o.darkness && margin == o.margin;
+            && darkness == o.darkness && margin == o.margin && progress_bar == o.progress_bar;
     }
 };
 
