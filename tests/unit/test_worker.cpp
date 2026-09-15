@@ -114,6 +114,24 @@ void test_stop_drops_queued_jobs()
 
 } // namespace
 
+void test_on_delivered_runs_after_each_batch()
+{
+    // main paints a frame here: without it, async results only reached the panel on the next tap.
+    EventLoop loop;
+    Worker w(loop);
+    CHECK(start(loop, w));
+    int applied = 0, painted_with = -1, paints = 0;
+    w.set_on_delivered([&] {
+        painted_with = applied;
+        ++paints;
+        loop.stop();
+    });
+    w.submit([&] { w.post([&] { ++applied; }); });
+    loop.run();
+    CHECK_EQ(painted_with, 1);                                // hook sees the result already installed
+    CHECK(paints >= 1);
+}
+
 int main()
 {
     RUN(test_job_runs_off_loop_thread_and_result_returns);
@@ -121,5 +139,6 @@ int main()
     RUN(test_cancel_token_skips_stale_result);
     RUN(test_loop_stays_responsive_while_job_blocks);
     RUN(test_stop_drops_queued_jobs);
+    RUN(test_on_delivered_runs_after_each_batch);
     return check_result();
 }

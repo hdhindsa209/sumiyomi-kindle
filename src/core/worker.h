@@ -49,6 +49,10 @@ public:
     // Drops queued jobs, waits for the running one, joins. Undelivered posts are dropped.
     void stop();
 
+    // Runs on the loop thread after each batch of posted closures. main uses it to paint:
+    // results change the UI with no input event, so nothing else would schedule a frame.
+    void set_on_delivered(std::function<void()> fn) { on_delivered_ = std::move(fn); }
+
     bool on_worker_thread() const { return std::this_thread::get_id() == thread_.get_id(); }
 
 private:
@@ -63,6 +67,7 @@ private:
     std::condition_variable cv_;
     std::deque<std::function<void()>> jobs_;
     std::deque<std::function<void()>> posted_;
+    std::function<void()> on_delivered_;
     bool stopping_ = false;
     bool started_  = false;
 };

@@ -82,6 +82,7 @@ void Worker::deliver()
         batch.swap(posted_);
     }
     for (auto& fn : batch) fn();
+    if (!batch.empty() && on_delivered_) on_delivered_();
 }
 
 void Worker::stop()
