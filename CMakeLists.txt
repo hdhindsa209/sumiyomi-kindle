@@ -56,7 +56,8 @@ target_link_libraries(sumi_text PUBLIC sumi_core harfbuzz)
 add_library(sumi_ui STATIC
   src/ui/node.cpp
   src/ui/screen.cpp
-  src/ui/widgets.cpp)
+  src/ui/widgets.cpp
+  src/ui/paged_list.cpp)
 target_include_directories(sumi_ui PUBLIC assets/fonts)
 target_link_libraries(sumi_ui PUBLIC sumi_text)
 
@@ -87,6 +88,13 @@ if(NOT CMAKE_CROSSCOMPILING)
   target_link_libraries(test_widgets PRIVATE sumi_ui)
   add_test(NAME widgets COMMAND test_widgets)
 
+  add_executable(test_shell tests/unit/test_shell.cpp src/app/shell.cpp src/app/fake_data.cpp)
+  target_include_directories(test_shell PRIVATE src)
+  target_compile_definitions(test_shell PRIVATE SUMI_ASSETS_DIR="${SUMI_ASSETS_DIR}"
+                                               SUMI_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/tests/golden")
+  target_link_libraries(test_shell PRIVATE sumi_ui)
+  add_test(NAME shell COMMAND test_shell)
+
   foreach(name canvas dirty gesture refresh_policy loop frame)
     add_executable(test_${name} tests/unit/test_${name}.cpp)
     target_link_libraries(test_${name} PRIVATE sumi_core)
@@ -115,8 +123,11 @@ if(NOT CMAKE_CROSSCOMPILING)
     # §2 criterion 7: the same app on the desktop, SDL backend.
     add_library(sumi_sim_platform STATIC src/platform/signals.cpp)
     target_link_libraries(sumi_sim_platform PUBLIC sumi_sim)
-    add_executable(sumiyomi src/main.cpp src/app/m1_testcard.cpp)
-    target_link_libraries(sumiyomi PRIVATE sumi_sim_platform)
+    add_executable(sumiyomi src/main.cpp src/app/shell.cpp src/app/fake_data.cpp)
+    target_compile_definitions(sumiyomi PRIVATE SUMI_ASSETS_DIR="${SUMI_ASSETS_DIR}")
+    target_link_libraries(sumiyomi PRIVATE sumi_sim_platform sumi_ui)
+    add_executable(m1_testcard tools/m1/testcard_main.cpp src/app/m1_testcard.cpp)
+    target_link_libraries(m1_testcard PRIVATE sumi_sim_platform)
   else()
     message(STATUS "SDL2 not found: simulator not built (brew install sdl2)")
   endif()
@@ -145,8 +156,12 @@ add_library(sumi_platform STATIC
   src/platform/input_evdev.cpp)
 target_link_libraries(sumi_platform PUBLIC sumi_core fbink)
 
-add_executable(sumiyomi src/main.cpp src/app/m1_testcard.cpp)
-target_link_libraries(sumiyomi PRIVATE sumi_platform)
+add_executable(sumiyomi src/main.cpp src/app/shell.cpp src/app/fake_data.cpp)
+target_compile_definitions(sumiyomi PRIVATE SUMI_ASSETS_DIR="/mnt/us/extensions/sumiyomi/assets")
+target_link_libraries(sumiyomi PRIVATE sumi_platform sumi_ui)
+
+add_executable(m1_testcard tools/m1/testcard_main.cpp src/app/m1_testcard.cpp)
+target_link_libraries(m1_testcard PRIVATE sumi_platform)
 
 add_executable(m1_bench tools/bench/m1_bench.cpp)
 target_link_libraries(m1_bench PRIVATE sumi_platform)
@@ -157,5 +172,5 @@ target_include_directories(text_smoke PRIVATE assets/fonts tests/unit)
 target_compile_definitions(text_smoke PRIVATE SUMI_ASSETS_DIR="/mnt/us/extensions/sumiyomi/assets")
 target_link_libraries(text_smoke PRIVATE sumi_warnings harfbuzz)
 
-set_target_properties(sumiyomi m1_bench text_smoke PROPERTIES
+set_target_properties(sumiyomi m1_testcard m1_bench text_smoke PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

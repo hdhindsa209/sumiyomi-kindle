@@ -144,6 +144,7 @@ std::unique_ptr<Node> list_row(const RowSpec& spec)
     row->on_tap = spec.on_tap;
 
     if (spec.unread_dot) row->add(dot(16, tone::PRIMARY));
+    if (spec.leading) row->emplace<Icon>(spec.leading, kIconSp, tone::ON_SURFACE_VARIANT);
 
     auto texts = container(Layout::Column);
     texts->width = Dim::fill();
@@ -215,27 +216,33 @@ private:
 
 } // namespace
 
-std::unique_ptr<Node> cover_grid(const std::vector<CoverSpec>& covers, int columns, int32_t width)
+std::vector<std::unique_ptr<Node>> cover_rows(const std::vector<CoverSpec>& covers, int columns, int32_t width)
 {
     columns = std::clamp(columns, 2, 5);
     constexpr int32_t kSide = 32, kGutter = 24;
     int32_t cover_w = (width - 2 * kSide - (columns - 1) * kGutter) / columns;
     int32_t cover_h = cover_w * 3 / 2;
 
-    auto grid = container(Layout::Column);
-    grid->padding = Insets{kSide, 24, kSide, 0};
-    grid->gap = 16;
-    grid->opaque = true;
-    grid->refresh = Wave::GL16;
-
+    std::vector<std::unique_ptr<Node>> rows;
     for (size_t i = 0; i < covers.size(); i += static_cast<size_t>(columns)) {
         auto row = container(Layout::Row);
         row->gap = kGutter;
+        row->padding = Insets{kSide, 16, kSide, 0};
         row->align_cross = Align::Start;
         for (size_t j = i; j < std::min(covers.size(), i + static_cast<size_t>(columns)); ++j)
             row->add(std::make_unique<CoverCell>(covers[j], cover_w, cover_h));
-        grid->add(std::move(row));
+        rows.push_back(std::move(row));
     }
+    return rows;
+}
+
+std::unique_ptr<Node> cover_grid(const std::vector<CoverSpec>& covers, int columns, int32_t width)
+{
+    auto grid = container(Layout::Column);
+    grid->padding = Insets{0, 8, 0, 0};
+    grid->opaque = true;
+    grid->refresh = Wave::GL16;
+    for (auto& r : cover_rows(covers, columns, width)) grid->add(std::move(r));
     return grid;
 }
 
@@ -302,6 +309,61 @@ std::unique_ptr<Node> chip(const std::string& label, bool selected, std::functio
     c->emplace<Label>(label, type::CHIP, selected ? FontId::InterSemiBold : FontId::InterMedium,
                       selected ? tone::PRIMARY : tone::ON_SURFACE);
     return c;
+}
+
+// ---------------------------------------------------------------- Tabs, headers, CTA
+
+std::unique_ptr<Node> tabs(const std::vector<std::string>& labels, int active, std::function<void(int)> on_select)
+{
+    auto strip = container(Layout::Row);
+    strip->height = Dim::px(88);
+    strip->opaque = true;
+    strip->border.bottom = 1;
+    strip->refresh = Wave::DU;
+    for (size_t i = 0; i < labels.size(); ++i) {
+        bool on = static_cast<int>(i) == active;
+        auto tab = container(Layout::Stack);
+        tab->width = Dim::fill();
+        tab->height = Dim::fill();
+        tab->align_main = Align::Center;
+        tab->align_cross = Align::Center;
+        tab->on_tap = [on_select, i] { on_select(static_cast<int>(i)); };
+        if (on) tab->border.bottom = 4;
+        tab->border_gray = tone::PRIMARY;
+        tab->emplace<Label>(labels[i], type::LIST_SECONDARY, on ? FontId::InterSemiBold : FontId::InterMedium,
+                            on ? tone::PRIMARY : tone::ON_SURFACE_VARIANT);
+        strip->add(std::move(tab));
+    }
+    return strip;
+}
+
+std::unique_ptr<Node> section_header(const std::string& title, const std::string& trailing)
+{
+    auto h = container(Layout::Row);
+    h->height = Dim::px(80);
+    h->padding = Insets{32, 0, 32, 0};
+    h->align_cross = Align::Center;
+    h->refresh = Wave::DU;
+    h->emplace<Label>(title, type::LIST_SECONDARY, FontId::InterSemiBold, tone::ON_SURFACE)->width = Dim::fill();
+    if (!trailing.empty()) h->emplace<Label>(trailing, type::LIST_SECONDARY, FontId::InterMedium, tone::ON_SURFACE_VARIANT);
+    return h;
+}
+
+std::unique_ptr<Node> cta_bar(char32_t icon, const std::string& label, std::function<void()> on_tap)
+{
+    auto bar = container(Layout::Row);
+    bar->height = Dim::px(120);
+    bar->opaque = true;
+    bar->background = tone::PRIMARY;
+    bar->align_main = Align::Center;
+    bar->align_cross = Align::Center;
+    bar->gap = 16;
+    bar->refresh = Wave::DU;
+    bar->bw = true;
+    bar->on_tap = std::move(on_tap);
+    bar->emplace<Icon>(icon, kIconSp, tone::SURFACE, true);
+    bar->emplace<Label>(label, type::LIST_PRIMARY, FontId::InterSemiBold, tone::SURFACE);
+    return bar;
 }
 
 // ---------------------------------------------------------------- Sheet

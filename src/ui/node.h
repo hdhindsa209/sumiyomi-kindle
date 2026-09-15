@@ -59,6 +59,11 @@ public:
         return static_cast<T*>(add(std::make_unique<T>(std::forward<Args>(args)...)));
     }
     void clear_children();
+    // Detach and return all children (to move them under another parent).
+    std::vector<std::unique_ptr<Node>> take_children();
+    // Swap child `index` for `n`; the new node inherits the old one's frame and visibility, so a
+    // Screen::relayout(n) can repaint it in place. Returns the new child.
+    Node* replace_child(size_t index, std::unique_ptr<Node> n);
     Node* parent() const { return parent_; }
     const std::vector<std::unique_ptr<Node>>& children() const { return children_; }
 
@@ -93,10 +98,16 @@ public:
     Rect frame() const { return frame_; }
     // Natural size under the given limits (used for Wrap dimensions).
     virtual Size measure(Text& text, Fonts& fonts, int32_t max_w, int32_t max_h);
-    void layout_in(Text& text, Fonts& fonts, const Rect& frame);
+    virtual void layout_in(Text& text, Fonts& fonts, const Rect& frame);
     void paint(PaintCtx& ctx);
     // Deepest visible pressable node containing p, or null.
     Node* hit_test(Point p);
+    // Deepest visible node of any kind containing p, or null.
+    Node* node_at(Point p);
+
+    // Paging hooks (§5.5). Return true if handled; the Screen then re-lays-out and refreshes this node.
+    virtual bool on_page(bool forward) { (void)forward; return false; }
+    virtual bool pages() const { return false; }
 
     // --- damage ---
     void mark_dirty();                               // content changed: repaint + refresh this frame
@@ -104,6 +115,7 @@ public:
     void collect_dirty(std::vector<Node*>& out);     // and clears the flags
 
 protected:
+    void set_frame(const Rect& r) { frame_ = r; }
     virtual void paint_content(PaintCtx&) {}   // before children
     virtual void paint_overlay(PaintCtx&) {}   // after children (badges, decorations)
 

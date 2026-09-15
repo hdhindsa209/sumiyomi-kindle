@@ -381,3 +381,26 @@ explains, and the README says so.
 - The M1 test card stays synchronous on purpose: it's the measurement tool for criterion 3 (event → panel complete).
   M2 screens use FrameScheduler.
 - Stale-event dropping isn't needed yet: with non-blocking handlers a backlog can't build. Revisit if S6 shows otherwise.
+
+# M2 notes
+
+## S2–S6 decisions worth knowing
+- **dp vs px:** design doc §8 gives "48×48 touch targets, 24 px glyphs". At 300 ppi 24 px is ~2 mm, so these are read as
+  Material dp through `Fonts::sp` (48 dp ≈ 90 px, 24 dp ≈ 45 px). Frame heights the doc lays out for the 1072-wide
+  panel (app bar 112, nav 128, rows 112, grid math) stay px.
+- **Gray content isn't refreshed with DU.** §8.2 says library tab switches and scroll pages use DU, but DU drives pixels
+  to pure B&W, which destroys gray cover art. The library body and grid list use GL16; text lists (Updates, History,
+  Browse, More, chapter rows) use DU as designed. **To judge on device:** antialiased secondary text under DU.
+- **"Content area only" vs the 60% rule:** the library body is 83% of the screen, so RefreshPolicy (§7.2) promotes tab
+  swaps and page turns to full-screen GL16. That costs ≤ ~27 ms (T04) and unchanged pixels don't visibly redraw.
+- **Press feedback:** a pressed node is binarized then inverted, which makes A2 valid on any content. Release repaints
+  with GL16 (or DU if the node is B&W). A tap runs after its feedback is submitted, in the same loop wake.
+- **Rows are transparent** so they show whatever they sit on (page or sheet); repainting goes through the nearest opaque ancestor.
+- **Fixed-width / wrap-height measurement bug** found by the widget golden review and fixed (captions were clipped to one line).
+- **Long-press no longer exits** (in Mihon it means selection). Exit is More → "Exit Sumiyomi", or Esc at top level in the simulator.
+- The M1 test card lives on as the `m1_testcard` binary (tap-latency re-measurement); `sumiyomi` is the shell.
+- Startup and slow-frame (> 30 ms) timings are logged, for the single-core A9.
+
+## Test inventory (host, `ctest --test-dir build/host`): 12 suites
+canvas, dirty, gesture, refresh_policy, loop, frame, display_sdl, text_smoke, text, ui (golden), widgets (7 goldens),
+shell (8 screen goldens). Every golden was visually reviewed before it was committed.

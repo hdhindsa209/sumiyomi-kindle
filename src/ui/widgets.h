@@ -38,6 +38,7 @@ struct RowSpec {
     bool        dimmed     = false; // read: text drops to ON_SURFACE_VARIANT
     char32_t    trailing   = 0;     // trailing icon, 0 = none
     std::function<void()> on_tap;
+    char32_t    leading    = 0;     // leading icon (settings rows), 0 = none
 };
 
 // List row (§8.3): 112 px, bottom divider, DU refresh hint.
@@ -48,6 +49,9 @@ struct CoverSpec {
     int         unread = 0;         // badge count, 0 = no badge
     std::function<void()> on_tap;
 };
+
+// Rows of cover cells for a PagedList (one row per item, so paging moves by whole rows).
+std::vector<std::unique_ptr<Node>> cover_rows(const std::vector<CoverSpec>& covers, int columns, int32_t width);
 
 // Library grid (§8.2): `columns` cover cells (2:3 cover placeholder with initials, caption strip
 // below with up to 2 lines, unread badge top-right), 32 px side padding, 24 px gutters.
@@ -74,6 +78,16 @@ std::unique_ptr<Node> switch_row(const std::string& title, const std::string& su
 
 // Chip (§8.3 genre chips): SURFACE_2 rounded, 11 sp Medium label. Selected = PRIMARY outline.
 std::unique_ptr<Node> chip(const std::string& label, bool selected = false, std::function<void()> on_tap = nullptr);
+
+// Tab strip (§8.2 category tabs, §8.5 Browse tabs): active label PRIMARY SemiBold with a 4 px
+// PRIMARY underline, others ON_SURFACE_VARIANT. 88 px, bottom divider.
+std::unique_ptr<Node> tabs(const std::vector<std::string>& labels, int active, std::function<void(int)> on_select);
+
+// Section header (§8.3 "24 chapters", §8.5 date groups): 80 px, SemiBold label, optional trailing text.
+std::unique_ptr<Node> section_header(const std::string& title, const std::string& trailing = "");
+
+// Sticky full-width call to action (§8.3 "Resume Chapter N"): 120 px PRIMARY bar, SURFACE label + icon.
+std::unique_ptr<Node> cta_bar(char32_t icon, const std::string& label, std::function<void()> on_tap);
 
 // Bottom sheet (§5.4): SURFACE_1 with a 1 px OUTLINE top border, optional title, content below.
 // Shown via Screen::show_overlay.

@@ -47,6 +47,13 @@ void Screen::layout_overlay()
     overlay_->layout_in(text_, fonts_, {0, screen_.h - s.h, screen_.w, s.h});
 }
 
+void Screen::relayout(Node* n)
+{
+    if (!n) return;
+    n->layout_in(text_, fonts_, n->frame());
+    n->mark_dirty();
+}
+
 void Screen::invalidate_layout(Wave mode)
 {
     needs_layout_ = true;
@@ -82,11 +89,43 @@ void Screen::on_event(const RawEvent& e)
         release_press(true);
     }
 
+    if (e.kind == RawKind::Key && e.pressed && (e.key == Key::PageNext || e.key == Key::PagePrev)) {
+        Node* tree = overlay_ ? overlay_.get() : root_.get();
+        page(first_pager(tree), e.key == Key::PageNext);
+        return;
+    }
+
     std::optional<Gesture> g = gestures_.feed(e);
     if (e.kind == RawKind::Up && pressed_) {
         bool tapped = g && g->kind == GestureKind::Tap && pressed_->hit_test(g->at) == pressed_;
         if (tapped) pending_tap_ = pressed_->on_tap;
         release_press(!tapped);
+    }
+    // Paged scroll (§5.5): swipe up = next page, swipe down = previous.
+    if (g && (g->kind == GestureKind::SwipeU || g->kind == GestureKind::SwipeD)) {
+        Node* tree = overlay_ ? overlay_.get() : root_.get();
+        page(tree->node_at(g->at), g->kind == GestureKind::SwipeU);
+    }
+}
+
+Node* Screen::first_pager(Node* n)
+{
+    if (!n || !n->visible) return nullptr;
+    // Depth-first: the first node that pages (keys page the main list of the screen).
+    for (auto& c : n->children())
+        if (Node* p = first_pager(c.get())) return p;
+    return n->pages() ? n : nullptr;
+}
+
+void Screen::page(Node* start, bool forward)
+{
+    for (Node* n = start; n; n = n->parent()) {
+        if (!n->pages()) continue;
+        if (n->on_page(forward)) {
+            n->layout_in(text_, fonts_, n->frame());
+            n->mark_dirty();
+        }
+        return;
     }
 }
 

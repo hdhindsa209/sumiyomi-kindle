@@ -21,6 +21,24 @@ Node* Node::add(std::unique_ptr<Node> child)
 
 void Node::clear_children() { children_.clear(); }
 
+std::vector<std::unique_ptr<Node>> Node::take_children()
+{
+    std::vector<std::unique_ptr<Node>> out = std::move(children_);
+    children_.clear();
+    for (auto& c : out) c->parent_ = nullptr;
+    return out;
+}
+
+Node* Node::replace_child(size_t index, std::unique_ptr<Node> n)
+{
+    if (index >= children_.size()) return nullptr;
+    n->parent_  = this;
+    n->frame_   = children_[index]->frame_;
+    n->visible  = children_[index]->visible;
+    children_[index] = std::move(n);
+    return children_[index].get();
+}
+
 void Node::set_pressed(bool p)
 {
     if (p == pressed_) return;
@@ -197,6 +215,14 @@ Node* Node::hit_test(Point p)
     for (auto it = children_.rbegin(); it != children_.rend(); ++it)
         if (Node* hit = (*it)->hit_test(p)) return hit;
     return pressable() ? this : nullptr;
+}
+
+Node* Node::node_at(Point p)
+{
+    if (!visible || p.x < frame_.x || p.x >= frame_.right() || p.y < frame_.y || p.y >= frame_.bottom()) return nullptr;
+    for (auto it = children_.rbegin(); it != children_.rend(); ++it)
+        if (Node* hit = (*it)->node_at(p)) return hit;
+    return this;
 }
 
 // ---------------------------------------------------------------- Label

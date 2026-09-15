@@ -1,7 +1,8 @@
-// Sumiyomi: platform setup + the app shell. Same code for both backends:
-// Kindle (FBInk + evdev + epoll) and the host simulator (SDL).
-//   --crash=abort|segv   test only: fault deliberately after the first frame (tools/crash-tests.sh)
-#include "app/shell.h"
+// M1 test card (spec §2 criteria 2–5): kept as its own binary for re-measuring tap latency.
+// Same code for both backends: Kindle (FBInk + evdev + epoll) and the host simulator (SDL).
+//   --crash=abort|segv   test only: fault deliberately right after the test card is up
+//                        (§2 criterion 6 / tools/crash-tests.sh)
+#include "app/m1_testcard.h"
 #include "core/log.h"
 #include "core/loop.h"
 #include "platform/display.h"
@@ -21,12 +22,6 @@ namespace {
 constexpr uint32_t kTickMs    = 100;   // long-press detection, armed only while needed
 constexpr uint32_t kSdlPollMs = 10;    // fd-less input (simulator only)
 
-std::string assets_dir()
-{
-    const char* env = std::getenv("SUMI_ASSETS");
-    return env ? env : SUMI_ASSETS_DIR;
-}
-
 } // namespace
 
 int main(int argc, char** argv)
@@ -40,7 +35,7 @@ int main(int argc, char** argv)
             return 2;
         }
     }
-    SUMI_LOGI("main", "sumiyomi start, pid=%d", static_cast<int>(getpid()));
+    SUMI_LOGI("main", "sumiyomi M1 start, pid=%d", static_cast<int>(getpid()));
 
     sumi::PowerGuard power;
     std::unique_ptr<sumi::Display> display(sumi::make_display());
@@ -63,35 +58,15 @@ int main(int argc, char** argv)
         power.restore();
         return 1;
     }
-    const sumi::DisplayInfo& di = display->info();
-    if (!input->open(di, err)) {
+    if (!input->open(display->info(), err)) {
         SUMI_LOGE("main", "input open failed: %s", err.c_str());
         display->close();
         power.restore();
         return 1;
     }
 
-    sumi::Fonts fonts;
-    if (!fonts.open(assets_dir() + "/fonts", di.dpi, err)) {
-        SUMI_LOGE("main", "fonts: %s", err.c_str());
-        input->close();
-        display->close();
-        power.restore();
-        return 1;
-    }
-    sumi::Canvas         canvas(display->framebuffer(), di.width, di.height, di.stride, di.inverted_gray);
-    sumi::GlyphCache     glyphs;
-    sumi::Text           text(fonts, glyphs);
-    sumi::RefreshPolicy  policy;
-    sumi::FrameScheduler frames(*display, policy);
-    sumi::ui::Screen     screen(canvas, text, fonts, frames, di.width, di.height);
-    sumi::app::Shell     shell(screen, di.width, [&loop] { loop.stop(); });
-
-    uint64_t t_start = sumi::mono_ms();
-    shell.start();
-    screen.frame();
-    SUMI_LOGI("main", "first frame: %llums (layout + text + paint + submit)",
-              static_cast<unsigned long long>(sumi::mono_ms() - t_start));
+    sumi::M1TestCard app(*display);
+    app.start();
 
     if (crash && std::strcmp(crash, "abort") == 0) {
         SUMI_LOGW("main", "--crash=abort");
@@ -104,23 +79,12 @@ int main(int argc, char** argv)
 
     std::vector<sumi::RawEvent> events;
     events.reserve(64);
-    bool quit = false;
     auto drain = [&](int fd) {
         events.clear();
         input->drain(fd, events);
-        for (const sumi::RawEvent& e : events) {
-            if (e.kind == sumi::RawKind::Key && e.key == sumi::Key::Back && e.pressed) {
-                if (!shell.on_back()) quit = true;   // simulator Esc / window close at top level
-                continue;
-            }
-            screen.on_event(e);
-        }
-        uint64_t t0 = sumi::mono_ms();
-        screen.frame();   // one frame per wake, after all queued input (M1-F1)
-        if (uint64_t ms = sumi::mono_ms() - t0; ms > 30)
-            SUMI_LOGI("perf", "slow frame: %llums", static_cast<unsigned long long>(ms));
-        loop.arm_tick(screen.wants_tick());
-        if (quit) loop.stop();
+        for (const sumi::RawEvent& e : events) app.on_event(e);
+        loop.arm_tick(app.wants_tick());
+        if (app.done()) loop.stop();
     };
 
     if (input->fds().empty()) {
@@ -132,9 +96,9 @@ int main(int argc, char** argv)
         for (int fd : input->fds()) loop.add_fd(fd, drain);
     }
     loop.set_tick([&](uint64_t now) {
-        screen.on_tick(now);
-        screen.frame();
-        loop.arm_tick(screen.wants_tick());
+        app.on_tick(now);
+        loop.arm_tick(app.wants_tick());
+        if (app.done()) loop.stop();
     }, kTickMs);
 
     loop.run();

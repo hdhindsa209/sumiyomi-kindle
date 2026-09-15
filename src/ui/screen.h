@@ -33,6 +33,10 @@ public:
     void hide_overlay();
     Node* overlay() const { return overlay_.get(); }
 
+    // Re-lay-out `n` inside its current frame and refresh just that area with n's refresh hint
+    // (in-place content swaps: tab switches, a replaced row). Call from tap handlers, not mid-event.
+    void relayout(Node* n);
+
     // Re-run layout and repaint everything next frame, with `mode` (structure changed in place).
     void invalidate_layout(Wave mode = Wave::GL16);
 
@@ -49,6 +53,8 @@ public:
 private:
     void release_press(bool cancelled);
     void layout_overlay();
+    void page(Node* start, bool forward);   // walk up from `start` to the first node that pages
+    Node* first_pager(Node* n);
     Node* paint_root_for(Node* n) const;
     static bool is_in(const Node* tree, const Node* n);
 
