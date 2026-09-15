@@ -224,9 +224,55 @@ std::optional<int64_t> Repo::create_category(const std::string& name)
 
 std::vector<Category> Repo::categories()
 {
-    Stmt s = db_.prepare("SELECT id, name, sort_order FROM categories ORDER BY sort_order");
+    Stmt s = db_.prepare(R"(SELECT id, name, sort_order,
+            (SELECT COUNT(*) FROM manga_categories mc JOIN mangas m ON m.id = mc.manga_id
+             WHERE mc.category_id = categories.id AND m.favorite = 1)
+        FROM categories ORDER BY sort_order, id)");
     std::vector<Category> out;
-    while (s.step()) out.push_back({s.i64(0), s.text(1), s.i32(2)});
+    while (s.step()) out.push_back({s.i64(0), s.text(1), s.i32(2), s.i32(3)});
+    return out;
+}
+
+bool Repo::rename_category(int64_t id, const std::string& name)
+{
+    bool ok = db_.prepare("UPDATE categories SET name = ?2 WHERE id = ?1").bind(1, id).bind(2, name).run();
+    return ok && db_.changes() == 1;
+}
+
+bool Repo::delete_category(int64_t id)
+{
+    Db::Tx tx(db_);
+    if (!db_.prepare("DELETE FROM manga_categories WHERE category_id = ?1").bind(1, id).run()) return false;
+    if (!db_.prepare("DELETE FROM categories WHERE id = ?1").bind(1, id).run() || db_.changes() != 1) return false;
+    return tx.commit();
+}
+
+bool Repo::move_category(int64_t id, int delta)
+{
+    std::vector<Category> all = categories();
+    size_t i = 0;
+    while (i < all.size() && all[i].id != id) ++i;
+    if (i == all.size()) return false;
+    size_t j = delta < 0 ? i - 1 : i + 1;
+    if ((delta < 0 && i == 0) || j >= all.size()) return false;
+    std::swap(all[i], all[j]);
+    // Renumber densely: old rows may share sort_order values.
+    Db::Tx tx(db_);
+    Stmt set = db_.prepare("UPDATE categories SET sort_order = ?2 WHERE id = ?1");
+    for (size_t k = 0; k < all.size(); ++k) {
+        set.reset();
+        if (!set.bind(1, all[k].id).bind(2, static_cast<int64_t>(k)).run()) return false;
+    }
+    return tx.commit();
+}
+
+std::vector<int64_t> Repo::categories_of(int64_t manga_id)
+{
+    Stmt s = db_.prepare(R"(SELECT mc.category_id FROM manga_categories mc JOIN categories c ON c.id = mc.category_id
+                            WHERE mc.manga_id = ?1 ORDER BY c.sort_order, c.id)");
+    s.bind(1, manga_id);
+    std::vector<int64_t> out;
+    while (s.step()) out.push_back(s.i64(0));
     return out;
 }
 

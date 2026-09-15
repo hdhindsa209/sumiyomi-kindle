@@ -6,7 +6,9 @@
 #include "image/decode.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cerrno>
+#include <cstdlib>
 #include <cstdio>
 #include <dirent.h>
 #include <fstream>
@@ -91,6 +93,99 @@ void AppData::categories(std::function<void(std::vector<data::Category>)> done)
     exec_.submit([this, done = std::move(done)] {
         auto items = repo_.categories();
         exec_.post([done, items = std::move(items)]() mutable { done(std::move(items)); });
+    });
+}
+
+void AppData::library_screen(std::function<void(LibraryScreen)> done)
+{
+    exec_.submit([this, done = std::move(done)] {
+        LibraryScreen out;
+        out.covers = repo_.pref("library.display") == std::string("covers");
+        out.categories = repo_.categories();
+        if (auto c = repo_.pref("library.category")) {
+            int64_t id = std::atoll(c->c_str());
+            for (const data::Category& cat : out.categories)
+                if (cat.id == id) out.category = id;
+        }
+        out.items = out.category ? repo_.library(out.category) : repo_.library();
+        exec_.post([done, out = std::move(out)]() mutable { done(std::move(out)); });
+    });
+}
+
+void AppData::save_library_category(int64_t category)
+{
+    exec_.submit([this, category] { repo_.set_pref("library.category", std::to_string(category)); });
+}
+
+namespace {
+
+std::string trimmed(std::string s)
+{
+    while (!s.empty() && s.back() == ' ') s.pop_back();
+    size_t b = 0;
+    while (b < s.size() && s[b] == ' ') ++b;
+    return s.substr(b);
+}
+
+bool same_name(const std::string& a, const std::string& b)
+{
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i)
+        if (std::tolower(static_cast<unsigned char>(a[i])) != std::tolower(static_cast<unsigned char>(b[i]))) return false;
+    return true;
+}
+
+} // namespace
+
+void AppData::create_category(std::string name, std::function<void(bool)> done)
+{
+    exec_.submit([this, name = trimmed(std::move(name)), done = std::move(done)] {
+        bool ok = !name.empty();
+        for (const data::Category& c : repo_.categories()) ok = ok && !same_name(c.name, name);
+        ok = ok && repo_.create_category(name).has_value();
+        exec_.post([done, ok] { if (done) done(ok); });
+    });
+}
+
+void AppData::rename_category(int64_t id, std::string name, std::function<void(bool)> done)
+{
+    exec_.submit([this, id, name = trimmed(std::move(name)), done = std::move(done)] {
+        bool ok = !name.empty();
+        for (const data::Category& c : repo_.categories()) ok = ok && (c.id == id || !same_name(c.name, name));
+        ok = ok && repo_.rename_category(id, name);
+        exec_.post([done, ok] { if (done) done(ok); });
+    });
+}
+
+void AppData::delete_category(int64_t id, std::function<void(bool)> done)
+{
+    exec_.submit([this, id, done = std::move(done)] {
+        bool ok = repo_.delete_category(id);
+        exec_.post([done, ok] { if (done) done(ok); });
+    });
+}
+
+void AppData::move_category(int64_t id, int delta, std::function<void(bool)> done)
+{
+    exec_.submit([this, id, delta, done = std::move(done)] {
+        bool ok = repo_.move_category(id, delta);
+        exec_.post([done, ok] { if (done) done(ok); });
+    });
+}
+
+void AppData::manga_categories(int64_t manga_id, std::function<void(std::vector<int64_t>)> done)
+{
+    exec_.submit([this, manga_id, done = std::move(done)] {
+        auto ids = repo_.categories_of(manga_id);
+        exec_.post([done, ids = std::move(ids)]() mutable { done(std::move(ids)); });
+    });
+}
+
+void AppData::set_manga_categories(int64_t manga_id, std::vector<int64_t> ids, std::function<void(bool)> done)
+{
+    exec_.submit([this, manga_id, ids = std::move(ids), done = std::move(done)] {
+        bool ok = repo_.set_categories(manga_id, ids);
+        exec_.post([done, ok] { if (done) done(ok); });
     });
 }
 
@@ -449,14 +544,6 @@ void AppData::save_progress(int64_t chapter_id, int page, int pages_total, bool 
 }
 
 // ---------------------------------------------------------------- covers
-
-void AppData::library_display(std::function<void(bool)> done)
-{
-    exec_.submit([this, done = std::move(done)] {
-        bool covers = repo_.pref("library.display") == std::string("covers");
-        exec_.post([done, covers] { done(covers); });
-    });
-}
 
 void AppData::save_library_display(bool covers)
 {

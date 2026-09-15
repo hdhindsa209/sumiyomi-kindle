@@ -46,7 +46,12 @@ public:
 
     // --- categories ---
     std::optional<int64_t> create_category(const std::string& name);
-    std::vector<Category> categories();
+    std::vector<Category> categories();   // by sort_order, with library counts
+    bool rename_category(int64_t id, const std::string& name);
+    bool delete_category(int64_t id);     // its manga stay in the library
+    // Swap with the neighbour above (delta -1) or below (+1); false at the ends.
+    bool move_category(int64_t id, int delta);
+    std::vector<int64_t> categories_of(int64_t manga_id);
     bool set_categories(int64_t manga_id, const std::vector<int64_t>& category_ids);
 
     // --- history ---

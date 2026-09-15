@@ -172,6 +172,8 @@ void Shell::show(const Route& r)
     case Route::Detail: show_detail(r); break;
     case Route::Reader: show_reader(r); break;
     case Route::Downloads: show_downloads(); break;
+    case Route::Categories: show_categories(); break;
+    case Route::CategoryName: show_category_name(r); break;
     }
 }
 
@@ -227,35 +229,85 @@ void Shell::show_library()
 {
     uint64_t gen = begin();
     loading(gen, std::string("Loading library") + kEllipsis, nullptr);
-    data_.library_display([this, gen](bool covers) {
+    data_.library_screen([this, gen](AppData::LibraryScreen lib) {
         if (!current(gen)) return;
-        data_.library([this, gen, covers](std::vector<data::LibraryItem> items) {
-            if (!current(gen)) return;
-            if (!covers || items.empty()) {
-                present_library(gen, std::move(items), false, {});
-                return;
-            }
-            // Every cover first, then one screen: no grid filling in tile by tile.
-            std::vector<data::Manga> mangas;
-            for (const auto& it : items) mangas.push_back(it.manga);
-            int32_t w = 0, h = 0;
-            cover_size(kLibraryColumns, screen_.bounds().w, w, h);
-            data_.covers(std::move(mangas), w, h, [this, gen, items = std::move(items)](std::map<int64_t, image::Gray> thumbs) mutable {
-                if (current(gen)) present_library(gen, std::move(items), true, std::move(thumbs));
-            });
+        if (!lib.covers || lib.items.empty()) {
+            present_library(std::move(lib), {});
+            return;
+        }
+        // Every cover first, then one screen: no grid filling in tile by tile.
+        std::vector<data::Manga> mangas;
+        for (const auto& it : lib.items) mangas.push_back(it.manga);
+        int32_t w = 0, h = 0;
+        cover_size(kLibraryColumns, screen_.bounds().w, w, h);
+        data_.covers(std::move(mangas), w, h, [this, gen, lib = std::move(lib)](std::map<int64_t, image::Gray> thumbs) mutable {
+            if (current(gen)) present_library(std::move(lib), std::move(thumbs));
         });
     });
 }
 
-void Shell::present_library(uint64_t gen, std::vector<data::LibraryItem> items, bool covers,
-                            std::map<int64_t, image::Gray> thumbs)
+std::unique_ptr<Node> Shell::category_tabs(const AppData::LibraryScreen& lib)
 {
-    (void)gen;
+    std::vector<int64_t> ids{0};
+    std::vector<std::string> names{"All"};
+    for (const data::Category& c : lib.categories) {
+        ids.push_back(c.id);
+        names.push_back(c.name);
+    }
+    size_t active = 0;
+    while (active < ids.size() && ids[active] != lib.category) ++active;
+    if (active == ids.size()) active = 0;
+    auto pick = [this](int64_t id) {
+        data_.save_library_category(id);
+        go({Route::TabRoot, kLibrary});   // another tab is another screen: one full refresh
+    };
+    // A window of tabs that always holds the active one; the arrows step to the neighbouring tab.
+    size_t first = active >= kVisibleTabs ? active - kVisibleTabs + 1 : 0;
+    size_t count = std::min(kVisibleTabs, ids.size() - first);
+    std::vector<std::string> shown(names.begin() + static_cast<long>(first), names.begin() + static_cast<long>(first + count));
+    auto strip = tabs(shown, static_cast<int>(active - first), [pick, ids, first](int i) {
+        pick(ids[first + static_cast<size_t>(i)]);
+    });
+    if (ids.size() <= kVisibleTabs) return strip;
+    auto arrow = [&](char32_t glyph, bool enabled, int64_t target) {
+        auto cell = std::make_unique<Node>();
+        cell->layout = Layout::Stack;
+        cell->width = Dim::px(88);
+        cell->height = Dim::fill();
+        cell->align_main = Align::Center;
+        cell->align_cross = Align::Center;
+        if (enabled) {
+            cell->on_tap = [pick, target] { pick(target); };
+            cell->emplace<Icon>(glyph, 32, tone::BLACK, false);
+        }
+        return cell;
+    };
+    auto row = std::make_unique<Node>();
+    row->layout = Layout::Row;
+    row->height = Dim::px(88);
+    row->opaque = true;
+    row->border.bottom = tone::RULE;
+    row->add(arrow(icon::chevron_left, active > 0, active > 0 ? ids[active - 1] : 0));
+    strip->width = Dim::fill();
+    strip->border.bottom = 0;
+    row->add(std::move(strip));
+    row->add(arrow(icon::chevron_right, active + 1 < ids.size(), active + 1 < ids.size() ? ids[active + 1] : 0));
+    return row;
+}
+
+void Shell::present_library(AppData::LibraryScreen lib, std::map<int64_t, image::Gray> thumbs)
+{
+    const std::vector<data::LibraryItem>& items = lib.items;
     std::vector<std::unique_ptr<Node>> nodes;
-    if (items.empty()) {
+    if (items.empty() && lib.category) {
+        std::string name;
+        for (const data::Category& c : lib.categories)
+            if (c.id == lib.category) name = c.name;
+        nodes.push_back(message("Nothing in " + name + " yet.\nAdd manga to it from a manga's page."));
+    } else if (items.empty()) {
         nodes.push_back(message("Your library is empty.\nAdd manga from a source in Browse.", "Browse sources",
                                 [this] { go({Route::TabRoot, kBrowse}); }));
-    } else if (covers) {
+    } else if (lib.covers) {
         std::vector<CoverSpec> specs;
         for (const data::LibraryItem& it : items) {
             int64_t id = it.manga.id;
@@ -277,13 +329,171 @@ void Shell::present_library(uint64_t gen, std::vector<data::LibraryItem> items, 
                                       }}));
         }
     }
+    bool covers = lib.covers;
     auto toggle = [this, covers] {
         data_.save_library_display(!covers);
         go({Route::TabRoot, kLibrary});
     };
+    auto body = column();
+    body->opaque = true;
+    if (!lib.categories.empty()) body->add(category_tabs(lib));
+    body->add(paged(std::move(nodes)));
     present(scaffold(app_bar("Library", nullptr, with_light({{covers ? icon::view_list : icon::grid_view, toggle},
                                                               {icon::refresh, [this] { go({Route::TabRoot, kUpdates}); }}})),
-                     paged(std::move(nodes)), kLibrary));
+                     std::move(body), kLibrary));
+}
+
+// ---------------------------------------------------------------- Categories
+
+void Shell::show_categories()
+{
+    uint64_t gen = begin();
+    loading(gen, std::string("Loading categories") + kEllipsis, nullptr);
+    data_.categories([this, gen](std::vector<data::Category> cats) {
+        if (!current(gen)) return;
+        std::vector<std::unique_ptr<Node>> rows;
+        if (cats.empty())
+            rows.push_back(message("No categories yet.\nCategories group your library into tabs.", "Create category",
+                                   [this] { go(Route{Route::CategoryName}); }));
+        for (size_t i = 0; i < cats.size(); ++i) {
+            data::Category c = cats[i];
+            bool first = i == 0, last = i + 1 == cats.size();
+            RowSpec r{c.name, std::to_string(c.count) + " manga", false, false, icon::more_vert,
+                      [this, c, first, last] { show_category_sheet(c, first, last); }};
+            r.leading = icon::label;
+            rows.push_back(list_row(r));
+        }
+        present(scaffold(app_bar("Categories", [this] { on_back(); }, {{icon::add, [this] { go(Route{Route::CategoryName}); }}}),
+                         paged(std::move(rows)), -1));
+    });
+}
+
+void Shell::show_category_sheet(const data::Category& c, bool first, bool last)
+{
+    uint64_t gen = generation_;
+    int64_t id = c.id;
+    // Changes redraw the list once (no flash): same screen, new contents.
+    auto after = [this, gen](bool) {
+        if (!current(gen)) return;
+        screen_.hide_overlay();
+        show_categories();
+    };
+    std::vector<std::unique_ptr<Node>> rows;
+    auto row = [&](const std::string& title, const std::string& sub, std::function<void()> fn) {
+        rows.push_back(list_row({title, sub, false, false, 0, std::move(fn)}));
+    };
+    row("Rename", "", [this, c] {
+        screen_.hide_overlay();
+        Route r{Route::CategoryName};
+        r.category_id = c.id;
+        r.category_name = c.name;
+        go(r);
+    });
+    if (!first) row("Move up", "", [this, id, after] { data_.move_category(id, -1, after); });
+    if (!last) row("Move down", "", [this, id, after] { data_.move_category(id, 1, after); });
+    row("Delete", c.count ? "Its " + std::to_string(c.count) + " manga stay in your library" : "",
+        [this, c, gen, after] {
+            // Ask once: a sheet with the two choices.
+            std::vector<std::unique_ptr<Node>> confirm;
+            auto box = std::make_unique<Node>();
+            box->layout = Layout::Row;
+            box->padding = Insets{32, 8, 32, 16};
+            box->gap = 16;
+            int64_t cid = c.id;
+            box->add(button("Cancel", [this] { screen_.hide_overlay(); }));
+            box->add(button("Delete", [this, cid, gen, after] {
+                if (current(gen)) data_.delete_category(cid, after);
+            }, true));
+            confirm.push_back(std::move(box));
+            screen_.show_overlay(sheet("Delete \xE2\x80\x9C" + c.name + "\xE2\x80\x9D?", std::move(confirm)));
+        });
+    screen_.show_overlay(sheet(c.name, std::move(rows)));
+}
+
+void Shell::show_category_name(const Route& r)
+{
+    uint64_t gen = begin();
+    bool rename = r.category_id != 0;
+    query_ = r.category_name;
+    auto root = column();
+    root->opaque = true;
+    root->add(app_bar(rename ? "Rename category" : "New category", [this] { on_back(); }, {}));
+    auto field = std::make_unique<TextField>("Category name");
+    field->set_text(query_);
+    field_ = field.get();
+    root->add(std::move(field));
+
+    auto note = std::make_unique<Node>();
+    note->height = Dim::fill();
+    note->padding = Insets{32, 24, 32, 0};
+    Label* status = note->emplace<Label>("Type a name, then tap the check key.", type::LIST_SECONDARY, FontId::InterRegular, tone::BLACK, 2);
+    status->width = Dim::fill();
+    root->add(std::move(note));
+
+    int64_t id = r.category_id;
+    auto kb = keyboard([this, gen, id, rename, status](KeyInput in, char c) {
+        if (!current(gen) || !field_) return;
+        bool enter = field_->apply(in, c);
+        query_ = field_->text();
+        if (!enter) return;
+        // The keyboard is lower-case only: capitalise the first letter.
+        std::string name = query_;
+        size_t b = name.find_first_not_of(' ');
+        if (b != std::string::npos && name[b] >= 'a' && name[b] <= 'z') name[b] = static_cast<char>(name[b] - 'a' + 'A');
+        auto done = [this, gen, status](bool ok) {
+            if (!current(gen)) return;
+            if (ok) {
+                on_back();
+                return;
+            }
+            status->set_text(field_ && field_->text().find_first_not_of(' ') == std::string::npos
+                                 ? "Type a name first." : "A category with that name already exists.");
+            screen_.relayout(status);
+        };
+        if (rename) data_.rename_category(id, name, done);
+        else data_.create_category(name, done);
+    }, icon::check);
+    keyboard_ = kb.get();
+    root->add(std::move(kb));
+    present(std::move(root));
+}
+
+void Shell::show_manga_categories(uint64_t gen)
+{
+    int64_t manga = view_.manga.id;
+    data_.categories([this, gen, manga](std::vector<data::Category> cats) {
+        if (!current(gen)) return;
+        data_.manga_categories(manga, [this, gen, manga, cats](std::vector<int64_t> mine) {
+            if (!current(gen)) return;
+            std::vector<std::unique_ptr<Node>> rows;
+            if (cats.empty()) rows.push_back(message("No categories yet."));
+            for (const data::Category& c : cats) {
+                bool on = std::find(mine.begin(), mine.end(), c.id) != mine.end();
+                int64_t cid = c.id;
+                RowSpec r{c.name, "", false, false, 0, [this, gen, manga, mine, on, cid] {
+                    std::vector<int64_t> next = mine;
+                    if (on) next.erase(std::remove(next.begin(), next.end(), cid), next.end());
+                    else next.push_back(cid);
+                    data_.set_manga_categories(manga, next, [this, gen](bool) {
+                        if (current(gen)) show_manga_categories(gen);   // the sheet redraws in place
+                    });
+                }};
+                r.leading = on ? icon::check_box : icon::check_box_outline_blank;
+                rows.push_back(list_row(r));
+            }
+            auto box = std::make_unique<Node>();
+            box->layout = Layout::Row;
+            box->padding = Insets{32, 16, 32, 8};
+            box->gap = 16;
+            box->add(button(cats.empty() ? "Create category" : "Edit categories", [this] {
+                screen_.hide_overlay();
+                go(Route{Route::Categories});
+            }));
+            box->add(button("Done", [this] { screen_.hide_overlay(); }, true));
+            rows.push_back(std::move(box));
+            screen_.show_overlay(sheet("Categories", std::move(rows)));
+        });
+    });
 }
 
 // ---------------------------------------------------------------- Updates / History
@@ -598,14 +808,24 @@ std::unique_ptr<Node> Shell::detail_actions(uint64_t gen)
         std::string label = any_read ? "Continue: " + resume->name : "Start reading: " + resume->name;
         actions->add(action_button(icon::play_arrow, label, true, [this, rid, page] { open_reader(rid, page); }));
     }
-    actions->add(action_button(icon::favorite, fav ? "In library" : "Add to library", false, [this, gen, id, fav] {
+    auto library_row = std::make_unique<Node>();
+    library_row->layout = Layout::Row;
+    library_row->gap = 16;
+    library_row->add(action_button(icon::favorite, fav ? "In library" : "Add to library", false, [this, gen, id, fav] {
         data_.set_favorite(id, !fav, [this, gen, fav](bool ok) {
             if (!current(gen) || !ok || !list_) return;
             view_.manga.favorite = !fav;
-            // Only the button changes: repaint just its row.
+            // Only the buttons change: repaint just their row.
             screen_.relayout(list_->replace_child(favorite_item_, detail_actions(gen)));
+            if (!fav) {   // just added: offer the categories, if there are any
+                data_.categories([this, gen](std::vector<data::Category> cats) {
+                    if (current(gen) && !cats.empty()) show_manga_categories(gen);
+                });
+            }
         });
     }));
+    if (fav) library_row->add(action_button(icon::label, "Categories", false, [this, gen] { show_manga_categories(gen); }));
+    actions->add(std::move(library_row));
     return actions;
 }
 
@@ -1058,8 +1278,12 @@ void Shell::show_more()
     }};
     queue.leading = icon::download;
     items.push_back(list_row(queue));
-    for (const Entry& e : {Entry{icon::label, "Categories", ""},
-                           Entry{icon::storage, "Data and storage", ""}, Entry{icon::settings, "Settings", ""},
+    RowSpec categories{"Categories", "Group your library into tabs", false, false, icon::chevron_right, [this] {
+        go(Route{Route::Categories});
+    }};
+    categories.leading = icon::label;
+    items.push_back(list_row(categories));
+    for (const Entry& e : {Entry{icon::storage, "Data and storage", ""}, Entry{icon::settings, "Settings", ""},
                            Entry{icon::info, "About", "Sumiyomi 0.3 (M3: data + WeebCentral)"}}) {
         RowSpec r{e.title, e.subtitle, false, false, 0, [] {}};
         r.leading = e.icon;

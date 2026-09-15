@@ -15,4 +15,11 @@ a commit per stage, device checks when there's something to look at. Manga first
 | S5 | Settings: More → Settings (reader defaults, library update behavior, downloads: location usage + delete read chapters, page cache size + clear), Data and storage (cache/download sizes, clear) | Shell tests |
 | S6 | Extensions from a repo: fetch an index (JSON) of Lua sources, install / update / uninstall into `sources/`, version + api_level checks, load without restart | Tests with a fixture repo |
 
+## Status (2026-09-15)
+
+S1–S2 done and device-verified, plus manga-page sort/filter, per-manga queue, select all, front light, Library covers.
+S3 built on host: More → Categories (create / rename with the on-screen keyboard, move up / down, delete — manga stay
+in the library), manga page "Categories" checklist (also offered right after "Add to library"), Library tabs
+(All + categories; at most 4 visible with arrows stepping to the neighbouring tab; the chosen tab is remembered).
+
 Deferred to M6 (design doc): trackers, migration, statistics, backup/restore.

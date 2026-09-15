@@ -95,6 +95,25 @@ public:
 
     void library(std::function<void(std::vector<data::LibraryItem>)> done);
     void categories(std::function<void(std::vector<data::Category>)> done);
+
+    // --- categories (M5 S3) ---
+    // Everything the Library screen needs in one job: display mode, the chosen category tab (0 = All;
+    // falls back to All if that category is gone), the categories, and that tab's entries.
+    struct LibraryScreen {
+        bool covers = false;
+        int64_t category = 0;
+        std::vector<data::Category> categories;
+        std::vector<data::LibraryItem> items;
+    };
+    void library_screen(std::function<void(LibraryScreen)> done);
+    void save_library_category(int64_t category);
+    // Each reports ok; names are trimmed, empty or duplicate (case-insensitive) names fail.
+    void create_category(std::string name, std::function<void(bool ok)> done);
+    void rename_category(int64_t id, std::string name, std::function<void(bool ok)> done);
+    void delete_category(int64_t id, std::function<void(bool ok)> done);
+    void move_category(int64_t id, int delta, std::function<void(bool ok)> done);
+    void manga_categories(int64_t manga_id, std::function<void(std::vector<int64_t>)> done);
+    void set_manga_categories(int64_t manga_id, std::vector<int64_t> ids, std::function<void(bool ok)> done);
     void updates(std::function<void(std::vector<data::UpdateItem>)> done);
     void history(std::function<void(std::vector<data::HistoryItem>)> done);
 
@@ -152,7 +171,6 @@ public:
     // cover can't be had are simply missing from the result.
     void covers(std::vector<data::Manga> mangas, int32_t w, int32_t h,
                 std::function<void(std::map<int64_t, image::Gray>)> done);
-    void library_display(std::function<void(bool covers)> done);
     void save_library_display(bool covers);
 
     // Remember the reading position; `finished` also marks the chapter read.

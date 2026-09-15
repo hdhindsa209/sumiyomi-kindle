@@ -757,6 +757,101 @@ void test_library_covers_option()
     CHECK(env.shows("In library"));
 }
 
+void type_name(Env& env, const std::string& text)
+{
+    for (char c : text) env.tap(env.find(c == ' ' ? "space" : std::string(1, c)));
+    Node* kb = env.root()->children().back().get();
+    env.tap(kb->children()[4]->children()[1].get());             // bottom row: the check (enter) key
+}
+
+void test_categories()
+{
+    Env env;
+    source::SManga seed{"/series/01KTEH8Z2TJ9NQ2NDZ75EM36SS/neechan-no-tomodachi-ga-uzai-hanashi", kTitle, "", "", "", "", {}, 0};
+    int64_t id = 0;
+    env.data->open_manga(env.data->sources()[0].id, seed, [&](app::MangaView v, bool, std::string) { id = v.manga.id; });
+    env.data->set_favorite(id, true, [](bool) {});
+    data::Repo repo(env.db);
+
+    // More -> Categories: create two (the keyboard is lower-case; names get a capital).
+    env.tap(env.nav_cell(4));
+    env.tap(env.find("Categories"));
+    CHECK(env.shows("No categories yet.\nCategories group your library into tabs."));
+    env.tap(env.find("Create category"));
+    CHECK(env.shows("New category"));
+    type_name(env, "reading");
+    CHECK(env.shows("Reading") && env.shows("0 manga"));
+    env.tap(env.root()->children()[0]->children().back().get());   // app bar: add
+    type_name(env, "reading");
+    CHECK(env.shows("A category with that name already exists."));
+    CHECK_EQ(env.display.stale_pixels(), 0);
+    for (int i = 0; i < 7; ++i) env.tap(env.root()->children().back()->children()[3]->children().back().get());
+    type_name(env, "on hold");
+    CHECK(env.shows("On hold"));
+    auto cats = repo.categories();
+    CHECK(cats.size() == 2 && cats[0].name == "Reading" && cats[1].name == "On hold");
+
+    // Reorder from a category's sheet.
+    env.tap(env.find("Reading"));
+    CHECK(env.shows("Move down") && !env.shows("Move up"));
+    env.tap(env.find("Move down"));
+    CHECK(env.screen.overlay() == nullptr);
+    cats = repo.categories();
+    CHECK(cats[0].name == "On hold" && cats[1].name == "Reading");
+    CHECK(env.golden("categories"));
+
+    // Library: tabs, a remembered tab, and an empty category.
+    CHECK(env.shell->on_back());                                   // Categories has no nav bar: back to More
+    env.screen.frame();
+    env.tap(env.nav_cell(0));
+    CHECK(env.shows("All") && env.shows("On hold") && env.shows(kTitle));
+    env.tap(env.find("Reading"));
+    CHECK(env.shows("Nothing in Reading yet.\nAdd manga to it from a manga's page."));
+    CHECK(env.display.calls.back().mode == Wave::GC16_FLASH);
+    CHECK_EQ(env.display.stale_pixels(), 0);
+    env.tap(env.nav_cell(1));
+    env.tap(env.nav_cell(0));
+    CHECK(env.shows("Nothing in Reading yet.\nAdd manga to it from a manga's page."));
+
+    // Manga page: assign.
+    env.tap(env.find("All"));
+    env.tap(env.find(kTitle));
+    env.tap(env.find("Categories"));
+    CHECK(env.screen.overlay() != nullptr);
+    env.tap(env.find("Reading"));
+    auto mine = repo.categories_of(id);
+    CHECK(mine.size() == 1 && mine[0] == cats[1].id);
+    env.tap(env.find("Done"));
+    CHECK(env.screen.overlay() == nullptr);
+    CHECK_EQ(env.display.stale_pixels(), 0);
+    CHECK(env.shell->on_back());
+    env.screen.frame();
+    env.tap(env.find("Reading"));
+    CHECK(env.shows(kTitle));
+    CHECK(env.golden("library_category"));
+
+    // Many categories: a window of tabs around the active one.
+    for (const char* n : {"C3", "C4", "C5", "C6"}) CHECK(repo.create_category(n).has_value());
+    env.tap(env.nav_cell(1));
+    env.tap(env.nav_cell(0));
+    CHECK(env.shows("Reading") && env.shows("All") && !env.shows("C6"));
+
+    // Delete: its manga stay in the library.
+    env.tap(env.nav_cell(4));
+    env.tap(env.find("Categories"));
+    env.tap(env.find("Reading"));
+    CHECK(env.shows("Its 1 manga stay in your library"));
+    env.tap(env.find("Delete"));
+    CHECK(env.shows("Delete \xE2\x80\x9CReading\xE2\x80\x9D?"));
+    env.tap(env.find("Delete"));
+    CHECK_EQ(repo.categories().size(), 5);
+    CHECK_EQ(repo.library().size(), 1);
+    CHECK(env.shell->on_back());
+    env.screen.frame();
+    env.tap(env.nav_cell(0));
+    CHECK(env.shows("All") && env.shows(kTitle));                   // the remembered tab is gone: All
+}
+
 void test_updates_refresh_reports()
 {
     Env env;
@@ -799,6 +894,7 @@ int main()
     RUN(test_downloads_from_manga_page);
     RUN(test_front_light_controls);
     RUN(test_library_covers_option);
+    RUN(test_categories);
     RUN(test_updates_refresh_reports);
     RUN(test_more_exit);
     return check_result();

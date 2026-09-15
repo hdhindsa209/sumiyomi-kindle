@@ -39,7 +39,7 @@ std::unique_ptr<Node> row(int32_t side_padding)
 
 } // namespace
 
-std::unique_ptr<Node> keyboard(KeyHandler on_key)
+std::unique_ptr<Node> keyboard(KeyHandler on_key, char32_t enter_icon)
 {
     auto kb = std::make_unique<Node>();
     kb->layout = Layout::Column;
@@ -68,7 +68,7 @@ std::unique_ptr<Node> keyboard(KeyHandler on_key)
 
     auto bottom = row(0);
     bottom->add(key("space", 5, [on_key] { on_key(KeyInput::Char, ' '); }));
-    bottom->add(key("", 2, [on_key] { on_key(KeyInput::Enter, 0); }, icon::search));
+    bottom->add(key("", 2, [on_key] { on_key(KeyInput::Enter, 0); }, enter_icon ? enter_icon : icon::search));
     kb->add(std::move(bottom));
     return kb;
 }

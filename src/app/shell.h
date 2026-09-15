@@ -47,7 +47,7 @@ private:
     enum Tab { kLibrary, kUpdates, kHistory, kBrowse, kMore };
 
     struct Route {
-        enum Kind { TabRoot, Source, Search, Detail, Reader, Downloads };
+        enum Kind { TabRoot, Source, Search, Detail, Reader, Downloads, Categories, CategoryName };
         Route(Kind k = TabRoot, int tab_index = kLibrary) : kind(k), tab(tab_index) {}
         Kind           kind;
         int            tab;
@@ -59,6 +59,8 @@ private:
         int64_t        chapter_id = 0;   // Reader
         int            start_page = 0;   // Reader: image index to open at
         bool           from_end = false; // Reader: open at the last page (coming back from the next chapter)
+        int64_t        category_id = 0;  // CategoryName: the category renamed (0 = a new one)
+        std::string    category_name;    // CategoryName: its current name
     };
 
     void go(Route r, bool push = true);
@@ -79,8 +81,15 @@ private:
 
     void show_library();
     static constexpr int kLibraryColumns = 3;
-    void present_library(uint64_t gen, std::vector<data::LibraryItem> items, bool covers,
-                         std::map<int64_t, image::Gray> thumbs);
+    void present_library(AppData::LibraryScreen lib, std::map<int64_t, image::Gray> thumbs);
+    // Category tabs for the Library: "All" + each category, at most kVisibleTabs at once with arrows to the rest.
+    static constexpr size_t kVisibleTabs = 4;
+    std::unique_ptr<ui::Node> category_tabs(const AppData::LibraryScreen& lib);
+    void show_categories();
+    void show_category_sheet(const data::Category& c, bool first, bool last);
+    void show_category_name(const Route& r);
+    // The manga page's category checklist (applies each tap).
+    void show_manga_categories(uint64_t gen);
     void show_updates(const std::string& status = "");
     void show_history();
     void show_browse();

@@ -214,6 +214,36 @@ void test_categories_filter_library()
     CHECK_EQ(f.repo.library(*hold).size(), 0);
 }
 
+void test_category_manage()
+{
+    Fixture f;
+    Manga a = make_manga("/a", "A"), b = make_manga("/b", "B");
+    CHECK(f.repo.upsert_manga(a) && f.repo.upsert_manga(b));
+    CHECK(f.repo.set_favorite(a.id, true, 1));
+    auto x = f.repo.create_category("X"), y = f.repo.create_category("Y"), z = f.repo.create_category("Z");
+    CHECK(x && y && z);
+    CHECK(f.repo.set_categories(a.id, {*z, *x}));
+    CHECK(f.repo.set_categories(b.id, {*x}));                  // not a favorite: not counted
+    auto cats = f.repo.categories();
+    CHECK_EQ(cats[0].count, 1);
+    CHECK_EQ(cats[1].count, 0);
+
+    CHECK(f.repo.move_category(*z, -1));
+    CHECK(!f.repo.move_category(*x, -1));                      // already first
+    CHECK(!f.repo.move_category(*y, 1));                       // now last
+    cats = f.repo.categories();
+    CHECK(cats[0].name == "X" && cats[1].name == "Z" && cats[2].name == "Y");
+    auto of_a = f.repo.categories_of(a.id);
+    CHECK(of_a.size() == 2 && of_a[0] == *x && of_a[1] == *z);  // in category order
+
+    CHECK(f.repo.rename_category(*y, "Plan to read"));
+    CHECK(f.repo.categories()[2].name == "Plan to read");
+    CHECK(f.repo.delete_category(*x));
+    CHECK_EQ(f.repo.categories().size(), 2);
+    CHECK_EQ(f.repo.categories_of(a.id).size(), 1);
+    CHECK_EQ(f.repo.library().size(), 1);                      // the manga stays in the library
+}
+
 void test_history_upsert_and_cascade()
 {
     Fixture f;
@@ -352,6 +382,7 @@ int main()
     RUN(test_library_counts_and_order);
     RUN(test_sync_chapters_preserves_read_state);
     RUN(test_categories_filter_library);
+    RUN(test_category_manage);
     RUN(test_history_upsert_and_cascade);
     RUN(test_updates_only_after_added_to_library);
     RUN(test_preferences_and_chapter_lookup);

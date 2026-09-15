@@ -53,6 +53,7 @@ struct Category {
     int64_t     id = 0;
     std::string name;
     int         sort_order = 0;
+    int         count = 0;      // library entries in it
 };
 
 struct LibraryItem {
