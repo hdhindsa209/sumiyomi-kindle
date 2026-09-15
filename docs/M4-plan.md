@@ -50,3 +50,9 @@ pages fast). Changes from the table above, from device feedback:
 Device timing (first S4 run, WeebCentral JPEG 1050×1536): fetch 0.7–1.3 s, decode ~80 ms, process ~255 ms,
 cache write ~65 ms. Processing is over the §7.2 budget (180 ms): resize + dither are the candidates for NEON work.
 Not yet measured: peak memory on a long strip.
+
+Update (2026-09-15, user): webtoon/vertical modes are out of focus (grayscale panels; manga first). Reader settings
+moved from a full page into the menu's bottom bar as tabs — Reading (this manga's direction, default direction,
+full refresh), Zoom (fit page / fit width, double pages), Crop (auto crop, margins), Contrast (contrast, darkness,
+dithering) — modeled on KOReader's bottom menu. Page-changing options re-render the page under the open menu; the
+chapter reloads once when the menu closes.

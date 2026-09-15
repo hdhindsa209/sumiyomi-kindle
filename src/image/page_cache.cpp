@@ -65,9 +65,9 @@ PageCache::PageCache(std::string dir, uint64_t cap_bytes, size_t ram_pages)
 std::string PageCache::key(const std::string& url, int part, const ProcessOptions& o)
 {
     char variant[160];
-    std::snprintf(variant, sizeof variant, "|p%d|v1|%dx%d|f%d|d%d|c%d|s%d|r%d|t%u-%u-%.3f", part, o.screen_w, o.screen_h,
+    std::snprintf(variant, sizeof variant, "|p%d|v1|%dx%d|f%d|d%d|c%d|s%d|r%d|t%u-%u-%.3f|m%d", part, o.screen_w, o.screen_h,
                   static_cast<int>(o.fit), static_cast<int>(o.dither), o.crop_borders, o.split_spreads, o.rtl,
-                  o.black_point, o.white_point, static_cast<double>(o.gamma));
+                  o.black_point, o.white_point, static_cast<double>(o.gamma), o.margin);
     return url + variant;
 }
 

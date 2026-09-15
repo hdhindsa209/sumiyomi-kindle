@@ -22,10 +22,11 @@ namespace sumi::app {
 //                  the page with a flash.
 //   Around a chapter  past the last page: an end page (next chapter / back to the manga); before
 //                  the first page: a start page (previous chapter / back).
-//   Menu           middle tap shows a top bar (back, chapter, page) and a bottom bar (previous /
-//                  next chapter, this manga's reading direction, Settings). Only the bars refresh.
-//   Settings       a full page: this manga's direction, default direction, flash cadence, dithering,
-//                  crop borders, split double pages. Done re-processes the chapter if pages change.
+//   Menu           middle tap shows a top bar (back, chapter, page) and a bottom bar: previous / next
+//                  chapter, then settings in tabs — Reading (this manga's direction, default direction,
+//                  full refresh), Zoom (fit page / width, double pages), Crop (auto crop, margins),
+//                  Contrast (contrast, darkness, dithering). Only the bars refresh; a setting that changes
+//                  the page re-renders it under the open menu, and the chapter reloads when the menu closes.
 //   Loading        opening a chapter loads all its pages in the background (from the current page
 //                  on), so turns rarely wait. This is the evictable page cache, not a download.
 //   Progress       every page shown is saved; reaching the last page marks the chapter read.
@@ -69,8 +70,10 @@ private:
     void set_menu(bool open);
     void apply_settings(const ReaderSettings& s);
     bool rtl() const;                    // this manga's direction, else the default
-    void present_settings();
-    void close_settings();
+    std::unique_ptr<ui::Node> bottom_bar();
+    void refresh_bottom_bar();                // swap the bottom bar in place (tab or selection change)
+    // Apply a settings edit: saves it, then redraws just the bar, or re-renders the page if it looks different.
+    void change(const std::function<void(ReaderSettings&, int& direction)>& edit);
     image::ProcessOptions process_options() const;
     const data::Chapter* neighbor(int step) const;   // +1 = next (newer), -1 = previous (older)
     void save_progress();
@@ -93,10 +96,8 @@ private:
     bool           waiting_ = false;   // a page request is in flight
     bool           loading_shown_ = false;   // the loading page is what's on screen
     bool           menu_open_ = false;
-    bool           in_settings_ = false;
-    bool           settings_shown_ = false;
-    bool           settings_dirty_ = false;
-    image::ProcessOptions settings_before_;
+    int            tab_ = 0;               // menu settings tab: Reading, Zoom, Crop, Contrast
+    bool           pages_changed_ = false; // a setting changed the pages while the menu was open
     std::shared_ptr<std::atomic<bool>> load_cancel_;
     int            loaded_ = 0;        // pages of this chapter ready in the cache
     ui::Label*     subtitle_ = nullptr;

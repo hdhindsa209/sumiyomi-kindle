@@ -167,18 +167,23 @@ Gray crop(const Gray& g, const Rect& r)
     return out;
 }
 
+namespace {
+int32_t avail_w(const ProcessOptions& o) { return std::max<int32_t>(64, o.screen_w - 2 * o.margin); }
+int32_t avail_h(const ProcessOptions& o) { return std::max<int32_t>(64, o.screen_h - 2 * o.margin); }
+} // namespace
+
 bool is_strip(int32_t w, int32_t h, const ProcessOptions& opt)
 {
     if (w <= 0 || h <= 0) return false;
-    if (opt.fit == Fit::Width) return static_cast<int64_t>(h) * opt.screen_w > static_cast<int64_t>(opt.screen_h) * w;
+    if (opt.fit == Fit::Width) return static_cast<int64_t>(h) * avail_w(opt) > static_cast<int64_t>(avail_h(opt)) * w;
     return static_cast<float>(h) > static_cast<float>(w) * kStripAspect;
 }
 
 DecodeOptions decode_options_for(int32_t w, int32_t h, const ProcessOptions& opt)
 {
     DecodeOptions d;
-    d.fit_w = opt.screen_w;
-    d.fit_h = is_strip(w, h, opt) ? 0 : opt.screen_h;   // strips are shown at full width
+    d.fit_w = avail_w(opt);
+    d.fit_h = is_strip(w, h, opt) ? 0 : avail_h(opt);   // strips are shown at full width
     return d;
 }
 
@@ -217,12 +222,12 @@ std::vector<Gray> slice_tall(const Gray& g, int32_t screen_h)
 
 void fit_size(int32_t w, int32_t h, const ProcessOptions& opt, int32_t& out_w, int32_t& out_h)
 {
-    double s = static_cast<double>(opt.screen_w) / w;
-    if (opt.fit == Fit::Screen && !is_strip(w, h, opt)) s = std::min(s, static_cast<double>(opt.screen_h) / h);
+    double s = static_cast<double>(avail_w(opt)) / w;
+    if (opt.fit == Fit::Screen && !is_strip(w, h, opt)) s = std::min(s, static_cast<double>(avail_h(opt)) / h);
     out_w = std::max<int32_t>(1, static_cast<int32_t>(std::lround(w * s)));
     out_h = std::max<int32_t>(1, static_cast<int32_t>(std::lround(h * s)));
-    out_w = std::min(out_w, opt.screen_w);
-    if (opt.fit == Fit::Screen && !is_strip(w, h, opt)) out_h = std::min(out_h, opt.screen_h);
+    out_w = std::min(out_w, avail_w(opt));
+    if (opt.fit == Fit::Screen && !is_strip(w, h, opt)) out_h = std::min(out_h, avail_h(opt));
 }
 
 Gray resize(const Gray& g, int32_t w, int32_t h)
@@ -332,7 +337,7 @@ std::vector<Gray> process_page(const Gray& decoded, const ProcessOptions& opt)
         }
         // Slice in source pixels first (one screen-height's worth each), then scale each slice: a
         // full-width webtoon strip can be 40 000 px tall, far too big to process whole on the device.
-        auto slice_h = static_cast<int32_t>(static_cast<int64_t>(opt.screen_h) * part.w / std::max(1, opt.screen_w));
+        auto slice_h = static_cast<int32_t>(static_cast<int64_t>(avail_h(opt)) * part.w / avail_w(opt));
         for (const Gray& slice : slice_tall(part, std::max<int32_t>(16, slice_h))) finish(slice);
     }
     return pages;

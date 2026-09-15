@@ -1,5 +1,6 @@
 // Page processing (M4 S2): crop, spread split, fit sizes, resize, tone, 16-level quantization.
 // Synthetic pages with known content, so every expectation is exact or tightly bounded.
+#include "image/page_cache.h"
 #include "image/process.h"
 
 #include "check.h"
@@ -238,6 +239,21 @@ void test_long_strips_are_sliced()
     CHECK_EQ(wide.size(), 2);
 }
 
+void test_margins_shrink_the_page_area()
+{
+    ProcessOptions o;
+    int32_t w = 0, h = 0;
+    fit_size(1200, 1600, o, w, h);
+    int32_t h0 = h;
+    o.margin = 56;
+    fit_size(1200, 1600, o, w, h);
+    CHECK(h == 1448 - 2 * 56 && w <= 1072 - 2 * 56);   // fits inside the margins on every side
+    CHECK(h < h0);
+    ProcessOptions a, b;
+    b.margin = 24;
+    CHECK(image::PageCache::key("u", 0, a) != image::PageCache::key("u", 0, b));
+}
+
 } // namespace
 
 int main()
@@ -250,5 +266,6 @@ int main()
     RUN(test_quantize_levels_and_dither_behavior);
     RUN(test_process_page_end_to_end);
     RUN(test_long_strips_are_sliced);
+    RUN(test_margins_shrink_the_page_area);
     return check_result();
 }

@@ -248,6 +248,9 @@ void AppData::reader_settings(std::function<void(ReaderSettings)> done)
         s.dither = static_cast<image::Dither>(std::clamp(num("reader.dither", static_cast<int>(s.dither)), 0, 2));
         s.crop_borders = num("reader.crop", 1) != 0;
         s.split_spreads = num("reader.split", 1) != 0;
+        s.contrast = std::clamp(num("reader.contrast", 1), 0, 3);
+        s.darkness = std::clamp(num("reader.darkness", 1), 0, 3);
+        s.margin = std::clamp(num("reader.margin", 0), 0, 3);
         exec_.post([done, s] { done(s); });
     });
 }
@@ -260,7 +263,10 @@ void AppData::save_reader_settings(const ReaderSettings& s)
                && repo_.set_pref("reader.fit", std::to_string(static_cast<int>(s.fit)))
                && repo_.set_pref("reader.dither", std::to_string(static_cast<int>(s.dither)))
                && repo_.set_pref("reader.crop", s.crop_borders ? "1" : "0")
-               && repo_.set_pref("reader.split", s.split_spreads ? "1" : "0");
+               && repo_.set_pref("reader.split", s.split_spreads ? "1" : "0")
+               && repo_.set_pref("reader.contrast", std::to_string(s.contrast))
+               && repo_.set_pref("reader.darkness", std::to_string(s.darkness))
+               && repo_.set_pref("reader.margin", std::to_string(s.margin));
         if (!ok) SUMI_LOGW("app", "cannot save reader settings: %s", db_.error().c_str());
     });
 }

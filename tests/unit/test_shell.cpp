@@ -385,8 +385,8 @@ void test_reader_pages_zones_and_refresh()
     // Menu: only the two bars refresh, the page stays.
     calls = env.display.calls.size();
     middle();
-    CHECK(env.shows("Right to left"));
-    CHECK(env.shows("Settings"));
+    CHECK(env.shows("Reading") && env.shows("Zoom") && env.shows("Crop") && env.shows("Contrast"));
+    CHECK(env.shows("This manga") && env.shows("Full refresh"));
     CHECK(env.shows(std::string(kTitle) + " \xC2\xB7 Page 1 of 33 \xC2\xB7 Chapter loaded"));
     CHECK_EQ(env.image_transport.total_hits(), 33);                     // turning pages fetched nothing more
     CHECK(env.display.calls.size() > calls);
@@ -394,11 +394,24 @@ void test_reader_pages_zones_and_refresh()
     CHECK_EQ(env.display.stale_pixels(), 0);
     CHECK(env.golden("reader_menu"));
 
-    // Direction from the menu applies to this manga only.
-    env.tap(env.find("Right to left"));
-    CHECK(env.shows("Left to right"));
-    CHECK(env.shell->on_back());                                        // back closes the menu first
-    CHECK(!env.shows("Left to right"));
+    // Switching tabs redraws only the bottom bar.
+    calls = env.display.calls.size();
+    env.tap(env.find("Zoom"));
+    CHECK(env.shows("Fit page") && env.shows("Double pages"));
+    CHECK(env.display.calls.size() > calls);
+    for (size_t i = calls; i < env.display.calls.size(); ++i) CHECK(env.display.calls[i].rect.h < kH / 2);
+    CHECK_EQ(env.display.stale_pixels(), 0);
+
+    // Direction for this manga (Reading tab): the page re-renders under the open menu; the chapter
+    // reloads once when the menu closes.
+    env.tap(env.find("Reading"));
+    int hits = env.image_transport.total_hits();
+    env.tap(env.find("Left to right"));                                 // first match: the "This manga" row
+    CHECK(env.shows("This manga"));                                     // menu still open
+    CHECK_EQ(env.image_transport.total_hits(), hits + 1);               // just the current page, for now
+    CHECK(env.shell->on_back());                                        // back closes the menu
+    CHECK(!env.shows("This manga"));
+    CHECK_EQ(env.image_transport.total_hits(), hits + 33);              // then the chapter, once
     CHECK_EQ(env.display.stale_pixels(), 0);
     right();                                                            // left-to-right: the RIGHT third is next
     CHECK_EQ(bars_on_panel(env), 2);
@@ -411,21 +424,22 @@ void test_reader_pages_zones_and_refresh()
         CHECK(manga_ltr);
     }
 
-    // Settings page: options redraw in place (no flash); Done goes back to the page with one flash.
+    // Contrast tab: a page-changing option; flash cadence (Reading tab) only redraws the bar.
     middle();
-    env.tap(env.find("Settings"));
-    CHECK(env.shows("Reader settings") && env.shows("Dithering"));
-    CHECK(env.display.calls.back().mode == Wave::GC16_FLASH);
-    CHECK_EQ(env.display.stale_pixels(), 0);
+    env.tap(env.find("Contrast"));
+    CHECK(env.shows("Darkness") && env.shows("Dithering"));
+    env.tap(env.find("High"));
+    env.tap(env.find("Sharp"));
     CHECK(env.golden("reader_settings"));
-    size_t before_option = env.display.calls.size();
+    env.tap(env.find("Reading"));
+    calls = env.display.calls.size();
+    hits = env.image_transport.total_hits();
     env.tap(env.find("Every 2"));
-    CHECK(env.display.calls.back().mode != Wave::GC16_FLASH);
-    CHECK(env.display.calls.size() > before_option);
-    int hits_before = env.image_transport.total_hits();
-    env.tap(env.find("Done"));
+    for (size_t i = calls; i < env.display.calls.size(); ++i) CHECK(env.display.calls[i].rect.h < kH / 2);
+    CHECK_EQ(env.image_transport.total_hits(), hits);
+    CHECK(env.shell->on_back());
+    CHECK_EQ(env.image_transport.total_hits(), hits + 32);              // contrast + dithering changed the pages (current one already done)
     CHECK_EQ(bars_on_panel(env), 2);
-    CHECK_EQ(env.image_transport.total_hits(), hits_before);           // flash cadence doesn't change pages: nothing reloads
     right();                                                            // turn 1 of 2: no flash
     CHECK_EQ(bars_on_panel(env), 3);
     CHECK(env.display.calls.back().mode == Wave::GL16);
@@ -433,17 +447,9 @@ void test_reader_pages_zones_and_refresh()
     CHECK(env.display.calls.back().mode == Wave::GC16_FLASH);
     left();
 
-    // A setting that changes the pages reprocesses the chapter.
-    middle();
-    env.tap(env.find("Settings"));
-    env.tap(env.find("Sharp"));
-    env.tap(env.find("Done"));
-    CHECK_EQ(bars_on_panel(env), 3);
-    CHECK_EQ(env.image_transport.total_hits(), hits_before + 33);        // every page processed for Sharp
-
     app::ReaderSettings s;
     env.data->reader_settings([&](app::ReaderSettings got) { s = got; });
-    CHECK(s.rtl && s.flash_every == 2 && s.dither == image::Dither::Sharp);
+    CHECK(s.rtl && s.flash_every == 2 && s.dither == image::Dither::Sharp && s.contrast == 2);
 
     // Leaving the reader: back to the manga, with the position shown on the chapter.
     middle();

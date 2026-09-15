@@ -33,6 +33,7 @@ struct ProcessOptions {
     // (>1 darkens midtones: e-ink shows scans lighter than a backlit screen).
     uint8_t black_point = 12, white_point = 243;
     float   gamma = 1.25f;
+    int32_t margin = 0;             // px of white kept around the page on every side
 };
 
 static constexpr float kSpreadAspect = 1.2f;
