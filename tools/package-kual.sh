@@ -20,6 +20,9 @@ cp "$ROOT"/assets/fonts/*.ttf "$ROOT"/assets/fonts/LICENSE-*.txt "$PKG/assets/fo
 mkdir -p "$PKG/assets/certs"
 cp "$ROOT/assets/certs/cacert.pem" "$PKG/assets/certs/"
 
+# Bundled source extensions (design doc §3.3: sources/<id>/{manifest.json,source.lua}).
+cp -R "$ROOT/sources" "$PKG/sources"
+
 # Strip inside the toolchain container (paths are relative to the repo mounted at /src).
 "$ROOT/tools/kbuild.sh" arm-kindlehf-linux-gnueabihf-strip -o build/package/sumiyomi/bin/sumiyomi build/kindle/bin/sumiyomi
 chmod +x "$PKG/bin/sumiyomi"

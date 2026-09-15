@@ -28,6 +28,8 @@ else
     scp $SSH_OPTS -q "$PKG/bin/sumiyomi" "root@$HOST:$DEST/bin/sumiyomi"
     ssh $SSH_OPTS "root@$HOST" "mkdir -p $DEST/assets/fonts"
     scp $SSH_OPTS -q "$PKG"/assets/fonts/* "root@$HOST:$DEST/assets/fonts/"
+    ssh $SSH_OPTS "root@$HOST" "mkdir -p $DEST/sources"
+    scp $SSH_OPTS -q -r "$PKG/sources/." "root@$HOST:$DEST/sources/"
     ssh $SSH_OPTS "root@$HOST" "mkdir -p $DEST/assets/certs"
     scp $SSH_OPTS -q "$PKG/assets/certs/cacert.pem" "root@$HOST:$DEST/assets/certs/"
 fi

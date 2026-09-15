@@ -139,7 +139,8 @@ add_library(sumi_source STATIC
   src/source/html.cpp
   src/source/util.cpp
   src/source/lua_vm.cpp
-  src/source/lua_api.cpp)
+  src/source/lua_api.cpp
+  src/source/extension.cpp)
 target_link_libraries(sumi_source PUBLIC sumi_net lua lexbor_static)
 target_include_directories(sumi_source SYSTEM PRIVATE third_party/lexbor/source)
 
@@ -189,6 +190,17 @@ if(NOT CMAKE_CROSSCOMPILING)
   add_executable(test_lua tests/unit/test_lua.cpp)
   target_link_libraries(test_lua PRIVATE sumi_source)
   add_test(NAME lua COMMAND test_lua)
+
+  add_executable(ext_runner tools/ext/ext_runner.cpp)
+  target_include_directories(ext_runner PRIVATE tools/ext)
+  target_compile_definitions(ext_runner PRIVATE SUMI_ASSETS_DIR="${SUMI_ASSETS_DIR}")
+  target_link_libraries(ext_runner PRIVATE sumi_source)
+
+  add_executable(test_extension tests/unit/test_extension.cpp)
+  target_include_directories(test_extension PRIVATE tools/ext)
+  target_compile_definitions(test_extension PRIVATE SUMI_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+  target_link_libraries(test_extension PRIVATE sumi_source)
+  add_test(NAME extension COMMAND test_extension WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 
   add_executable(test_data tests/unit/test_data.cpp)
   target_link_libraries(test_data PRIVATE sumi_data)

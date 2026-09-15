@@ -1,0 +1,6 @@
+060e11d33b07160d	200	GET https://api.mangadex.org/manga?limit=20&offset=0&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&availableTranslatedLanguage[]=en&hasAvailableChapters=true&order[followedCount]=desc
+514627902b696b72	200	GET https://api.mangadex.org/manga?limit=20&offset=0&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&availableTranslatedLanguage[]=en&hasAvailableChapters=true&order[latestUploadedChapter]=desc
+7c1fa04d56d97ff4	200	GET https://api.mangadex.org/manga?limit=20&offset=0&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&availableTranslatedLanguage[]=en&hasAvailableChapters=true&title=Nee-chan%20no%20Tomodachi%20ga%20Uzai%20Hanashi&order[relevance]=desc
+dc0eda60f2b7f766	200	GET https://api.mangadex.org/manga/d2d22b38-4b3f-4ffb-9387-d18f870d5a91?includes[]=cover_art&includes[]=author&includes[]=artist
+da671644cdcb9698	200	GET https://api.mangadex.org/manga/d2d22b38-4b3f-4ffb-9387-d18f870d5a91/feed?limit=500&offset=0&translatedLanguage[]=en&order[volume]=desc&order[chapter]=desc&includes[]=scanlation_group&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic
+c6216ac9b450a62d	200	GET https://api.mangadex.org/at-home/server/8d61a5b0-51e8-484e-b545-0ee753ceb498
