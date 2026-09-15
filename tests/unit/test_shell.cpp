@@ -80,8 +80,13 @@ struct Env {
         CHECK(page_cache.init(err));
         data = std::make_unique<app::AppData>(*exec, db, std::move(exts), &images, &page_cache);
         // Fixed "now" (2026-09-14 13:00 UTC) so relative dates in goldens never drift.
+        app::Shell::Schedule schedule;
+        if (device_loop)   // as main.cpp: one-shot timers on the event loop, painting after they run
+            schedule = [this](uint32_t ms, std::function<void()> fn) {
+                loop.add_timeout([this, fn] { fn(); screen.frame(); }, ms);
+            };
         shell = std::make_unique<app::Shell>(screen, *data, [this] { exited = true; },
-                                             [] { return int64_t{1789344000000LL + 13 * 3600000LL}; });
+                                             [] { return int64_t{1789344000000LL + 13 * 3600000LL}; }, schedule);
         shell->start();
         screen.frame();
     }
@@ -115,11 +120,20 @@ struct Env {
     // Device loop only: run the event loop until `done` or 10 s pass.
     bool run_until(const std::function<bool()>& done)
     {
-        uint64_t deadline = sumi::mono_ms() + 10000;
-        loop.add_poll([&] { if (done() || sumi::mono_ms() > deadline) loop.stop(); }, 20);
+        // One poll for the Env's lifetime (polls can't be removed); it checks whatever we wait for now.
+        if (!poll_added_) {
+            loop.add_poll([this] { if (waiting_for_ && (waiting_for_() || sumi::mono_ms() > deadline_)) loop.stop(); }, 20);
+            poll_added_ = true;
+        }
+        waiting_for_ = done;
+        deadline_ = sumi::mono_ms() + 10000;
         loop.run();
+        waiting_for_ = nullptr;
         return done();
     }
+    std::function<bool()> waiting_for_;
+    uint64_t deadline_ = 0;
+    bool poll_added_ = false;
 
     Node* root() { return screen.root(); }
 
@@ -277,14 +291,12 @@ void test_device_loop_results_reach_the_panel()
 {
     // As on the Kindle: real event loop and worker thread, no simulator timer painting frames.
     Env env(true);
-    CHECK(env.shows("Loading library\xE2\x80\xA6"));                // whole-screen loading page first
     CHECK(env.run_until([&] { return env.shows("Browse sources"); }));
     env.tap(env.nav_cell(3));
-    env.tap(env.find("WeebCentral"));
-    CHECK(env.shows("Loading WeebCentral\xE2\x80\xA6"));
-    CHECK(env.shows("Cancel"));
-    CHECK(!env.shows("Popular"));                                     // nothing half-built behind it
     size_t calls = env.display.calls.size();
+    env.tap(env.find("WeebCentral"));
+    CHECK(!env.shows("Popular"));                                     // nothing half-built on screen
+    calls = env.display.calls.size();                                 // (the tap's own press feedback)
     CHECK(env.run_until([&] { return env.shows("One Piece"); }));   // no tap: the result must paint itself
     // Exactly one refresh for the finished screen: a full-screen flash.
     CHECK_EQ(env.display.calls.size(), calls + 1);
@@ -442,6 +454,42 @@ void test_reader_page_error_and_cancel()
     CHECK_EQ(env.display.stale_pixels(), 0);
 }
 
+void test_device_loop_reader()
+{
+    // Real event loop + worker + deferred loading pages: the page must reach the panel on its own,
+    // and a turn to a page that's already cached must not show a loading page at all.
+    Env env(true);
+    CHECK(env.run_until([&] { return env.shows("Browse sources"); }));
+    source::SManga seed{"/series/01KTEH8Z2TJ9NQ2NDZ75EM36SS/neechan-no-tomodachi-ga-uzai-hanashi", kTitle, "", "", "", "", {}, 0};
+    bool opened = false;
+    env.data->open_manga(env.data->sources()[0].id, seed, [&](app::MangaView v, bool refreshed, std::string) {
+        if (refreshed) env.data->set_favorite(v.manga.id, true, [&](bool) { opened = true; });
+    });
+    CHECK(env.run_until([&] { return opened; }));
+    env.tap(env.nav_cell(1));
+    CHECK(env.run_until([&] { return env.shows("Updates"); }));
+    env.tap(env.nav_cell(0));
+    CHECK(env.run_until([&] { return env.shows(kTitle); }));
+    env.tap(env.find(kTitle));
+    CHECK(env.run_until([&] { return env.shows("Chapter 25") && env.shows("In library"); }));
+    env.tap(env.find("Chapter 25"));
+    CHECK(env.run_until([&] { return bars_on_panel(env) == 1; }));
+    CHECK_EQ(env.display.stale_pixels(), 0);
+
+    env.tap(Point{100, 700});                                   // uncached page 2
+    CHECK(env.run_until([&] { return bars_on_panel(env) == 2; }));
+    CHECK_EQ(env.display.stale_pixels(), 0);
+    env.tap(Point{kW - 100, 700});                              // back to cached page 1
+    size_t calls = env.display.calls.size();
+    CHECK(env.run_until([&] { return bars_on_panel(env) == 1; }));
+    // Give a stray deferred loading page time to (wrongly) appear.
+    uint64_t until = sumi::mono_ms() + 500;
+    env.run_until([&] { return sumi::mono_ms() > until; });
+    CHECK_EQ(bars_on_panel(env), 1);
+    CHECK(env.display.calls.size() - calls <= 2);
+    CHECK_EQ(env.display.stale_pixels(), 0);
+}
+
 void test_updates_refresh_reports()
 {
     Env env;
@@ -478,6 +526,7 @@ int main()
     RUN(test_reader_pages_zones_and_refresh);
     RUN(test_reader_end_of_chapter_marks_read);
     RUN(test_reader_page_error_and_cancel);
+    RUN(test_device_loop_reader);
     RUN(test_updates_refresh_reports);
     RUN(test_more_exit);
     return check_result();

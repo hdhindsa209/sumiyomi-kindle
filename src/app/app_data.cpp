@@ -310,7 +310,9 @@ void AppData::load_page(int64_t source, const std::string& url, int part, const 
             source::Extension* ext = extension(source);
             if (ext && !ext->manifest().base_url.empty()) req.headers.push_back({"Referer", ext->manifest().base_url + "/"});
             req.headers.push_back({"Accept", "image/jpeg,image/png,image/*;q=0.8"});
+            uint64_t t0 = mono_ms();
             net::Response res = images_->fetch(req);
+            uint64_t t_fetch = mono_ms() - t0;
             image::Gray decoded;
             image::DecodeOptions dopt;
             dopt.fit_w = opt.screen_w;
@@ -319,8 +321,11 @@ void AppData::load_page(int64_t source, const std::string& url, int part, const 
                 err = res.error;
             } else if (!res.http_ok()) {
                 err = "HTTP " + std::to_string(res.status);
-            } else if (image::decode_gray(reinterpret_cast<const uint8_t*>(res.body.data()), res.body.size(), dopt, decoded, err)) {
+            } else if (uint64_t t1 = mono_ms();
+                       image::decode_gray(reinterpret_cast<const uint8_t*>(res.body.data()), res.body.size(), dopt, decoded, err)) {
+                uint64_t t2 = mono_ms();
                 std::vector<image::Gray> parts = image::process_page(decoded, opt);
+                uint64_t t3 = mono_ms();
                 result.parts = static_cast<int>(parts.size());
                 for (size_t i = 0; i < parts.size(); ++i) {
                     std::string cache_err;
@@ -328,6 +333,10 @@ void AppData::load_page(int64_t source, const std::string& url, int part, const 
                                                {parts[i], static_cast<uint8_t>(parts.size())}, cache_err))
                         SUMI_LOGW("app", "%s", cache_err.c_str());
                 }
+                SUMI_LOGI("perf", "page %zu KB: fetch %llums, decode %llums (%dx%d), process %llums, cache %llums",
+                          res.body.size() / 1024, static_cast<unsigned long long>(t_fetch),
+                          static_cast<unsigned long long>(t2 - t1), decoded.w, decoded.h,
+                          static_cast<unsigned long long>(t3 - t2), static_cast<unsigned long long>(mono_ms() - t3));
                 int want = std::clamp(part, 0, result.parts - 1);
                 result.page = std::move(parts[static_cast<size_t>(want)]);
             }
