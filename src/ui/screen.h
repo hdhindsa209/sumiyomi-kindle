@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "core/canvas.h"
@@ -20,8 +21,9 @@ namespace sumi::ui {
 //              -> full-screen GC16 flash. A clean slate, once per screen.
 //   Loading    the full-screen "Loading…" placeholder -> full-screen GL16, no flash
 //              (almost all white: nothing to clean up, and the content flash follows).
-//   PageTurn   next/previous page of the same list -> full-screen GL16, no flash; every
-//              kPagesPerFlash-th consecutive page turn flashes to clear accumulated ghosting.
+//   PageTurn   next/previous page (a list, or the reader) -> full-screen GL16, no flash; every
+//              pages_per_flash-th consecutive page turn flashes to clear accumulated ghosting
+//              (lists: kPagesPerFlash; the reader sets its own, default every page).
 //   Update     small in-place change that needed a relayout (a label, a toggle) -> GL16.
 // Local changes don't repaint the screen at all: a pressed button inverts with A2 (fast, B&W),
 // released it repaints with GL16, and other dirty nodes refresh only their own rect.
@@ -36,6 +38,7 @@ public:
     // Replaces the tree. Layout + full paint + a full refresh (per `change`) happen on the next frame().
     void set_root(std::unique_ptr<Node> root, Change change = Change::NewScreen);
     Node* root() const { return root_.get(); }
+    Rect bounds() const { return screen_; }
 
     // A bottom sheet over the current root (§5.4): appears in place with one refresh of its own
     // rect; a tap outside it dismisses it. Only one overlay at a time.
@@ -51,6 +54,15 @@ public:
     void invalidate_layout(Change change = Change::Update);
 
     static constexpr int kPagesPerFlash = 5;
+    // Flash on every n-th PageTurn (1 = every turn, 0 = never). Resets the count.
+    void set_pages_per_flash(int n);
+    int  pages_per_flash() const { return pages_per_flash_; }
+
+    // Lay out `n` inside its current frame without repainting (pair with repaint() for a partial update).
+    void layout_node(Node* n);
+
+    // Repaint the tree inside `r` and refresh just that rect next frame (e.g. what a hidden bar covered).
+    void repaint(const Rect& r, Wave mode);
 
     // Move `list` (a paging node) one page; on success the whole screen repaints and refreshes.
     void turn_page(Node* list, bool forward);
@@ -88,6 +100,8 @@ private:
     bool  needs_layout_ = false;
     Change pending_change_ = Change::NewScreen;
     int    pages_since_flash_ = 0;
+    int    pages_per_flash_ = kPagesPerFlash;
+    std::vector<std::pair<Rect, Wave>> repaints_;
     Wave   full_wave(Change change);
 
     GestureRecognizer gestures_;

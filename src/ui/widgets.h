@@ -89,6 +89,12 @@ std::unique_ptr<Node> section_header(const std::string& title, const std::string
 // Sticky full-width call to action (§8.3 "Resume Chapter N"): 120 px PRIMARY bar, SURFACE label + icon.
 std::unique_ptr<Node> cta_bar(char32_t icon, const std::string& label, std::function<void()> on_tap);
 
+// Whole-screen loading page: centered SemiBold text on white; `cancel` adds a Cancel button.
+std::unique_ptr<Node> loading_page(const std::string& text, std::function<void()> cancel = nullptr);
+
+// Outlined full-width button (icon optional); `filled` = inverted, the "on" state.
+std::unique_ptr<Node> button(const std::string& label, std::function<void()> on_tap, bool filled = false, char32_t icon = 0);
+
 // Bottom sheet (§5.4): SURFACE_1 with a 1 px OUTLINE top border, optional title, content below.
 // Shown via Screen::show_overlay.
 std::unique_ptr<Node> sheet(const std::string& title, std::vector<std::unique_ptr<Node>> content);

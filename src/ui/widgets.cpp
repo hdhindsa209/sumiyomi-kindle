@@ -365,6 +365,44 @@ std::unique_ptr<Node> cta_bar(char32_t icon, const std::string& label, std::func
     return bar;
 }
 
+// ---------------------------------------------------------------- Loading page, button
+
+std::unique_ptr<Node> loading_page(const std::string& text, std::function<void()> cancel)
+{
+    auto root = container(Layout::Column);
+    root->height = Dim::fill();
+    root->opaque = true;
+    root->padding = Insets::hv(64, 0);
+    root->gap = 48;
+    root->align_main = Align::Center;
+    root->align_cross = Align::Center;
+    auto* label = root->emplace<Label>(text, type::APP_BAR_TITLE, FontId::InterSemiBold, tone::BLACK, 3);
+    label->text_align = Align::Center;
+    label->width = Dim::fill();
+    if (cancel) root->add(chip("Cancel", false, std::move(cancel)));
+    return root;
+}
+
+std::unique_ptr<Node> button(const std::string& label, std::function<void()> on_tap, bool filled, char32_t icon)
+{
+    auto b = container(Layout::Row);
+    b->width = Dim::fill();
+    b->height = Dim::px(104);
+    b->align_main = Align::Center;
+    b->align_cross = Align::Center;
+    b->gap = 16;
+    b->opaque = true;
+    b->background = filled ? tone::BLACK : tone::WHITE;
+    b->border = Insets::all(tone::RULE);
+    b->border_gray = tone::BLACK;
+    b->refresh = Wave::GL16;
+    b->on_tap = std::move(on_tap);
+    uint8_t ink = filled ? tone::WHITE : tone::BLACK;
+    if (icon) b->emplace<Icon>(icon, kIconSp, ink, filled);
+    b->emplace<Label>(label, type::LIST_PRIMARY, FontId::InterSemiBold, ink);
+    return b;
+}
+
 // ---------------------------------------------------------------- Sheet
 
 std::unique_ptr<Node> sheet(const std::string& title, std::vector<std::unique_ptr<Node>> content)

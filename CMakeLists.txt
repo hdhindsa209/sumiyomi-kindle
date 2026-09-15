@@ -245,11 +245,11 @@ if(NOT CMAKE_CROSSCOMPILING)
   target_link_libraries(test_widgets PRIVATE sumi_ui)
   add_test(NAME widgets COMMAND test_widgets)
 
-  add_executable(test_shell tests/unit/test_shell.cpp src/app/shell.cpp)
+  add_executable(test_shell tests/unit/test_shell.cpp src/app/shell.cpp src/app/reader.cpp)
   target_include_directories(test_shell PRIVATE src tools/ext)
   target_compile_definitions(test_shell PRIVATE SUMI_ASSETS_DIR="${SUMI_ASSETS_DIR}" SUMI_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
                                                SUMI_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/tests/golden")
-  target_link_libraries(test_shell PRIVATE sumi_ui sumi_app_data)
+  target_link_libraries(test_shell PRIVATE sumi_ui sumi_app_data jpeg_static)
   add_test(NAME shell COMMAND test_shell)
 
   add_executable(test_http tests/unit/test_http.cpp)
@@ -314,7 +314,7 @@ if(NOT CMAKE_CROSSCOMPILING)
     # §2 criterion 7: the same app on the desktop, SDL backend.
     add_library(sumi_sim_platform STATIC src/platform/signals.cpp)
     target_link_libraries(sumi_sim_platform PUBLIC sumi_sim)
-    add_executable(sumiyomi src/main.cpp src/app/shell.cpp)
+    add_executable(sumiyomi src/main.cpp src/app/shell.cpp src/app/reader.cpp)
     target_compile_definitions(sumiyomi PRIVATE SUMI_ASSETS_DIR="${SUMI_ASSETS_DIR}"
                                                 SUMI_DATA_DIR="${CMAKE_BINARY_DIR}/data"
                                                 SUMI_SOURCES_DIR="${CMAKE_SOURCE_DIR}/sources")
@@ -349,7 +349,7 @@ add_library(sumi_platform STATIC
   src/platform/input_evdev.cpp)
 target_link_libraries(sumi_platform PUBLIC sumi_core fbink)
 
-add_executable(sumiyomi src/main.cpp src/app/shell.cpp)
+add_executable(sumiyomi src/main.cpp src/app/shell.cpp src/app/reader.cpp)
 target_compile_definitions(sumiyomi PRIVATE SUMI_ASSETS_DIR="/mnt/us/extensions/sumiyomi/assets"
                                             SUMI_DATA_DIR="/mnt/us/sumiyomi"
                                             SUMI_SOURCES_DIR="/mnt/us/extensions/sumiyomi/sources")

@@ -12,11 +12,14 @@
 
 #include "check.h"
 #include "fake_display.h"
+#include "fake_images.h"
 #include "fixture_transport.h"
 #include "golden.h"
 
 #include <functional>
+#include <cstdlib>
 #include <string>
+#include <unistd.h>
 
 using namespace sumi;
 using namespace sumi::ui;
@@ -43,6 +46,10 @@ struct Env {
 
     fixtures::ReplayTransport transport{SUMI_SOURCE_DIR "/tests/fixtures/weebcentral"};
     net::Client    client{transport, no_wait()};
+    fake_images::Transport image_transport{transport};
+    net::Client    images{image_transport, no_wait()};
+    std::string    cache_dir = "shell_cache_" + std::to_string(getpid());
+    image::PageCache page_cache{cache_dir, 64ull << 20, 5};
     InlineExecutor inline_exec;
     EventLoop      loop;
     Worker         worker{loop};
@@ -67,7 +74,11 @@ struct Env {
             app::paint_on_results(worker, loop, screen);
             exec = &worker;
         }
-        data = std::make_unique<app::AppData>(*exec, db, std::move(exts));
+        std::string rm = "rm -rf " + cache_dir;
+        int rc = std::system(rm.c_str());
+        (void)rc;
+        CHECK(page_cache.init(err));
+        data = std::make_unique<app::AppData>(*exec, db, std::move(exts), &images, &page_cache);
         // Fixed "now" (2026-09-14 13:00 UTC) so relative dates in goldens never drift.
         shell = std::make_unique<app::Shell>(screen, *data, [this] { exited = true; },
                                              [] { return int64_t{1789344000000LL + 13 * 3600000LL}; });
@@ -93,7 +104,13 @@ struct Env {
         RawEvent e; e.kind = RawKind::Key; e.key = k; e.pressed = true; e.t_ms = t++;
         screen.on_event(e); screen.frame();
     }
-    ~Env() { worker.stop(); }
+    ~Env()
+    {
+        worker.stop();
+        std::string rm = "rm -rf " + cache_dir;
+        int rc = std::system(rm.c_str());
+        (void)rc;
+    }
 
     // Device loop only: run the event loop until `done` or 10 s pass.
     bool run_until(const std::function<bool()>& done)
@@ -230,11 +247,10 @@ void test_search_with_keyboard_detail_and_library_state()
 
     env.tap(env.find("Add to library"));
     CHECK(env.shows("In library"));
-    env.tap(env.find("Chapter 25"));                                   // mark read
     data::Repo repo(env.db);
     auto lib = repo.library();
     CHECK_EQ(lib.size(), 1);
-    if (!lib.empty()) CHECK_EQ(lib[0].unread, 27);
+    if (!lib.empty()) CHECK_EQ(lib[0].unread, 28);
 
     CHECK(env.shell->on_back());                                  // detail -> search results
     CHECK(env.shows(kTitle));
@@ -280,6 +296,152 @@ void test_device_loop_results_reach_the_panel()
     CHECK(env.golden("source_popular"));
 }
 
+// Opens the detail page of the recorded manga (from the library).
+void open_detail(Env& env)
+{
+    source::SManga seed{"/series/01KTEH8Z2TJ9NQ2NDZ75EM36SS/neechan-no-tomodachi-ga-uzai-hanashi", kTitle, "", "", "", "", {}, 0};
+    int64_t id = 0;
+    env.data->open_manga(env.data->sources()[0].id, seed, [&](app::MangaView v, bool, std::string) { id = v.manga.id; });
+    env.data->set_favorite(id, true, [](bool) {});
+    env.tap(env.nav_cell(1));
+    env.tap(env.nav_cell(0));
+    env.tap(env.find(kTitle));
+}
+
+// The page number drawn on a fake page: its black bars, counted along one row of the panel.
+int bars_on_panel(Env& env)
+{
+    int bars = 0;
+    bool in_bar = false;
+    int32_t y = 0;
+    // The bars sit near the top of the page image; find a row that has black runs.
+    for (int32_t row = 100; row < 600 && bars == 0; row += 10) {
+        y = row;
+        in_bar = false;
+        for (int32_t x = 0; x < kW; ++x) {
+            bool black = env.display.panel[static_cast<size_t>(y) * kW + static_cast<size_t>(x)] < 60;
+            if (black && !in_bar) ++bars;
+            in_bar = black;
+        }
+        if (bars > 40) bars = 0;   // a text line, not bars
+    }
+    return bars;
+}
+
+void test_reader_pages_zones_and_refresh()
+{
+    Env env;
+    open_detail(env);
+    CHECK(env.shows("Start reading: Chapter 1"));
+    env.tap(env.find("Chapter 25"));
+
+    // First page: one full-screen flash, what's drawn is what the panel shows.
+    CHECK_EQ(bars_on_panel(env), 1);
+    CHECK(env.display.calls.back().mode == Wave::GC16_FLASH && env.display.calls.back().rect.h == kH);
+    CHECK_EQ(env.display.stale_pixels(), 0);
+    CHECK(env.golden("reader_page"));
+
+    // Right-to-left by default: the LEFT third turns forward.
+    auto left = [&] { env.tap(Point{100, 700}); };
+    auto right = [&] { env.tap(Point{kW - 100, 700}); };
+    auto middle = [&] { env.tap(Point{kW / 2, 700}); };
+    size_t calls = env.display.calls.size();
+    left();
+    CHECK_EQ(bars_on_panel(env), 2);
+    CHECK(env.display.calls.back().mode == Wave::GC16_FLASH);          // flash every page by default
+    CHECK(env.display.calls.back().rect.h == kH);
+    CHECK(env.display.calls.size() - calls <= 2);                       // no stray partial refreshes (tap zones don't invert)
+    CHECK_EQ(env.display.stale_pixels(), 0);
+    env.key(Key::PageNext);                                             // hardware key: always next
+    CHECK_EQ(bars_on_panel(env), 3);
+    right();
+    right();
+    CHECK_EQ(bars_on_panel(env), 1);
+    right();                                                            // before page 1: the start page
+    CHECK(env.shows("Start of"));
+    CHECK(env.shows("Chapter 25"));
+    CHECK(env.shows("Previous: Chapter 24"));
+    left();
+    CHECK_EQ(bars_on_panel(env), 1);
+
+    // Menu: only the two bars refresh, the page stays.
+    calls = env.display.calls.size();
+    middle();
+    CHECK(env.shows("Right to left"));
+    CHECK(env.shows("Flash: every page"));
+    CHECK(env.display.calls.size() > calls);
+    for (size_t i = calls; i < env.display.calls.size(); ++i) CHECK(env.display.calls[i].rect.h < kH / 2);
+    CHECK_EQ(env.display.stale_pixels(), 0);
+    CHECK(env.golden("reader_menu"));
+
+    env.tap(env.find("Flash: every page"));                             // cycles the cadence in place
+    CHECK(env.shows("Flash: every 2 pages"));
+    env.tap(env.find("Right to left"));                                 // switch direction
+    CHECK(env.shows("Left to right"));
+    CHECK(env.shell->on_back());                                        // back closes the menu first
+    CHECK(!env.shows("Left to right"));
+    CHECK_EQ(env.display.stale_pixels(), 0);
+    right();                                                            // left-to-right: the RIGHT third is next
+    CHECK_EQ(bars_on_panel(env), 2);
+    right();                                                            // every 2nd turn flashes now
+    CHECK_EQ(bars_on_panel(env), 3);
+
+    // Settings persisted.
+    app::ReaderSettings s;
+    env.data->reader_settings([&](app::ReaderSettings got) { s = got; });
+    CHECK(!s.rtl && s.flash_every == 2);
+
+    // Leaving the reader: back to the manga, with the position shown on the chapter.
+    middle();
+    CHECK(env.shell->on_back());                                        // closes the menu
+    CHECK(env.shell->on_back());                                        // leaves the reader
+    env.screen.frame();
+    CHECK(env.shows("Continue: Chapter 25"));
+    CHECK(env.shows("1 week ago \xC2\xB7 Page 3 of 33"));
+}
+
+void test_reader_end_of_chapter_marks_read()
+{
+    Env env;
+    open_detail(env);
+    // Resume near the end.
+    data::Repo repo(env.db);
+    int64_t chapter25 = 0;
+    for (const auto& item : repo.library())
+        for (const auto& c : repo.chapters(item.manga.id))
+            if (c.name == "Chapter 25") chapter25 = c.id;
+    env.data->save_progress(chapter25, 31, 33, false);
+    CHECK(env.shell->on_back());
+    env.screen.frame();
+    env.tap(env.find(kTitle));
+    CHECK(env.shows("Continue: Chapter 25"));
+    env.tap(env.find("Continue: Chapter 25"));
+    CHECK(env.image_transport.hits.count("https://scans.lastation.us/manga/neechan-no-tomodachi-ga-uzai-hanashi/0025-032.png"));
+    env.tap(Point{100, 700});                                            // page 33
+    auto ch = repo.chapter(chapter25);
+    CHECK(ch && ch->read);                                               // reaching the last page marks it read
+    env.tap(Point{100, 700});                                            // past the end
+    CHECK(env.shows("Finished"));
+    CHECK(env.shows("There's no next chapter yet."));
+    CHECK_EQ(env.display.stale_pixels(), 0);
+    CHECK(env.golden("reader_end"));
+    env.tap(env.find("Back to manga"));
+    CHECK(env.shows("In library"));
+}
+
+void test_reader_page_error_and_cancel()
+{
+    Env env;
+    open_detail(env);
+    env.image_transport.fail.insert("https://scans.lastation.us/manga/neechan-no-tomodachi-ga-uzai-hanashi/0025-001.png");
+    env.tap(env.find("Chapter 25"));
+    CHECK(env.shows("Couldn't load page 1.\nHTTP 404"));
+    env.image_transport.fail.clear();
+    env.tap(env.find("Retry"));
+    CHECK_EQ(bars_on_panel(env), 1);
+    CHECK_EQ(env.display.stale_pixels(), 0);
+}
+
 void test_updates_refresh_reports()
 {
     Env env;
@@ -313,6 +475,9 @@ int main()
     RUN(test_search_with_keyboard_detail_and_library_state);
     RUN(test_library_shows_saved_manga_and_reopens_detail);
     RUN(test_device_loop_results_reach_the_panel);
+    RUN(test_reader_pages_zones_and_refresh);
+    RUN(test_reader_end_of_chapter_marks_read);
+    RUN(test_reader_page_error_and_cancel);
     RUN(test_updates_refresh_reports);
     RUN(test_more_exit);
     return check_result();

@@ -60,6 +60,22 @@ void Screen::invalidate_layout(Change change)
     needs_layout_ = true;
 }
 
+void Screen::set_pages_per_flash(int n)
+{
+    pages_per_flash_ = std::max(0, n);
+    pages_since_flash_ = 0;
+}
+
+void Screen::layout_node(Node* n)
+{
+    if (n) n->layout_in(text_, fonts_, n->frame());
+}
+
+void Screen::repaint(const Rect& r, Wave mode)
+{
+    if (!r.empty()) repaints_.push_back({r, mode});
+}
+
 Wave Screen::full_wave(Change change)
 {
     switch (change) {
@@ -67,7 +83,7 @@ Wave Screen::full_wave(Change change)
         pages_since_flash_ = 0;
         return Wave::GC16_FLASH;
     case Change::PageTurn:
-        if (++pages_since_flash_ >= kPagesPerFlash) {
+        if (pages_per_flash_ > 0 && ++pages_since_flash_ >= pages_per_flash_) {
             pages_since_flash_ = 0;
             return Wave::GC16_FLASH;
         }
@@ -199,8 +215,18 @@ void Screen::frame()
         root_->collect_dirty(dirty_);   // everything is repainted; drop individual damage
         dirty_.clear();
         released_.clear();
+        repaints_.clear();
         frames_.damage(screen_, full_wave(pending_change_));
     } else {
+        for (const auto& [rect, mode] : repaints_) {
+            Rect clip = rect.clipped(screen_);
+            PaintCtx ctx{canvas_, text_, fonts_, clip};
+            canvas_.fill_rect(clip, tone::SURFACE);
+            root_->paint(ctx);
+            if (overlay_) overlay_->paint(ctx);
+            frames_.damage(clip, mode);
+        }
+        repaints_.clear();
         if (!overlay_hidden_.empty()) {
             // Sheet dismissed: repaint what was under it.
             PaintCtx ctx{canvas_, text_, fonts_, overlay_hidden_};

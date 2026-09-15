@@ -4,6 +4,7 @@
 #include "app/app_data.h"
 #include "app/live_frames.h"
 #include "app/shell.h"
+#include "image/page_cache.h"
 #include "core/log.h"
 #include "core/loop.h"
 #include "core/worker.h"
@@ -142,7 +143,13 @@ int main(int argc, char** argv)
         SUMI_LOGE("main", "worker: %s", err.c_str());
         return 1;
     }
-    sumi::app::AppData app_data(worker, db, load_extensions(env_or("SUMI_SOURCES", SUMI_SOURCES_DIR), http));
+    // Processed reader pages (design doc §7.4): 512 MB on the user partition, next to the database.
+    sumi::image::PageCache page_cache(data_dir + "/cache/pages");
+    bool cache_ok = page_cache.init(err);
+    if (!cache_ok) SUMI_LOGW("main", "%s (reading without a page cache)", err.c_str());
+    // Images share the source client: both are used only on the worker thread.
+    sumi::app::AppData app_data(worker, db, load_extensions(env_or("SUMI_SOURCES", SUMI_SOURCES_DIR), http), &http,
+                                cache_ok ? &page_cache : nullptr);
     sumi::app::Shell shell(screen, app_data, [&loop] { loop.stop(); }, nullptr,
                            [&loop, &screen](uint32_t ms, std::function<void()> fn) {
                                loop.add_timeout([&loop, &screen, fn] {

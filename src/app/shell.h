@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "app/app_data.h"
+#include "app/reader.h"
 #include "ui/keyboard.h"
 #include "ui/paged_list.h"
 #include "ui/screen.h"
@@ -41,7 +42,7 @@ private:
     enum Tab { kLibrary, kUpdates, kHistory, kBrowse, kMore };
 
     struct Route {
-        enum Kind { TabRoot, Source, Search, Detail };
+        enum Kind { TabRoot, Source, Search, Detail, Reader };
         Route(Kind k = TabRoot, int tab_index = kLibrary) : kind(k), tab(tab_index) {}
         Kind           kind;
         int            tab;
@@ -50,6 +51,9 @@ private:
         std::string    query;         // Search: the last query run, restored on back
         source::SManga seed;          // Detail from a source listing
         int64_t        manga_id = 0;  // Detail from the library / updates / history
+        int64_t        chapter_id = 0;   // Reader
+        int            start_page = 0;   // Reader: image index to open at
+        bool           from_end = false; // Reader: open at the last page (coming back from the next chapter)
     };
 
     void go(Route r, bool push = true);
@@ -84,6 +88,8 @@ private:
     void run_search(uint64_t gen, int64_t source);
     void show_detail(const Route& r);
     void present_detail(uint64_t gen, ui::Change change);
+    void show_reader(const Route& r);
+    void open_reader(int64_t chapter_id, int start_page);
     std::unique_ptr<ui::Node> detail_actions(uint64_t gen);
     std::unique_ptr<ui::Node> chapter_row(uint64_t gen, size_t index);
 
@@ -111,6 +117,8 @@ private:
     bool           detail_shown_ = false;
     size_t         first_chapter_item_ = 0;   // detail: list index of chapter 0's row
     size_t         favorite_item_ = 0;        // detail: list index of the action row
+    std::unique_ptr<Reader> reader_;
+    std::unique_ptr<Reader> retired_reader_;  // left from inside its own callback: destroyed on the next screen
 };
 
 } // namespace sumi::app

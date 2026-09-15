@@ -43,7 +43,7 @@ void Node::set_pressed(bool p)
 {
     if (p == pressed_) return;
     pressed_ = p;
-    mark_dirty();
+    if (press_feedback) mark_dirty();
 }
 
 void Node::mark_dirty() { dirty_ = true; }
@@ -202,7 +202,7 @@ void Node::paint(PaintCtx& ctx)
     for (auto& c : children_) c->paint(local);
     paint_overlay(local);
 
-    if (pressed_) {
+    if (pressed_ && press_feedback) {
         // A2 press feedback (§5.4): make the region strictly B&W, then invert. Valid A2 content.
         ctx.canvas.quantize_rect(clip, 2);
         ctx.canvas.invert_rect(clip);

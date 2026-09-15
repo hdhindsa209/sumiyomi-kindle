@@ -49,22 +49,6 @@ std::unique_ptr<Node> message(const std::string& text, const std::string& action
     return box;
 }
 
-// The whole-screen loading page: centered text on white, nothing else to refresh.
-std::unique_ptr<Node> loading_page(const std::string& text, std::function<void()> cancel)
-{
-    auto root = column();
-    root->opaque = true;
-    root->padding = Insets::hv(64, 0);
-    root->gap = 48;
-    root->align_main = Align::Center;
-    root->align_cross = Align::Center;
-    auto* label = root->emplace<Label>(text, type::APP_BAR_TITLE, FontId::InterSemiBold, tone::BLACK, 3);
-    label->text_align = Align::Center;
-    label->width = Dim::fill();
-    if (cancel) root->add(chip("Cancel", false, std::move(cancel)));
-    return root;
-}
-
 // Full-width button with icon + label (§8.3 action row). Outlined; `filled` (the "on" state) is inverted.
 std::unique_ptr<Node> action_button(char32_t icon, const std::string& label, bool filled, std::function<void()> on_tap)
 {
@@ -125,6 +109,7 @@ bool Shell::on_back()
         screen_.hide_overlay();
         return true;
     }
+    if (reader_ && reader_->on_back()) return true;   // closes the reader menu first
     if (keyboard_ && keyboard_->visible && !results_.empty()) {   // search: put the keyboard away first
         keyboard_->visible = false;
         if (Node* pager = list_ ? list_->parent()->children()[1].get() : nullptr) pager->visible = true;
@@ -139,6 +124,10 @@ bool Shell::on_back()
 
 uint64_t Shell::begin()
 {
+    if (reader_) {
+        reader_->detach();
+        retired_reader_ = std::move(reader_);
+    }
     waiting_ = false;
     list_ = nullptr;
     field_ = nullptr;
@@ -171,6 +160,7 @@ void Shell::show(const Route& r)
     case Route::Source: show_source(r.source, r.mode); break;
     case Route::Search: show_search(r); break;
     case Route::Detail: show_detail(r); break;
+    case Route::Reader: show_reader(r); break;
     }
 }
 
@@ -539,7 +529,28 @@ std::unique_ptr<Node> Shell::detail_actions(uint64_t gen)
     actions->padding = Insets{32, 8, 32, 16};
     int64_t id = view_.manga.id;
     bool fav = view_.manga.favorite;
-    actions->add(action_button(icon::favorite, fav ? "In library" : "Add to library", fav, [this, gen, id, fav] {
+    actions->layout = Layout::Column;
+    actions->gap = 16;
+    // Where to continue (Mihon's rule, plus progress): a chapter left part-way (the newest such), else the
+    // oldest unread chapter after the newest read one, else the first chapter.
+    const data::Chapter* resume = nullptr;
+    for (const data::Chapter& c : view_.chapters)
+        if (!c.read && c.last_page_read > 0) { resume = &c; break; }
+    if (!resume) {
+        for (auto it = view_.chapters.rbegin(); it != view_.chapters.rend(); ++it) {
+            if (it->read) resume = nullptr;
+            else if (!resume) resume = &*it;
+        }
+    }
+    bool any_read = std::any_of(view_.chapters.begin(), view_.chapters.end(),
+                                [](const data::Chapter& c) { return c.read || c.last_page_read > 0; });
+    if (resume) {
+        int64_t rid = resume->id;
+        int page = resume->last_page_read;
+        std::string label = any_read ? "Continue: " + resume->name : "Start reading: " + resume->name;
+        actions->add(action_button(icon::play_arrow, label, true, [this, rid, page] { open_reader(rid, page); }));
+    }
+    actions->add(action_button(icon::favorite, fav ? "In library" : "Add to library", false, [this, gen, id, fav] {
         data_.set_favorite(id, !fav, [this, gen, fav](bool ok) {
             if (!current(gen) || !ok || !list_) return;
             view_.manga.favorite = !fav;
@@ -556,16 +567,14 @@ std::unique_ptr<Node> Shell::chapter_row(uint64_t gen, size_t i)
     std::string sub = relative_date(c.date_upload, now_ms_());
     if (!c.scanlator.empty()) sub += (sub.empty() ? "" : kDot) + c.scanlator;
     if (c.read) sub += (sub.empty() ? "" : kDot) + std::string("Read");
+    if (!c.read && c.last_page_read > 0 && c.pages_total > 0)
+        sub += (sub.empty() ? "" : kDot) + std::string("Page ") + std::to_string(c.last_page_read + 1) + " of " + std::to_string(c.pages_total);
     int64_t cid = c.id;
     bool read = c.read;
-    // Unread = black dot; read = check mark. No dimmed text.
-    return list_row({c.name, sub, !read, false, read ? icon::check : 0, [this, gen, cid, read, i] {
-        data_.set_read(cid, !read, [this, gen, i, read](bool ok) {
-            if (!current(gen) || !ok || !list_ || i >= view_.chapters.size()) return;
-            view_.chapters[i].read = !read;
-            screen_.relayout(list_->replace_child(first_chapter_item_ + i, chapter_row(gen, i)));
-        });
-    }});
+    int resume = read ? 0 : c.last_page_read;
+    (void)gen;
+    // Unread = black dot; read = check mark. No dimmed text. Tap opens the reader.
+    return list_row({c.name, sub, !read, false, read ? icon::check : 0, [this, cid, resume] { open_reader(cid, resume); }});
 }
 
 void Shell::present_detail(uint64_t gen, Change change)
@@ -610,6 +619,33 @@ void Shell::present_detail(uint64_t gen, Change change)
 
     detail_shown_ = true;
     present(scaffold(app_bar("", [this] { on_back(); }, {}), paged(std::move(items), page), -1), change);
+}
+
+// ---------------------------------------------------------------- Reader
+
+void Shell::open_reader(int64_t chapter_id, int start_page)
+{
+    Route r{Route::Reader};
+    r.chapter_id = chapter_id;
+    r.start_page = start_page;
+    go(r);
+}
+
+void Shell::show_reader(const Route& r)
+{
+    begin();
+    Reader::Callbacks cb;
+    cb.exit = [this] { on_back(); };
+    cb.open_chapter = [this](int64_t chapter_id, bool from_end) {
+        if (stack_.empty() || stack_.back().kind != Route::Reader) return;
+        Route next{Route::Reader};
+        next.chapter_id = chapter_id;
+        next.from_end = from_end;
+        stack_.back() = next;   // chapter switches replace the reader route: back still returns to the manga
+        show(next);
+    };
+    reader_ = std::make_unique<Reader>(screen_, data_, std::move(cb), schedule_);
+    reader_->start(r.chapter_id, r.start_page, r.from_end);
 }
 
 // ---------------------------------------------------------------- More
