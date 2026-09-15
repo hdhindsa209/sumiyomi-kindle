@@ -157,6 +157,64 @@ void test_favorite_read_and_library()
     CHECK(ups.empty());                                            // all chapters predate adding to the library
 }
 
+void test_update_library_auto_download()
+{
+    Env env;
+    source::SManga seed{kSeedUrl, "Nee-chan", "", "", "", "", {}, 0};
+    MangaView view;
+    env.app->open_manga(env.dex, seed, [&](MangaView v, bool, std::string) { view = std::move(v); });
+    bool ok = false;
+    env.app->set_favorite(view.manga.id, true, [&](bool r) { ok = r; });
+    CHECK(ok);
+    data::Repo repo(env.db);
+    std::string err;
+    // Pretend the newest chapter appeared after it entered the library: the next check finds it again.
+    auto forget_newest = [&] {
+        CHECK(env.db.exec("UPDATE chapters SET date_fetch = 1; UPDATE mangas SET date_added = 2", err));
+        CHECK(env.db.exec("DELETE FROM chapters WHERE name = 'Chapter 25'", err));
+    };
+    forget_newest();
+
+    // Auto-download off: found, not queued.
+    std::vector<std::string> titles;
+    AppData::UpdateResult r;
+    auto check = [&](int64_t category) {
+        titles.clear();
+        env.app->update_library(category, nullptr, [&](int, int, const std::string& t) { titles.push_back(t); },
+                                [&](AppData::UpdateResult res) { r = res; });
+    };
+    check(0);
+    CHECK(r.added == 1 && r.queued == 0 && r.failed == 0 && !r.cancelled);
+    CHECK(titles.size() == 1 && titles[0] == view.manga.title);
+    std::vector<data::UpdateItem> ups;
+    env.app->updates([&](auto items) { ups = std::move(items); });
+    CHECK(ups.size() == 1 && ups[0].chapter_name == "Chapter 25");
+    CHECK(repo.downloads().empty());
+
+    // Chosen categories: only a flagged category's manga download.
+    auto cat = repo.create_category("Reading");
+    CHECK(cat && repo.set_categories(view.manga.id, {*cat}));
+    env.app->save_auto_download(AppData::AutoChosen);
+    forget_newest();
+    check(0);
+    CHECK(r.added == 1 && r.queued == 0);
+    env.app->set_category_auto_download(*cat, true, [&](bool b) { ok = b; });
+    CHECK(ok && (repo.categories()[0].flags & data::kCategoryAutoDownload));
+    forget_newest();
+    check(*cat);
+    CHECK(r.added == 1 && r.queued == 1);
+    auto dls = repo.downloads();
+    CHECK(dls.size() == 1 && dls[0].chapter_name == "Chapter 25");
+
+    // One category only; a cancelled check stops before the next entry.
+    auto other = repo.create_category("Other");
+    check(*other);
+    CHECK(r.added == 0 && titles.empty());
+    auto cancel = std::make_shared<std::atomic<bool>>(true);
+    env.app->update_library(0, cancel, nullptr, [&](AppData::UpdateResult res) { r = res; });
+    CHECK(r.cancelled && r.added == 0);
+}
+
 void test_format_helpers()
 {
     constexpr int64_t day = 86400000;
@@ -369,6 +427,7 @@ int main()
     RUN(test_browse_popular_and_search);
     RUN(test_open_manga_persists_then_serves_local_first);
     RUN(test_favorite_read_and_library);
+    RUN(test_update_library_auto_download);
     RUN(test_format_helpers);
     RUN(test_reader_settings_persist);
     RUN(test_open_chapter_and_load_pages);

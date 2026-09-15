@@ -337,6 +337,119 @@ void AppData::update_library(std::function<void(int, int)> done)
     });
 }
 
+struct AppData::UpdateRun {
+    std::vector<data::LibraryItem> items;
+    size_t next = 0;
+    int mode = AutoOff;
+    std::shared_ptr<std::atomic<bool>> cancel;
+    std::function<void(int, int, const std::string&)> progress;
+    std::function<void(UpdateResult)> done;
+    UpdateResult result;
+};
+
+void AppData::update_library(int64_t category, std::shared_ptr<std::atomic<bool>> cancel,
+                             std::function<void(int, int, const std::string&)> progress,
+                             std::function<void(UpdateResult)> done)
+{
+    exec_.submit([this, category, cancel = std::move(cancel), progress = std::move(progress), done = std::move(done)] {
+        auto run = std::make_shared<UpdateRun>();
+        run->items = category ? repo_.library(category) : repo_.library();
+        auto mode = repo_.pref("updates.auto_download");
+        run->mode = mode ? std::atoi(mode->c_str()) : AutoOff;
+        run->cancel = cancel;
+        run->progress = progress;
+        run->done = done;
+        update_step(run);
+    });
+}
+
+void AppData::update_step(std::shared_ptr<UpdateRun> run)
+{
+    if (run->next >= run->items.size() || (run->cancel && *run->cancel)) {
+        run->result.cancelled = run->cancel && *run->cancel;
+        exec_.post([run] { run->done(run->result); });
+        return;
+    }
+    const data::LibraryItem& item = run->items[run->next];
+    int index = static_cast<int>(run->next);
+    int total = static_cast<int>(run->items.size());
+    if (run->progress) exec_.post([run, index, total, title = item.manga.title] { run->progress(index, total, title); });
+
+    source::Extension* ext = extension(item.manga.source_id);
+    std::vector<source::SChapter> chapters;
+    std::string err;
+    source::SManga seed{item.manga.url, item.manga.title, "", "", "", "", {}, 0};
+    if (!ext || !ext->chapters(seed, chapters, err)) {
+        SUMI_LOGW("app", "update %s failed: %s", item.manga.title.c_str(), ext ? err.c_str() : "source not installed");
+        ++run->result.failed;
+    } else {
+        std::vector<int64_t> inserted;
+        int n = repo_.sync_chapters(item.manga.id, to_rows(chapters), wall_ms(), &inserted);
+        if (n < 0) {
+            ++run->result.failed;
+        } else {
+            run->result.added += n;
+            // Auto-download only real updates: an entry that had no chapters stored gets its whole list here.
+            bool had_chapters = item.total > 0;
+            bool wanted = run->mode == AutoAll;
+            if (run->mode == AutoChosen) {
+                std::vector<data::Category> cats = repo_.categories();
+                for (int64_t c : repo_.categories_of(item.manga.id))
+                    for (const data::Category& cat : cats)
+                        wanted = wanted || (cat.id == c && (cat.flags & data::kCategoryAutoDownload));
+            }
+            if (had_chapters && wanted && !inserted.empty()) {
+                run->result.queued += static_cast<int>(inserted.size());
+                download_chapters(inserted);
+            }
+        }
+    }
+    ++run->next;
+    exec_.submit([this, run] { update_step(run); });
+}
+
+void AppData::auto_download(std::function<void(int, std::vector<data::Category>)> done)
+{
+    exec_.submit([this, done = std::move(done)] {
+        auto v = repo_.pref("updates.auto_download");
+        int mode = v ? std::clamp(std::atoi(v->c_str()), 0, 2) : AutoOff;
+        auto cats = repo_.categories();
+        exec_.post([done, mode, cats = std::move(cats)]() mutable { done(mode, std::move(cats)); });
+    });
+}
+
+void AppData::save_auto_download(int mode)
+{
+    exec_.submit([this, mode] { repo_.set_pref("updates.auto_download", std::to_string(mode)); });
+}
+
+void AppData::set_category_auto_download(int64_t category, bool on, std::function<void(bool)> done)
+{
+    exec_.submit([this, category, on, done = std::move(done)] {
+        bool ok = false;
+        for (const data::Category& c : repo_.categories())
+            if (c.id == category)
+                ok = repo_.set_category_flags(c.id, on ? (c.flags | data::kCategoryAutoDownload) : (c.flags & ~data::kCategoryAutoDownload));
+        exec_.post([done, ok] { if (done) done(ok); });
+    });
+}
+
+void AppData::remove_history(int64_t chapter_id, std::function<void()> done)
+{
+    exec_.submit([this, chapter_id, done = std::move(done)] {
+        repo_.remove_history(chapter_id);
+        exec_.post([done] { if (done) done(); });
+    });
+}
+
+void AppData::clear_history(std::function<void()> done)
+{
+    exec_.submit([this, done = std::move(done)] {
+        repo_.clear_history();
+        exec_.post([done] { if (done) done(); });
+    });
+}
+
 // ---------------------------------------------------------------- reader
 
 void AppData::reader_settings(std::function<void(ReaderSettings)> done)

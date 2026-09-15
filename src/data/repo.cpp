@@ -113,7 +113,7 @@ std::vector<LibraryItem> Repo::library(std::optional<int64_t> category)
 
 // ---------------------------------------------------------------- chapters
 
-int Repo::sync_chapters(int64_t manga_id, const std::vector<Chapter>& from_source, int64_t now_ms)
+int Repo::sync_chapters(int64_t manga_id, const std::vector<Chapter>& from_source, int64_t now_ms, std::vector<int64_t>* inserted)
 {
     Db::Tx tx(db_);
 
@@ -139,6 +139,7 @@ int Repo::sync_chapters(int64_t manga_id, const std::vector<Chapter>& from_sourc
             insert.bind(1, manga_id).bind(2, c.url).bind(3, c.name).bind(4, c.scanlator).bind(5, c.chapter_number)
                   .bind(6, order).bind(7, now_ms).bind(8, c.date_upload);
             if (!insert.run()) return -1;
+            if (inserted) inserted->push_back(db_.last_insert_id());
             ++added;
         } else {
             update.reset();
@@ -224,18 +225,24 @@ std::optional<int64_t> Repo::create_category(const std::string& name)
 
 std::vector<Category> Repo::categories()
 {
-    Stmt s = db_.prepare(R"(SELECT id, name, sort_order,
+    Stmt s = db_.prepare(R"(SELECT id, name, sort_order, flags,
             (SELECT COUNT(*) FROM manga_categories mc JOIN mangas m ON m.id = mc.manga_id
              WHERE mc.category_id = categories.id AND m.favorite = 1)
         FROM categories ORDER BY sort_order, id)");
     std::vector<Category> out;
-    while (s.step()) out.push_back({s.i64(0), s.text(1), s.i32(2), s.i32(3)});
+    while (s.step()) out.push_back({s.i64(0), s.text(1), s.i32(2), s.i32(4), s.i32(3)});
     return out;
 }
 
 bool Repo::rename_category(int64_t id, const std::string& name)
 {
     bool ok = db_.prepare("UPDATE categories SET name = ?2 WHERE id = ?1").bind(1, id).bind(2, name).run();
+    return ok && db_.changes() == 1;
+}
+
+bool Repo::set_category_flags(int64_t id, int flags)
+{
+    bool ok = db_.prepare("UPDATE categories SET flags = ?2 WHERE id = ?1").bind(1, id).bind(2, flags).run();
     return ok && db_.changes() == 1;
 }
 
@@ -299,13 +306,24 @@ bool Repo::record_read(int64_t chapter_id, int64_t now_ms, int64_t time_read_ms)
 
 std::vector<HistoryItem> Repo::history(int limit)
 {
-    Stmt s = db_.prepare(R"(SELECT h.chapter_id, m.id, m.title, c.name, h.last_read, h.time_read
+    Stmt s = db_.prepare(R"(SELECT h.chapter_id, m.id, m.title, c.name, h.last_read, h.time_read, c.last_page_read, c.pages_total, c.read
                             FROM history h JOIN chapters c ON c.id = h.chapter_id JOIN mangas m ON m.id = c.manga_id
                             ORDER BY h.last_read DESC LIMIT ?1)");
     s.bind(1, limit);
     std::vector<HistoryItem> out;
-    while (s.step()) out.push_back({s.i64(0), s.i64(1), s.text(2), s.text(3), s.i64(4), s.i64(5)});
+    while (s.step())
+        out.push_back({s.i64(0), s.i64(1), s.text(2), s.text(3), s.i64(4), s.i64(5), s.i32(6), s.i32(7), s.i64(8) != 0});
     return out;
+}
+
+bool Repo::remove_history(int64_t chapter_id)
+{
+    return db_.prepare("DELETE FROM history WHERE chapter_id = ?1").bind(1, chapter_id).run();
+}
+
+bool Repo::clear_history()
+{
+    return db_.prepare("DELETE FROM history").run();
 }
 
 // ---------------------------------------------------------------- downloads

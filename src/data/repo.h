@@ -34,7 +34,9 @@ public:
     // progress for chapters that still exist (matched by URL), inserts new ones with
     // date_fetch = now, removes chapters the source no longer lists. Updates manga.last_update
     // when new chapters appear. Returns the number of new chapters, or -1 on error.
-    int sync_chapters(int64_t manga_id, const std::vector<Chapter>& from_source, int64_t now_ms);
+    // `inserted` (optional) receives the ids of chapters new to the database.
+    int sync_chapters(int64_t manga_id, const std::vector<Chapter>& from_source, int64_t now_ms,
+                      std::vector<int64_t>* inserted = nullptr);
     std::vector<Chapter> chapters(int64_t manga_id);
     std::optional<Chapter> chapter(int64_t chapter_id);
     bool set_read(int64_t chapter_id, bool read);
@@ -48,6 +50,7 @@ public:
     std::optional<int64_t> create_category(const std::string& name);
     std::vector<Category> categories();   // by sort_order, with library counts
     bool rename_category(int64_t id, const std::string& name);
+    bool set_category_flags(int64_t id, int flags);
     bool delete_category(int64_t id);     // its manga stay in the library
     // Swap with the neighbour above (delta -1) or below (+1); false at the ends.
     bool move_category(int64_t id, int delta);
@@ -57,6 +60,8 @@ public:
     // --- history ---
     bool record_read(int64_t chapter_id, int64_t now_ms, int64_t time_read_ms);
     std::vector<HistoryItem> history(int limit = 100);
+    bool remove_history(int64_t chapter_id);
+    bool clear_history();
 
     // --- downloads ---
     // Queue a chapter (no-op if it's already queued or downloaded; an errored one is re-queued).

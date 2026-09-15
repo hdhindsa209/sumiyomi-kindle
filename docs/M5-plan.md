@@ -21,5 +21,9 @@ S1–S2 done and device-verified, plus manga-page sort/filter, per-manga queue, 
 S3 built on host: More → Categories (create / rename with the on-screen keyboard, move up / down, delete — manga stay
 in the library), manga page "Categories" checklist (also offered right after "Add to library"), Library tabs
 (All + categories; at most 4 visible with arrows stepping to the neighbouring tab; the chosen tab is remembered).
+S3 device-verified. S4 built on host: library check from the Library (current tab's category) or Updates, one entry
+per worker job with an in-place "Checking N of M" loading page and Cancel, result shown on Updates; Updates rows tap →
+reader, hold → manga; auto-download (off / all / chosen categories via `categories.flags`) for entries that already
+had chapters; History shows page progress, tap resumes, hold → open manga / remove, clear all with a confirm.
 
 Deferred to M6 (design doc): trackers, migration, statistics, backup/restore.

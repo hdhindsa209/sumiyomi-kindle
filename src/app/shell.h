@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -91,7 +92,11 @@ private:
     // The manga page's category checklist (applies each tap).
     void show_manga_categories(uint64_t gen);
     void show_updates(const std::string& status = "");
-    void show_history();
+    void show_history(ui::Change change = ui::Change::NewScreen);
+    void show_history_sheet(const data::HistoryItem& h);
+    // Check the library (0) or one category for new chapters, with a progress loading page; ends on Updates.
+    void update_library(int64_t category);
+    void show_auto_download_sheet();
     void show_browse();
     void show_more();
     void show_source(int64_t source, Browse mode);
@@ -135,6 +140,9 @@ private:
 
     // Current screen's live parts (valid for the current generation only).
     bool           waiting_ = false;          // a loading page is (or is about to be) up
+    ui::Label*     loading_label_ = nullptr;  // the loading page's text, once it's shown
+    int64_t        library_category_ = 0;     // the Library tab last shown (0 = All)
+    std::shared_ptr<std::atomic<bool>> update_cancel_;
     ui::PagedList* list_ = nullptr;
     std::vector<source::SManga> results_;
     int            next_page_ = 1;

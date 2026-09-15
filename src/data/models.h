@@ -54,7 +54,11 @@ struct Category {
     std::string name;
     int         sort_order = 0;
     int         count = 0;      // library entries in it
+    int         flags = 0;      // kCategoryAutoDownload
 };
+
+// Category flag: library updates download this category's new chapters (when auto-download is "chosen categories").
+static constexpr int kCategoryAutoDownload = 1;
 
 struct LibraryItem {
     Manga manga;
@@ -94,6 +98,9 @@ struct HistoryItem {
     std::string chapter_name;
     int64_t     last_read = 0;   // unix millis
     int64_t     time_read = 0;   // millis spent
+    int         last_page_read = 0;
+    int         pages_total = 0;
+    bool        read = false;
 };
 
 } // namespace sumi::data

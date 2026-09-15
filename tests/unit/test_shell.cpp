@@ -852,6 +852,21 @@ void test_categories()
     CHECK(env.shows("All") && env.shows(kTitle));                   // the remembered tab is gone: All
 }
 
+void hold(Env& env, Node* n)
+{
+    CHECK(n != nullptr);
+    if (!n) return;
+    RawEvent e; e.kind = RawKind::Down; e.pos = {n->frame().x + n->frame().w / 2, n->frame().y + n->frame().h / 2}; e.t_ms = env.t;
+    env.screen.on_event(e);
+    env.screen.frame();
+    env.screen.on_tick(env.t + GestureRecognizer::kLongPressMs + 10);
+    env.screen.frame();
+    e.kind = RawKind::Up; e.t_ms = env.t + 1000;
+    env.screen.on_event(e);
+    env.screen.frame();
+    env.t += 2000;
+}
+
 void test_updates_refresh_reports()
 {
     Env env;
@@ -859,6 +874,86 @@ void test_updates_refresh_reports()
     CHECK(env.shows("No new chapters yet.\nTap refresh to check your library."));
     env.tap(env.root()->children()[0]->children().back().get()); // app bar: refresh
     CHECK(env.shows("No new chapters"));
+
+    // A library entry with a chapter found after it was added.
+    source::SManga seed{"/series/01KTEH8Z2TJ9NQ2NDZ75EM36SS/neechan-no-tomodachi-ga-uzai-hanashi", kTitle, "", "", "", "", {}, 0};
+    int64_t id = 0;
+    env.data->open_manga(env.data->sources()[0].id, seed, [&](app::MangaView v, bool, std::string) { id = v.manga.id; });
+    env.data->set_favorite(id, true, [](bool) {});
+    std::string err;
+    CHECK(env.db.exec("UPDATE chapters SET date_fetch = 1; UPDATE mangas SET date_added = 2", err) && env.db.exec("DELETE FROM chapters WHERE name = 'Chapter 25'", err));
+
+    // From the Library's refresh: ends on Updates with the result.
+    env.tap(env.nav_cell(0));
+    env.tap(env.root()->children()[0]->children().back().get());
+    CHECK(env.shows("1 new chapter"));
+    CHECK(env.shows("Chapter 25"));
+    CHECK(env.display.calls.back().mode == Wave::GC16_FLASH);
+    CHECK_EQ(env.display.stale_pixels(), 0);
+
+    // Auto-download sheet: [light] [download] [refresh].
+    const auto& actions = env.root()->children()[0]->children();
+    env.tap(actions[actions.size() - 2].get());
+    CHECK(env.shows("Download new chapters"));
+    env.tap(env.find("Download all"));
+    CHECK(env.data != nullptr);
+    env.tap(env.find("Done"));
+    data::Repo repo(env.db);
+    CHECK(repo.pref("updates.auto_download") == std::string("1"));
+
+    // Hold a chapter: its manga. Tap: the reader.
+    hold(env, env.find(kTitle));
+    CHECK(env.shows("Add to library") || env.shows("In library"));
+    CHECK(env.shell->on_back());
+    env.screen.frame();
+    env.tap(env.find(kTitle));
+    CHECK(env.shows("Page 1 of 33") || !env.shows("Updates"));
+}
+
+void test_history_resume_and_remove()
+{
+    Env env;
+    source::SManga seed{"/series/01KTEH8Z2TJ9NQ2NDZ75EM36SS/neechan-no-tomodachi-ga-uzai-hanashi", kTitle, "", "", "", "", {}, 0};
+    app::MangaView view;
+    env.data->open_manga(env.data->sources()[0].id, seed, [&](app::MangaView v, bool, std::string) { view = std::move(v); });
+    env.data->open_chapter(view.chapters[0].id, [](app::ChapterView, std::string) {});
+    env.data->save_progress(view.chapters[0].id, 4, 33, false);
+    std::string err;
+    data::Repo seed_repo(env.db);                                   // only chapter 25's pages are recorded
+    // Fixed times (the shell's "now" is 2026-09-14 13:00): today and yesterday.
+    CHECK(seed_repo.record_read(view.chapters[1].id, 1789344000000LL - 3600000LL, 0));
+    CHECK(env.db.exec(("UPDATE history SET last_read = 1789344000000 + 12 * 3600000 WHERE chapter_id = "
+                       + std::to_string(view.chapters[0].id)).c_str(), err));
+    env.data->save_progress(view.chapters[1].id, 32, 33, true);
+
+    env.tap(env.nav_cell(2));
+    CHECK(env.shows("Chapter 25 \xC2\xB7 Page 5 of 33"));
+    CHECK(env.shows("Chapter 24 \xC2\xB7 Read"));
+    CHECK(env.golden("history"));
+
+    // Hold -> remove this one.
+    Node* rows[1] = {env.find("Chapter 24 \xC2\xB7 Read")};
+    hold(env, rows[0]);
+    CHECK(env.shows("Remove from history"));
+    env.tap(env.find("Remove from history"));
+    CHECK(!env.shows("Chapter 24 \xC2\xB7 Read"));
+    CHECK_EQ(env.display.stale_pixels(), 0);
+    data::Repo repo(env.db);
+    CHECK_EQ(repo.history().size(), 1);
+
+    // Tap resumes at the saved page.
+    env.tap(env.find("Chapter 25 \xC2\xB7 Page 5 of 33"));
+    CHECK(!env.shows("Chapter 25 \xC2\xB7 Page 5 of 33"));
+    CHECK(env.shell->on_back());
+    env.screen.frame();
+
+    // Clear all, after asking.
+    const auto& actions = env.root()->children()[0]->children();
+    env.tap(actions.back().get());
+    CHECK(env.shows("Clear all reading history?"));
+    env.tap(env.find("Clear"));
+    CHECK(env.shows("Nothing read yet.\nChapters you open show up here."));
+    CHECK(repo.history().empty());
 }
 
 void test_more_exit()
@@ -896,6 +991,7 @@ int main()
     RUN(test_library_covers_option);
     RUN(test_categories);
     RUN(test_updates_refresh_reports);
+    RUN(test_history_resume_and_remove);
     RUN(test_more_exit);
     return check_result();
 }

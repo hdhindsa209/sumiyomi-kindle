@@ -136,6 +136,25 @@ public:
     // and how many entries failed.
     void update_library(std::function<void(int new_chapters, int failed)> done);
 
+    // --- library updates (M5 S4) ---
+    struct UpdateResult {
+        int  added = 0, failed = 0, queued = 0;   // queued: new chapters sent to the download queue
+        bool cancelled = false;
+    };
+    // One entry per worker job, so other work (covers, the UI's reads) runs in between. `category`: 0 = the
+    // whole library. `progress` (UI thread) runs before each entry with its title. New chapters of entries
+    // that already had chapters are queued for download when auto-download covers them.
+    void update_library(int64_t category, std::shared_ptr<std::atomic<bool>> cancel,
+                        std::function<void(int index, int total, const std::string& title)> progress,
+                        std::function<void(UpdateResult)> done);
+    enum AutoDownload : int { AutoOff = 0, AutoAll = 1, AutoChosen = 2 };
+    void auto_download(std::function<void(int mode, std::vector<data::Category>)> done);
+    void save_auto_download(int mode);
+    void set_category_auto_download(int64_t category, bool on, std::function<void(bool ok)> done);
+
+    void remove_history(int64_t chapter_id, std::function<void()> done);
+    void clear_history(std::function<void()> done);
+
     // --- reader (M4) ---
     void reader_settings(std::function<void(ReaderSettings)> done);
     void save_reader_settings(const ReaderSettings& s);
@@ -198,6 +217,8 @@ private:
     std::map<int64_t, data::DownloadItem> downloads_of(int64_t manga_id);
     ChapterListPrefs list_prefs_of(int64_t manga_id);
     void download_step();
+    struct UpdateRun;
+    void update_step(std::shared_ptr<UpdateRun> run);
     void notify_download(const data::DownloadItem& item, bool removed = false);
 };
 

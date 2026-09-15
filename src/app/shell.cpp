@@ -136,6 +136,9 @@ uint64_t Shell::begin()
         retired_reader_ = std::move(reader_);
     }
     waiting_ = false;
+    loading_label_ = nullptr;
+    if (update_cancel_) *update_cancel_ = true;   // leaving the update's loading page stops the update
+    update_cancel_.reset();
     list_ = nullptr;
     field_ = nullptr;
     keyboard_ = nullptr;
@@ -183,7 +186,9 @@ void Shell::loading(uint64_t gen, const std::string& text, std::function<void()>
     auto show_page = [this, gen, text, cancel] {
         if (!current(gen) || !waiting_) return;   // the content beat the delay: no loading page at all
         list_ = nullptr;
-        screen_.set_root(loading_page(text, cancel), Change::Loading);
+        auto page = loading_page(text, cancel);
+        loading_label_ = static_cast<Label*>(page->children()[0].get());
+        screen_.set_root(std::move(page), Change::Loading);
     };
     if (schedule_) schedule_(kLoadingDelayMs, show_page);
     else show_page();
@@ -329,6 +334,8 @@ void Shell::present_library(AppData::LibraryScreen lib, std::map<int64_t, image:
                                       }}));
         }
     }
+    library_category_ = lib.category;
+    int64_t category = lib.category;
     bool covers = lib.covers;
     auto toggle = [this, covers] {
         data_.save_library_display(!covers);
@@ -339,7 +346,7 @@ void Shell::present_library(AppData::LibraryScreen lib, std::map<int64_t, image:
     if (!lib.categories.empty()) body->add(category_tabs(lib));
     body->add(paged(std::move(nodes)));
     present(scaffold(app_bar("Library", nullptr, with_light({{covers ? icon::view_list : icon::grid_view, toggle},
-                                                              {icon::refresh, [this] { go({Route::TabRoot, kUpdates}); }}})),
+                                                              {icon::refresh, [this, category] { update_library(category); }}})),
                      std::move(body), kLibrary));
 }
 
@@ -512,43 +519,146 @@ void Shell::show_updates(const std::string& status)
         for (const data::UpdateItem& u : items) {
             std::string h = day_header(u.date_fetch, now);
             if (h != group) nodes.push_back(section_header(group = h));
-            int64_t id = u.manga_id;
-            nodes.push_back(list_row({u.manga_title, u.chapter_name, !u.read, false, u.read ? icon::check : 0,
-                                      [this, id] { Route r{Route::Detail}; r.manga_id = id; go(r); }}));
+            int64_t id = u.manga_id, cid = u.chapter_id;
+            // Tap reads the chapter; hold opens its manga.
+            auto row = list_row({u.manga_title, u.chapter_name, !u.read, false, u.read ? icon::check : icon::play_arrow,
+                                 [this, cid] { open_reader(cid, 0); }});
+            row->on_long_press = [this, id] { Route r{Route::Detail}; r.manga_id = id; go(r); };
+            nodes.push_back(std::move(row));
         }
-        auto refresh_library = [this] {
-            uint64_t g = begin();
-            loading(g, std::string("Checking your library for new chapters") + kEllipsis, nullptr);
-            data_.update_library([this, g](int added, int failed) {
-                if (!current(g)) return;
-                std::string msg = added == 0 ? "No new chapters" : std::to_string(added) + " new chapter" + (added == 1 ? "" : "s");
-                if (failed) msg += kDot + std::to_string(failed) + " failed";
-                show_updates(msg);
-            });
-        };
-        present(scaffold(app_bar("Updates", nullptr, with_light({{icon::refresh, refresh_library}})), paged(std::move(nodes)), kUpdates));
+        if (!items.empty()) nodes.push_back(message("Tap a chapter to read it.\nHold it to open the manga."));
+        present(scaffold(app_bar("Updates", nullptr, with_light({{icon::download, [this] { show_auto_download_sheet(); }},
+                                                                 {icon::refresh, [this] { update_library(0); }}})),
+                         paged(std::move(nodes)), kUpdates));
     });
 }
 
-void Shell::show_history()
+void Shell::update_library(int64_t category)
+{
+    uint64_t gen = begin();
+    auto cancel = std::make_shared<std::atomic<bool>>(false);
+    loading(gen, std::string("Checking your library for new chapters") + kEllipsis, [cancel] { *cancel = true; });
+    update_cancel_ = cancel;
+    data_.update_library(category, cancel,
+        [this, gen](int index, int total, const std::string& title) {
+            // Only the words change, in place: no flash while the check runs.
+            if (!current(gen) || !loading_label_) return;
+            loading_label_->set_text("Checking " + std::to_string(index + 1) + " of " + std::to_string(total) + "\n" + title);
+            screen_.relayout(loading_label_);
+        },
+        [this, gen](AppData::UpdateResult r) {
+            if (!current(gen)) return;
+            update_cancel_.reset();
+            std::string msg = r.added == 0 ? "No new chapters" : std::to_string(r.added) + " new chapter" + (r.added == 1 ? "" : "s");
+            if (r.cancelled) msg = "Check stopped" + std::string(kDot) + msg;
+            if (r.queued) msg += kDot + std::to_string(r.queued) + " downloading";
+            if (r.failed) msg += kDot + std::to_string(r.failed) + " failed";
+            stack_.clear();
+            stack_.push_back({Route::TabRoot, kUpdates});
+            show_updates(msg);
+        });
+}
+
+void Shell::show_auto_download_sheet()
+{
+    uint64_t gen = generation_;
+    data_.auto_download([this, gen](int mode, std::vector<data::Category> cats) {
+        if (!current(gen)) return;
+        std::vector<std::unique_ptr<Node>> rows;
+        auto box = std::make_unique<Node>();
+        box->layout = Layout::Column;
+        box->padding = Insets{32, 8, 32, 12};
+        box->gap = 8;
+        box->emplace<Label>("When a library check finds new chapters", type::LIST_SECONDARY, FontId::InterSemiBold, tone::BLACK)->width = Dim::fill();
+        box->add(segmented({"Don't download", "Download all", "Chosen categories"}, mode, [this, gen](int m) {
+            if (!current(gen)) return;
+            data_.save_auto_download(m);
+            show_auto_download_sheet();
+        }));
+        rows.push_back(std::move(box));
+        if (mode == AppData::AutoChosen) {
+            if (cats.empty()) rows.push_back(message("No categories yet.\nCreate them in More, Categories."));
+            for (const data::Category& c : cats) {
+                bool on = (c.flags & data::kCategoryAutoDownload) != 0;
+                int64_t cid = c.id;
+                RowSpec r{c.name, std::to_string(c.count) + " manga", false, false, 0, [this, gen, cid, on] {
+                    data_.set_category_auto_download(cid, !on, [this, gen](bool) {
+                        if (current(gen)) show_auto_download_sheet();   // the sheet redraws in place
+                    });
+                }};
+                r.leading = on ? icon::check_box : icon::check_box_outline_blank;
+                rows.push_back(list_row(r));
+            }
+        }
+        auto done = std::make_unique<Node>();
+        done->padding = Insets{32, 8, 32, 8};
+        done->add(button("Done", [this] { screen_.hide_overlay(); }, true));
+        rows.push_back(std::move(done));
+        screen_.show_overlay(sheet("Download new chapters", std::move(rows)));
+    });
+}
+
+void Shell::show_history(Change change)
 {
     uint64_t gen = begin();
     loading(gen, std::string("Loading history") + kEllipsis, nullptr);
-    data_.history([this, gen](std::vector<data::HistoryItem> items) {
+    data_.history([this, gen, change](std::vector<data::HistoryItem> items) {
         if (!current(gen)) return;
         std::vector<std::unique_ptr<Node>> nodes;
-        if (items.empty()) nodes.push_back(message("Nothing read yet.\nThe reader arrives in M4."));
+        if (items.empty()) nodes.push_back(message("Nothing read yet.\nChapters you open show up here."));
         std::string group;
         int64_t now = now_ms_();
         for (const data::HistoryItem& h : items) {
             std::string header = day_header(h.last_read, now);
             if (header != group) nodes.push_back(section_header(group = header));
-            int64_t id = h.manga_id;
-            nodes.push_back(list_row({h.manga_title, h.chapter_name, false, false, icon::play_arrow,
-                                      [this, id] { Route r{Route::Detail}; r.manga_id = id; go(r); }}));
+            std::string sub = h.chapter_name;
+            if (h.read) sub += kDot + std::string("Read");
+            else if (h.pages_total > 0)
+                sub += kDot + std::string("Page ") + std::to_string(h.last_page_read + 1) + " of " + std::to_string(h.pages_total);
+            int64_t cid = h.chapter_id;
+            int page = h.read ? 0 : h.last_page_read;
+            // Tap continues where you left off; hold for the manga or removing it from history.
+            auto row = list_row({h.manga_title, sub, false, false, icon::play_arrow, [this, cid, page] { open_reader(cid, page); }});
+            row->on_long_press = [this, h] { show_history_sheet(h); };
+            nodes.push_back(std::move(row));
         }
-        present(scaffold(app_bar("History", nullptr, with_light({})), paged(std::move(nodes)), kHistory));
+        if (!items.empty()) nodes.push_back(message("Tap to continue reading.\nHold for more."));
+        std::vector<Action> actions;
+        if (!items.empty()) actions.push_back({icon::delete_, [this, gen] {
+            std::vector<std::unique_ptr<Node>> confirm;
+            auto box = std::make_unique<Node>();
+            box->layout = Layout::Row;
+            box->padding = Insets{32, 8, 32, 16};
+            box->gap = 16;
+            box->add(button("Cancel", [this] { screen_.hide_overlay(); }));
+            box->add(button("Clear", [this, gen] {
+                if (!current(gen)) return;
+                screen_.hide_overlay();
+                data_.clear_history([this, gen] { if (current(gen)) show_history(Change::Update); });
+            }, true));
+            confirm.push_back(std::move(box));
+            screen_.show_overlay(sheet("Clear all reading history?", std::move(confirm)));
+        }});
+        present(scaffold(app_bar("History", nullptr, with_light(std::move(actions))), paged(std::move(nodes)), kHistory), change);
     });
+}
+
+void Shell::show_history_sheet(const data::HistoryItem& h)
+{
+    uint64_t gen = generation_;
+    std::vector<std::unique_ptr<Node>> rows;
+    int64_t mid = h.manga_id, cid = h.chapter_id;
+    rows.push_back(list_row({"Open manga", h.manga_title, false, false, icon::chevron_right, [this, mid] {
+        screen_.hide_overlay();
+        Route r{Route::Detail};
+        r.manga_id = mid;
+        go(r);
+    }}));
+    rows.push_back(list_row({"Remove from history", h.chapter_name, false, false, 0, [this, gen, cid] {
+        screen_.hide_overlay();
+        data_.remove_history(cid, [this, gen] { if (current(gen)) show_history(Change::Update); });
+    }}));
+    screen_.show_overlay(sheet(h.manga_title, std::move(rows)));
 }
 
 // ---------------------------------------------------------------- Browse
