@@ -57,7 +57,7 @@ void test_migrations_apply_and_are_idempotent()
         Db db;
         std::string err;
         CHECK(db.open(path, err));
-        CHECK_EQ(db.schema_version(), 2);
+        CHECK_EQ(db.schema_version(), 3);
         Stmt s = db.prepare("PRAGMA journal_mode");
         CHECK(s.step() && s.text(0) == "wal");               // §4: WAL on file databases
     }
@@ -65,7 +65,7 @@ void test_migrations_apply_and_are_idempotent()
         Db db;
         std::string err;
         CHECK(db.open(path, err));                            // re-open: nothing to migrate, no error
-        CHECK_EQ(db.schema_version(), 2);
+        CHECK_EQ(db.schema_version(), 3);
         Stmt s = db.prepare("PRAGMA foreign_keys");
         CHECK(s.step() && s.i64(0) == 1);
     }
@@ -283,6 +283,45 @@ void test_preferences_and_chapter_lookup()
     CHECK(!repo.chapter(999999));
 }
 
+void test_download_queue()
+{
+    Db db;
+    std::string err;
+    CHECK(db.open(":memory:", err));
+    Repo repo(db);
+    CHECK(repo.upsert_source({7, "S", "en", "1", true, false}));
+    Manga m;
+    m.source_id = 7; m.url = "/m"; m.title = "M";
+    CHECK(repo.upsert_manga(m));
+    std::vector<Chapter> rows(3);
+    for (int i = 0; i < 3; ++i) { rows[static_cast<size_t>(i)].url = "/c/" + std::to_string(i); rows[static_cast<size_t>(i)].name = "Ch " + std::to_string(i); }
+    CHECK_EQ(repo.sync_chapters(m.id, rows, 1), 3);
+    auto ch = repo.chapters(m.id);
+    CHECK(!repo.next_download());
+
+    CHECK(repo.enqueue_download(ch[2].id, 100));
+    CHECK(repo.enqueue_download(ch[0].id, 200));
+    CHECK(repo.enqueue_download(ch[2].id, 300));              // already queued: keeps its place
+    auto next = repo.next_download();
+    CHECK(next && next->chapter_id == ch[2].id && next->manga_title == "M" && next->source_id == 7 && next->chapter_url == "/c/2");
+
+    CHECK(repo.set_download_state(ch[0].id, DownloadState::Downloading, 4, 20));
+    next = repo.next_download();
+    CHECK(next && next->chapter_id == ch[0].id && next->pages_done == 4);   // an interrupted one resumes first
+
+    CHECK(repo.set_download_state(ch[0].id, DownloadState::Done, 20, 20));
+    CHECK(repo.set_download_state(ch[2].id, DownloadState::Error, 1, 20, "HTTP 404"));
+    CHECK(!repo.next_download());
+    auto all = repo.downloads();
+    CHECK(all.size() == 2 && all[0].state == DownloadState::Error && all[0].error == "HTTP 404" && all[1].state == DownloadState::Done);
+    CHECK(repo.enqueue_download(ch[0].id, 400));              // done stays done
+    CHECK(repo.download(ch[0].id)->state == DownloadState::Done);
+    CHECK(repo.enqueue_download(ch[2].id, 500));              // an error is retried
+    CHECK(repo.download(ch[2].id)->state == DownloadState::Queued && repo.download(ch[2].id)->error.empty());
+    CHECK(repo.remove_download(ch[2].id));
+    CHECK(!repo.download(ch[2].id));
+}
+
 void test_transaction_rolls_back()
 {
     Fixture f;
@@ -316,6 +355,7 @@ int main()
     RUN(test_history_upsert_and_cascade);
     RUN(test_updates_only_after_added_to_library);
     RUN(test_preferences_and_chapter_lookup);
+    RUN(test_download_queue);
     RUN(test_transaction_rolls_back);
     return check_result();
 }

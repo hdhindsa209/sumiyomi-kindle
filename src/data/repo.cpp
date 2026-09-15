@@ -262,6 +262,72 @@ std::vector<HistoryItem> Repo::history(int limit)
     return out;
 }
 
+// ---------------------------------------------------------------- downloads
+
+namespace {
+constexpr const char* kDownloadSelect = R"(SELECT d.chapter_id, m.id, m.source_id, m.title, c.name, c.url, d.state, d.pages_done,
+                                                 d.pages_total, COALESCE(d.error, ''), d.queued_at
+                                          FROM downloads d JOIN chapters c ON c.id = d.chapter_id
+                                          JOIN mangas m ON m.id = c.manga_id)";
+
+DownloadItem read_download(const Stmt& s)
+{
+    DownloadItem d;
+    d.chapter_id = s.i64(0); d.manga_id = s.i64(1); d.source_id = s.i64(2); d.manga_title = s.text(3);
+    d.chapter_name = s.text(4); d.chapter_url = s.text(5); d.state = static_cast<DownloadState>(s.i32(6));
+    d.pages_done = s.i32(7); d.pages_total = s.i32(8); d.error = s.text(9); d.queued_at = s.i64(10);
+    return d;
+}
+} // namespace
+
+bool Repo::enqueue_download(int64_t chapter_id, int64_t now_ms)
+{
+    return db_.prepare(R"(INSERT INTO downloads (chapter_id, state, pages_done, pages_total, queued_at) VALUES (?1, 0, 0, 0, ?2)
+                          ON CONFLICT(chapter_id) DO UPDATE SET state = 0, error = NULL, queued_at = ?2
+                          WHERE downloads.state = 3)")
+        .bind(1, chapter_id).bind(2, now_ms).run();
+}
+
+bool Repo::set_download_state(int64_t chapter_id, DownloadState state, int pages_done, int pages_total, const std::string& error)
+{
+    Stmt s = db_.prepare("UPDATE downloads SET state = ?2, pages_done = ?3, pages_total = ?4, error = ?5 WHERE chapter_id = ?1");
+    s.bind(1, chapter_id).bind(2, static_cast<int>(state)).bind(3, pages_done).bind(4, pages_total);
+    if (error.empty()) s.bind_null(5);
+    else s.bind(5, error);
+    return s.run() && db_.changes() == 1;
+}
+
+bool Repo::remove_download(int64_t chapter_id)
+{
+    return db_.prepare("DELETE FROM downloads WHERE chapter_id = ?1").bind(1, chapter_id).run();
+}
+
+std::optional<DownloadItem> Repo::download(int64_t chapter_id)
+{
+    std::string sql = std::string(kDownloadSelect) + " WHERE d.chapter_id = ?1";
+    Stmt s = db_.prepare(sql.c_str());
+    s.bind(1, chapter_id);
+    if (!s.step()) return std::nullopt;
+    return read_download(s);
+}
+
+std::vector<DownloadItem> Repo::downloads()
+{
+    std::string sql = std::string(kDownloadSelect) + " ORDER BY d.state = 2, d.queued_at, d.chapter_id";
+    Stmt s = db_.prepare(sql.c_str());
+    std::vector<DownloadItem> out;
+    while (s.step()) out.push_back(read_download(s));
+    return out;
+}
+
+std::optional<DownloadItem> Repo::next_download()
+{
+    std::string sql = std::string(kDownloadSelect) + " WHERE d.state IN (0, 1) ORDER BY d.state DESC, d.queued_at, d.chapter_id LIMIT 1";
+    Stmt s = db_.prepare(sql.c_str());
+    if (!s.step()) return std::nullopt;
+    return read_download(s);
+}
+
 // ---------------------------------------------------------------- preferences
 
 std::optional<std::string> Repo::pref(const std::string& key)

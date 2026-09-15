@@ -53,6 +53,17 @@ public:
     bool record_read(int64_t chapter_id, int64_t now_ms, int64_t time_read_ms);
     std::vector<HistoryItem> history(int limit = 100);
 
+    // --- downloads ---
+    // Queue a chapter (no-op if it's already queued or downloaded; an errored one is re-queued).
+    bool enqueue_download(int64_t chapter_id, int64_t now_ms);
+    bool set_download_state(int64_t chapter_id, DownloadState state, int pages_done, int pages_total, const std::string& error = "");
+    bool remove_download(int64_t chapter_id);
+    std::optional<DownloadItem> download(int64_t chapter_id);
+    // All downloads, queue order (unfinished first by queue time, then finished).
+    std::vector<DownloadItem> downloads();
+    // Next to work on: an interrupted one first, then the oldest queued.
+    std::optional<DownloadItem> next_download();
+
     // --- preferences (string key/value) ---
     std::optional<std::string> pref(const std::string& key);
     bool set_pref(const std::string& key, const std::string& value);

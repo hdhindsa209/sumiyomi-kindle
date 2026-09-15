@@ -70,6 +70,22 @@ struct UpdateItem {
     int64_t     date_fetch = 0;   // when the update found it
 };
 
+enum class DownloadState : int { Queued = 0, Downloading = 1, Done = 2, Error = 3 };
+
+struct DownloadItem {
+    int64_t       chapter_id = 0;
+    int64_t       manga_id = 0;
+    int64_t       source_id = 0;
+    std::string   manga_title;
+    std::string   chapter_name;
+    std::string   chapter_url;
+    DownloadState state = DownloadState::Queued;
+    int           pages_done = 0;
+    int           pages_total = 0;
+    std::string   error;
+    int64_t       queued_at = 0;
+};
+
 struct HistoryItem {
     int64_t     chapter_id = 0;
     int64_t     manga_id = 0;

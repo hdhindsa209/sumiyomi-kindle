@@ -6,6 +6,13 @@
 #include "image/decode.h"
 
 #include <algorithm>
+#include <cerrno>
+#include <cstdio>
+#include <dirent.h>
+#include <fstream>
+#include <iterator>
+#include <sys/stat.h>
+#include <unistd.h>
 
 namespace sumi::app {
 namespace {
@@ -39,8 +46,9 @@ std::vector<data::Chapter> to_rows(const std::vector<source::SChapter>& chapters
 } // namespace
 
 AppData::AppData(Executor& exec, data::Db& db, std::vector<std::unique_ptr<source::Extension>> extensions,
-                 net::Client* images, image::PageCache* cache)
-    : exec_(exec), db_(db), repo_(db), extensions_(std::move(extensions)), images_(images), cache_(cache)
+                 net::Client* images, image::PageCache* cache, std::string downloads_dir)
+    : exec_(exec), db_(db), repo_(db), extensions_(std::move(extensions)), images_(images), cache_(cache),
+      downloads_dir_(std::move(downloads_dir))
 {
     for (const auto& e : extensions_) {
         const source::Manifest& m = e->manifest();
@@ -298,7 +306,19 @@ void AppData::open_chapter(int64_t chapter_id, std::function<void(ChapterView, s
             if (auto d = repo_.pref("manga." + std::to_string(manga->id) + ".direction")) view.direction = std::clamp(std::atoi(d->c_str()), 0, 2);
             std::vector<source::SPage> pages;
             source::SChapter sc{chapter->url, chapter->name, chapter->scanlator, chapter->chapter_number, chapter->date_upload};
-            if (ext->pages(sc, pages, err)) {
+            // A downloaded chapter reads from its files: no network needed at all.
+            auto dl = repo_.download(chapter_id);
+            std::string dir = chapter_dir(manga->source_id, manga->id, chapter_id);
+            std::ifstream list(dir + "/pages.txt");
+            if (dl && dl->state == data::DownloadState::Done && list) {
+                std::string line;
+                for (int i = 0; std::getline(list, line); ++i) {
+                    char name[16];
+                    std::snprintf(name, sizeof name, "/%04d", i);
+                    pages.push_back({i, "file://" + dir + name});
+                }
+            }
+            if (!pages.empty() || ext->pages(sc, pages, err)) {
                 std::sort(pages.begin(), pages.end(), [](const auto& a, const auto& b) { return a.index < b.index; });
                 for (auto& p : pages) view.pages.push_back(std::move(p.url));
                 if (view.pages.empty()) err = "this chapter has no pages";
@@ -314,7 +334,7 @@ bool AppData::fetch_page(int64_t source, const std::string& url, const image::Pr
                          std::vector<image::Gray>& parts, std::string& err)
 {
     // Worker only. Fetch -> decode -> process -> cache every part.
-    if (!images_) {
+    if (!images_ && url.rfind("file://", 0) != 0) {
         err = "network unavailable";
         return false;
     }
@@ -325,7 +345,18 @@ bool AppData::fetch_page(int64_t source, const std::string& url, const image::Pr
     if (ext && !ext->manifest().base_url.empty()) req.headers.push_back({"Referer", ext->manifest().base_url + "/"});
     req.headers.push_back({"Accept", "image/jpeg,image/png,image/*;q=0.8"});
     uint64_t t0 = mono_ms();
-    net::Response res = images_->fetch(req);
+    net::Response res;
+    if (url.rfind("file://", 0) == 0) {   // a downloaded page
+        std::ifstream f(url.substr(7), std::ios::binary);
+        if (f) {
+            res.status = 200;
+            res.body.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+        } else {
+            res.error = "downloaded page missing: " + url.substr(7);
+        }
+    } else {
+        res = images_->fetch(req);
+    }
     uint64_t t_fetch = mono_ms() - t0;
     if (!res.transport_ok()) err = res.error;
     else if (!res.http_ok()) err = "HTTP " + std::to_string(res.status);
@@ -412,6 +443,192 @@ void AppData::save_progress(int64_t chapter_id, int page, int pages_total, bool 
     exec_.submit([this, chapter_id, page, pages_total, finished] {
         bool ok = repo_.set_progress(chapter_id, page, pages_total) && (!finished || repo_.set_read(chapter_id, true));
         if (!ok) SUMI_LOGW("app", "cannot save progress for chapter %lld: %s", static_cast<long long>(chapter_id), db_.error().c_str());
+    });
+}
+
+// ---------------------------------------------------------------- downloads
+
+namespace {
+
+bool make_dirs(const std::string& path)
+{
+    std::string cur;
+    for (size_t i = 0; i <= path.size(); ++i) {
+        if ((i == path.size() || path[i] == '/') && !cur.empty() && mkdir(cur.c_str(), 0755) != 0 && errno != EEXIST)
+            return false;
+        if (i < path.size()) cur += path[i];
+    }
+    return true;
+}
+
+void remove_dir(const std::string& dir)
+{
+    if (DIR* d = opendir(dir.c_str())) {
+        while (dirent* e = readdir(d)) {
+            std::string name = e->d_name;
+            if (name != "." && name != "..") unlink((dir + "/" + name).c_str());
+        }
+        closedir(d);
+    }
+    rmdir(dir.c_str());
+}
+
+} // namespace
+
+std::string AppData::chapter_dir(int64_t source, int64_t manga, int64_t chapter) const
+{
+    return downloads_dir_ + "/" + std::to_string(source) + "/" + std::to_string(manga) + "/" + std::to_string(chapter);
+}
+
+void AppData::set_download_listener(std::function<void(const data::DownloadItem&, bool)> listener)
+{
+    download_listener_ = std::move(listener);
+}
+
+void AppData::notify_download(const data::DownloadItem& item, bool removed)
+{
+    exec_.post([this, item, removed] {
+        if (download_listener_) download_listener_(item, removed);
+    });
+}
+
+void AppData::download_chapters(std::vector<int64_t> chapter_ids)
+{
+    exec_.submit([this, ids = std::move(chapter_ids)] {
+        for (int64_t id : ids) {
+            if (!repo_.enqueue_download(id, wall_ms())) {
+                SUMI_LOGW("download", "cannot queue chapter %lld: %s", static_cast<long long>(id), db_.error().c_str());
+                continue;
+            }
+            if (auto d = repo_.download(id)) notify_download(*d);
+        }
+        if (!downloading_) {
+            downloading_ = true;
+            exec_.submit([this] { download_step(); });
+        }
+    });
+}
+
+void AppData::resume_downloads()
+{
+    exec_.submit([this] {
+        if (!downloading_ && repo_.next_download()) {
+            downloading_ = true;
+            exec_.submit([this] { download_step(); });
+        }
+    });
+}
+
+void AppData::download_step()
+{
+    // One page per worker job: reading and browsing get in between downloads.
+    auto next = repo_.next_download();
+    if (!next) {
+        downloading_ = false;
+        return;
+    }
+    data::DownloadItem d = *next;
+    auto fail = [&](const std::string& why) {
+        SUMI_LOGW("download", "%s / %s: %s", d.manga_title.c_str(), d.chapter_name.c_str(), why.c_str());
+        repo_.set_download_state(d.chapter_id, data::DownloadState::Error, d.pages_done, d.pages_total, why);
+        if (auto now = repo_.download(d.chapter_id)) notify_download(*now);
+        exec_.submit([this] { download_step(); });
+    };
+    source::Extension* ext = extension(d.source_id);
+    if (downloads_dir_.empty()) return fail("no download folder");
+    if (!ext) return fail("source not installed");
+    std::string dir = chapter_dir(d.source_id, d.manga_id, d.chapter_id);
+    if (!make_dirs(dir)) return fail("cannot create " + dir);
+
+    // Page list: saved with the download, so an interrupted one resumes without asking the source again.
+    std::vector<std::string> urls;
+    {
+        std::ifstream list(dir + "/pages.txt");
+        for (std::string line; std::getline(list, line);)
+            if (!line.empty()) urls.push_back(line);
+    }
+    if (urls.empty()) {
+        std::vector<source::SPage> pages;
+        std::string err;
+        auto chapter = repo_.chapter(d.chapter_id);
+        if (!chapter) return fail("chapter not found");
+        source::SChapter sc{chapter->url, chapter->name, chapter->scanlator, chapter->chapter_number, chapter->date_upload};
+        if (!ext->pages(sc, pages, err)) return fail(err);
+        std::sort(pages.begin(), pages.end(), [](const auto& a, const auto& b) { return a.index < b.index; });
+        std::ofstream out(dir + "/pages.txt", std::ios::trunc);
+        for (auto& p : pages) {
+            out << p.url << "\n";
+            urls.push_back(p.url);
+        }
+        if (urls.empty()) return fail("this chapter has no pages");
+    }
+    d.pages_total = static_cast<int>(urls.size());
+
+    // The next missing page.
+    int page = 0;
+    char name[16];
+    auto path_of = [&](int i) {
+        std::snprintf(name, sizeof name, "/%04d", i);
+        return dir + name;
+    };
+    struct stat st {};
+    while (page < d.pages_total && stat(path_of(page).c_str(), &st) == 0 && st.st_size > 0) ++page;
+
+    if (page >= d.pages_total) {
+        repo_.set_download_state(d.chapter_id, data::DownloadState::Done, d.pages_total, d.pages_total);
+        if (auto now = repo_.download(d.chapter_id)) notify_download(*now);
+        SUMI_LOGI("download", "done: %s / %s (%d pages)", d.manga_title.c_str(), d.chapter_name.c_str(), d.pages_total);
+        exec_.submit([this] { download_step(); });
+        return;
+    }
+
+    net::Request req;
+    req.url = urls[static_cast<size_t>(page)];
+    req.total_timeout_ms = 45000;
+    if (!ext->manifest().base_url.empty()) req.headers.push_back({"Referer", ext->manifest().base_url + "/"});
+    net::Response res = images_ ? images_->fetch(req) : net::Response{};
+    if (!images_) return fail("network unavailable");
+    if (!res.transport_ok()) return fail(res.error);
+    if (!res.http_ok()) return fail("page " + std::to_string(page + 1) + ": HTTP " + std::to_string(res.status));
+    // Only real images are kept (a challenge page instead of an image must not become a "download").
+    if (image::sniff(reinterpret_cast<const uint8_t*>(res.body.data()), res.body.size()) == image::Format::Unknown)
+        return fail("page " + std::to_string(page + 1) + " is not an image");
+    std::string path = path_of(page), tmp = path + ".tmp";
+    {
+        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+        out.write(res.body.data(), static_cast<std::streamsize>(res.body.size()));
+        if (!out) return fail("cannot write " + tmp);
+    }
+    if (std::rename(tmp.c_str(), path.c_str()) != 0) return fail("cannot write " + path);
+    // The user may have deleted this download while the page was fetching.
+    if (!repo_.download(d.chapter_id)) {
+        remove_dir(dir);
+    } else {
+        repo_.set_download_state(d.chapter_id, data::DownloadState::Downloading, page + 1, d.pages_total);
+        if (auto now = repo_.download(d.chapter_id)) notify_download(*now);
+    }
+    exec_.submit([this] { download_step(); });
+}
+
+void AppData::delete_downloads(std::vector<int64_t> chapter_ids, std::function<void()> done)
+{
+    exec_.submit([this, ids = std::move(chapter_ids), done = std::move(done)] {
+        for (int64_t id : ids) {
+            auto d = repo_.download(id);
+            if (!d) continue;
+            repo_.remove_download(id);
+            remove_dir(chapter_dir(d->source_id, d->manga_id, id));
+            notify_download(*d, true);
+        }
+        if (done) exec_.post(done);
+    });
+}
+
+void AppData::downloads(std::function<void(std::vector<data::DownloadItem>)> done)
+{
+    exec_.submit([this, done = std::move(done)] {
+        auto items = repo_.downloads();
+        exec_.post([done, items = std::move(items)]() mutable { done(std::move(items)); });
     });
 }
 

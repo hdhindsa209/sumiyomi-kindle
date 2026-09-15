@@ -149,7 +149,8 @@ int main(int argc, char** argv)
     if (!cache_ok) SUMI_LOGW("main", "%s (reading without a page cache)", err.c_str());
     // Images share the source client: both are used only on the worker thread.
     sumi::app::AppData app_data(worker, db, load_extensions(env_or("SUMI_SOURCES", SUMI_SOURCES_DIR), http), &http,
-                                cache_ok ? &page_cache : nullptr);
+                                cache_ok ? &page_cache : nullptr, data_dir + "/downloads");
+    app_data.resume_downloads();   // a queue interrupted by exiting continues
     sumi::app::Shell shell(screen, app_data, [&loop] { loop.stop(); }, nullptr,
                            [&loop, &screen](uint32_t ms, std::function<void()> fn) {
                                loop.add_timeout([&loop, &screen, fn] {

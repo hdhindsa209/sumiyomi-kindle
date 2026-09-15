@@ -9,6 +9,7 @@
 #include <atomic>
 #include <cstdlib>
 #include <string>
+#include <sys/stat.h>
 #include <unistd.h>
 
 using namespace sumi;
@@ -47,7 +48,7 @@ struct Env {
         int rc = std::system(cmd.c_str());
         (void)rc;
         CHECK(cache.init(err));
-        app = std::make_unique<AppData>(exec, db, std::move(exts), &images, &cache);
+        app = std::make_unique<AppData>(exec, db, std::move(exts), &images, &cache, cache_dir + "/downloads");
         if (!app->sources().empty()) dex = app->sources()[0].id;
     }
 };
@@ -278,6 +279,88 @@ void test_open_chapter_and_load_pages()
     (void)rc;
 }
 
+void test_downloads()
+{
+    Env env;
+    source::SManga seed{kSeedUrl, "Nee-chan", "", "", "", "", {}, 0};
+    MangaView view;
+    env.app->open_manga(env.dex, seed, [&](MangaView v, bool, std::string) { view = std::move(v); });
+    CHECK(view.chapters.size() >= 2);
+    if (view.chapters.size() < 2) return;
+    int64_t ch25 = view.chapters[0].id, ch24 = view.chapters[1].id;   // 24's page list isn't recorded: it fails
+
+    std::vector<std::pair<data::DownloadItem, bool>> events;
+    env.app->set_download_listener([&](const data::DownloadItem& d, bool removed) { events.push_back({d, removed}); });
+    env.app->download_chapters({ch24, ch25});
+
+    std::vector<data::DownloadItem> all;
+    env.app->downloads([&](auto items) { all = std::move(items); });
+    CHECK_EQ(all.size(), 2);
+    data::DownloadItem d25, d24;
+    for (auto& d : all) (d.chapter_id == ch25 ? d25 : d24) = d;
+    CHECK(d25.state == data::DownloadState::Done && d25.pages_done == 33 && d25.pages_total == 33);
+    CHECK(d24.state == data::DownloadState::Error && !d24.error.empty());   // a failure doesn't stop the queue
+    CHECK_EQ(env.image_transport.total_hits(), 33);
+    bool saw_progress = false, saw_done = false;
+    for (auto& e : events) {
+        saw_progress = saw_progress || (e.first.chapter_id == ch25 && e.first.state == data::DownloadState::Downloading && e.first.pages_done == 10);
+        saw_done = saw_done || (e.first.chapter_id == ch25 && e.first.state == data::DownloadState::Done);
+    }
+    CHECK(saw_progress && saw_done);
+    std::string dir = env.cache_dir + "/downloads/" + std::to_string(env.dex) + "/" + std::to_string(view.manga.id) + "/" + std::to_string(ch25);
+    struct stat st {};
+    CHECK(stat((dir + "/0000").c_str(), &st) == 0 && st.st_size > 1000);
+    CHECK(stat((dir + "/0032").c_str(), &st) == 0);
+
+    // Queuing it again doesn't download again.
+    env.app->download_chapters({ch25});
+    CHECK_EQ(env.image_transport.total_hits(), 33);
+
+    // Reading a downloaded chapter needs no network at all (every image host "fails").
+    for (int i = 1; i <= 33; ++i) {
+        char url[128];
+        std::snprintf(url, sizeof url, "https://scans.lastation.us/manga/neechan-no-tomodachi-ga-uzai-hanashi/0025-%03d.png", i);
+        env.image_transport.fail.insert(url);
+    }
+    ChapterView cv;
+    std::string err = "unset";
+    env.app->open_chapter(ch25, [&](ChapterView v, std::string e) { cv = std::move(v); err = e; });
+    CHECK(err.empty() && cv.pages.size() == 33 && cv.pages[0].rfind("file://", 0) == 0);
+    PageImage page;
+    env.app->load_page(env.dex, cv.pages[4], 0, image::ProcessOptions{}, [&](PageImage p, std::string e) { page = std::move(p); err = e; });
+    CHECK(err.empty() && !page.page.px.empty());
+    CHECK_EQ(env.image_transport.total_hits(), 33);
+
+    // Resume: an interrupted download continues from the missing pages only.
+    env.image_transport.fail.clear();
+    unlink((dir + "/0030").c_str());
+    unlink((dir + "/0031").c_str());
+    unlink((dir + "/0032").c_str());
+    {
+        data::Repo repo(env.db);
+        CHECK(repo.set_download_state(ch25, data::DownloadState::Downloading, 30, 33));
+    }
+    env.app->resume_downloads();
+    env.app->downloads([&](auto items) { all = std::move(items); });
+    for (auto& d : all)
+        if (d.chapter_id == ch25) CHECK(d.state == data::DownloadState::Done);
+    CHECK_EQ(env.image_transport.total_hits(), 36);
+
+    // Delete: row and files gone, listener told.
+    events.clear();
+    bool deleted = false;
+    env.app->delete_downloads({ch25, ch24}, [&] { deleted = true; });
+    CHECK(deleted);
+    env.app->downloads([&](auto items) { all = std::move(items); });
+    CHECK(all.empty());
+    CHECK(stat(dir.c_str(), &st) != 0);
+    CHECK(events.size() == 2 && events[0].second && events[1].second);
+
+    std::string cmd = "rm -rf " + env.cache_dir;
+    int rc = std::system(cmd.c_str());
+    (void)rc;
+}
+
 } // namespace
 
 int main()
@@ -289,5 +372,6 @@ int main()
     RUN(test_format_helpers);
     RUN(test_reader_settings_persist);
     RUN(test_open_chapter_and_load_pages);
+    RUN(test_downloads);
     return check_result();
 }

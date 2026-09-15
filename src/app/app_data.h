@@ -72,8 +72,9 @@ class AppData {
 public:
     // `images` fetches page images (null: pages fail with "network unavailable"); `cache` stores
     // processed pages (null: no caching). Both are used only on the worker.
+    // `downloads_dir`: where downloaded chapters are kept (empty: downloads fail).
     AppData(Executor& exec, data::Db& db, std::vector<std::unique_ptr<source::Extension>> extensions,
-            net::Client* images = nullptr, image::PageCache* cache = nullptr);
+            net::Client* images = nullptr, image::PageCache* cache = nullptr, std::string downloads_dir = "");
 
     // UI-thread safe: fixed at construction.
     const std::vector<SourceInfo>& sources() const { return sources_; }
@@ -119,6 +120,19 @@ public:
     // skipped. Stops when `cancel` is set. `progress` runs on the UI thread after each page.
     void load_chapter(int64_t source, std::vector<std::string> urls, int start, const image::ProcessOptions& opt,
                       std::shared_ptr<std::atomic<bool>> cancel, std::function<void(int loaded, int total)> progress);
+    // --- downloads (M5) ---
+    // Downloading keeps a chapter on the device: the original image files, in downloads_dir, never
+    // evicted, used by the reader instead of the network. Only ever started by the user.
+    // Queue chapters and start the queue (already downloaded ones are skipped; failed ones retried).
+    void download_chapters(std::vector<int64_t> chapter_ids);
+    // Remove downloads (queued, in progress or finished) and their files.
+    void delete_downloads(std::vector<int64_t> chapter_ids, std::function<void()> done = nullptr);
+    void downloads(std::function<void(std::vector<data::DownloadItem>)> done);
+    // Continue an interrupted queue (call once at startup).
+    void resume_downloads();
+    // Called on the UI thread whenever a download changes (queued, a page done, finished, failed, removed).
+    void set_download_listener(std::function<void(const data::DownloadItem&, bool removed)> listener);
+
     // Remember the reading position; `finished` also marks the chapter read.
     void save_progress(int64_t chapter_id, int page, int pages_total, bool finished);
 
@@ -136,6 +150,13 @@ private:
     std::vector<SourceInfo> sources_;
     net::Client*       images_;
     image::PageCache*  cache_;
+    std::string        downloads_dir_;
+    std::function<void(const data::DownloadItem&, bool)> download_listener_;
+    bool               downloading_ = false;   // worker: a download chain is running
+
+    std::string chapter_dir(int64_t source, int64_t manga, int64_t chapter) const;
+    void download_step();
+    void notify_download(const data::DownloadItem& item, bool removed = false);
 };
 
 } // namespace sumi::app

@@ -128,6 +128,12 @@ CREATE TABLE preferences (
     value           TEXT NOT NULL
 );
 )SQL",
+
+    // 3 (M5): download queue order.
+    R"SQL(
+ALTER TABLE downloads ADD COLUMN queued_at INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX idx_downloads_queue ON downloads(state, queued_at);
+)SQL",
 };
 
 constexpr int kSchemaVersion = static_cast<int>(sizeof(kMigrations) / sizeof(kMigrations[0]));
