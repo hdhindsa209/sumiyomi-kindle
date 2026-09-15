@@ -9,6 +9,7 @@
 #include "app/live_frames.h"
 #include "core/log.h"
 #include "app/shell.h"
+#include "source/repo_index.h"
 #include "platform/battery.h"
 #include "platform/frontlight.h"
 
@@ -50,7 +51,22 @@ struct Env {
     Screen         screen;
 
     fixtures::ReplayTransport transport{SUMI_SOURCE_DIR "/tests/fixtures/weebcentral"};
-    net::Client    client{transport, no_wait()};
+    // A tiny extension repository served from memory, for Browse -> Extensions.
+    struct RepoTransport final : net::Transport {
+        explicit RepoTransport(net::Transport& fallback) : fallback_(fallback) {}
+        std::map<std::string, std::string> files;
+        net::Response perform(const net::Request& req) override
+        {
+            auto it = files.find(req.url);
+            if (it == files.end()) return fallback_.perform(req);
+            return net::Response{200, it->second, {}, req.url, "", false};
+        }
+
+    private:
+        net::Transport& fallback_;
+    };
+    RepoTransport  repo_transport{transport};
+    net::Client    client{repo_transport, no_wait()};
     fake_images::Transport image_transport{transport};
     net::Client    images{image_transport, no_wait()};
     std::string    cache_dir = "shell_cache_" + std::to_string(getpid());
@@ -105,6 +121,7 @@ struct Env {
         (void)rc;
         CHECK(page_cache.init(err));
         data = std::make_unique<app::AppData>(*exec, db, std::move(exts), &images, &page_cache, cache_dir + "/downloads");
+        data->set_extension_dirs(SUMI_SOURCE_DIR "/sources", cache_dir + "/installed_sources", &client);
         if (device_loop) {
             pool = std::make_unique<net::FetchPool>(3, [this] { return std::make_unique<Locked>(image_transport, transport_mu, image_delay_ms); }, no_wait);
             data->set_reader_threads(pool.get(), &pages_worker);
@@ -1199,6 +1216,67 @@ void test_battery_status()
     CHECK_EQ(env.display.stale_pixels(), 0);
 }
 
+constexpr const char* kRepoLua = R"(
+local Source = {}
+function Source.popular_manga(page) return { mangas = {}, has_next_page = false } end
+function Source.manga_details(manga) return manga end
+function Source.chapter_list(manga) return {} end
+function Source.page_list(chapter) return {} end
+return Source
+)";
+
+void test_extensions_tab()
+{
+    Env env;
+    std::string manifest = "{\"id\":\"demo\",\"name\":\"Demo Source\",\"lang\":\"en\",\"version\":\"2.0.0\",\"api_level\":1,"
+                           "\"base_url\":\"https://demo.test\",\"capabilities\":[\"popular\"]}";
+    std::string code = kRepoLua;
+    env.repo_transport.files["https://repo.test/demo/manifest.json"] = manifest;
+    env.repo_transport.files["https://repo.test/demo/source.lua"] = code;
+    env.repo_transport.files["https://repo.test/index.json"] =
+        "{\"format\":1,\"sources\":[{\"id\":\"demo\",\"name\":\"Demo Source\",\"lang\":\"en\",\"version\":\"2.0.0\","
+        "\"api_level\":1,\"manifest\":\"demo/manifest.json\",\"manifest_sha256\":\"" + source::sha256_hex(manifest) +
+        "\",\"source\":\"demo/source.lua\",\"source_sha256\":\"" + source::sha256_hex(code) + "\"}]}";
+
+    env.tap(env.nav_cell(3));                                            // Browse
+    env.tap(env.find("Extensions"));
+    CHECK(env.shows("WeebCentral") && env.shows("No repository set"));
+    CHECK(env.golden("extensions"));
+
+    // Set the repository: the URL keyboard has the punctuation.
+    env.tap(env.find("No repository set"));
+    CHECK(env.shows("Repository"));
+    for (char c : std::string("repo.test/index.json")) env.tap(env.find(std::string(1, c)));
+    Node* kb = env.root()->children().back().get();
+    env.tap(kb->children()[4]->children().back().get());                 // the check key
+    CHECK(env.shows("https://repo.test/index.json"));                    // https:// filled in
+    CHECK(env.shows("Available") && env.shows("Demo Source"));
+    CHECK_EQ(env.display.stale_pixels(), 0);
+
+    // Install, then it's in the Installed list and usable.
+    env.tap(env.find("Demo Source"));
+    CHECK(env.shows("2.0.0 \xC2\xB7 en \xC2\xB7 Installed"));
+    CHECK(env.shows("Nothing else in this repository."));
+    CHECK_EQ(env.data->sources().size(), 2);
+    CHECK(env.shows("Installed") && env.shows("WeebCentral"));
+    env.tap(env.find("Sources"));
+    CHECK(env.shows("Demo Source"));                                     // browsable straight away
+    CHECK(env.golden("extensions_installed"));
+
+    // Uninstall from its sheet.
+    env.tap(env.find("Extensions"));
+    env.tap(env.find("Demo Source"));
+    CHECK(env.shows("Uninstall"));
+    env.tap(env.find("Uninstall"));
+    CHECK_EQ(env.data->sources().size(), 1);
+    CHECK(env.shows("Available"));                                       // offered again
+    CHECK_EQ(env.display.stale_pixels(), 0);
+
+    // A built-in source can't be removed.
+    env.tap(env.find("WeebCentral"));
+    CHECK(env.shows("This source is built into the app."));
+}
+
 void test_settings_and_storage()
 {
     Env env;
@@ -1280,6 +1358,7 @@ int main()
     RUN(test_history_resume_and_remove);
     RUN(test_library_selection);
     RUN(test_battery_status);
+    RUN(test_extensions_tab);
     RUN(test_settings_and_storage);
     RUN(test_more_exit);
     return check_result();

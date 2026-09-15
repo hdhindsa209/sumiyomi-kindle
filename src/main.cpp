@@ -39,27 +39,30 @@ std::string env_or(const char* name, const char* fallback)
     return env ? env : fallback;
 }
 
-// Every sources/<id>/ with a manifest.json + source.lua (design doc §3.3).
-std::vector<std::unique_ptr<sumi::source::Extension>> load_extensions(const std::string& dir, sumi::net::Client& http)
+// Every <dir>/<id>/ with a manifest.json + source.lua (design doc §3.3). Sources already in `out` (installed
+// from a repository) keep their place: a bundled source with the same id is skipped.
+void load_extensions(const std::string& dir, sumi::net::Client& http,
+                     std::vector<std::unique_ptr<sumi::source::Extension>>& out)
 {
-    std::vector<std::unique_ptr<sumi::source::Extension>> out;
     DIR* d = opendir(dir.c_str());
     if (!d) {
         SUMI_LOGW("main", "no sources directory at %s", dir.c_str());
-        return out;
+        return;
     }
     while (dirent* e = readdir(d)) {
         if (e->d_name[0] == '.') continue;
         std::string err;
         if (auto ext = sumi::source::Extension::load(dir + "/" + e->d_name, &http, err)) {
-            SUMI_LOGI("main", "source %s %s loaded", ext->manifest().name.c_str(), ext->manifest().version.c_str());
+            bool have = false;
+            for (const auto& loaded : out) have = have || loaded->id() == ext->id();
+            if (have) continue;   // an installed source replaces the bundled one
+            SUMI_LOGI("main", "source %s %s loaded from %s", ext->manifest().name.c_str(), ext->manifest().version.c_str(), dir.c_str());
             out.push_back(std::move(ext));
         } else {
             SUMI_LOGW("main", "source %s: %s", e->d_name, err.c_str());
         }
     }
     closedir(d);
-    return out;
 }
 
 } // namespace
@@ -150,8 +153,14 @@ int main(int argc, char** argv)
     bool cache_ok = page_cache.init(err);
     if (!cache_ok) SUMI_LOGW("main", "%s (reading without a page cache)", err.c_str());
     // Images share the source client: both are used only on the worker thread.
-    sumi::app::AppData app_data(worker, db, load_extensions(env_or("SUMI_SOURCES", SUMI_SOURCES_DIR), http), &http,
+    // Installed sources first, then the ones shipped with the app.
+    std::string bundled_sources = env_or("SUMI_SOURCES", SUMI_SOURCES_DIR), installed_sources = data_dir + "/sources";
+    std::vector<std::unique_ptr<sumi::source::Extension>> extensions;
+    load_extensions(installed_sources, http, extensions);
+    load_extensions(bundled_sources, http, extensions);
+    sumi::app::AppData app_data(worker, db, std::move(extensions), &http,
                                 cache_ok ? &page_cache : nullptr, data_dir + "/downloads");
+    app_data.set_extension_dirs(bundled_sources, installed_sources, &http);
     // Reader threads: a page-cache thread (turns never wait behind the worker) and three connections that
     // fetch a chapter's images at once. Declared after app_data so they stop first.
     sumi::Worker pages_worker(loop);

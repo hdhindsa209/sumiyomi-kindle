@@ -36,3 +36,9 @@ downloads size / delete all). "Downloaded only" and "Incognito mode" on More now
 session). Settings are edited from their saved values on the worker, so separate changes never undo each other.
 
 Deferred to M6 (design doc): trackers, migration, statistics, backup/restore.
+S6 built on host: extension repositories. `index.json` (format 1) lists sources with per-file SHA-256; paths are
+relative to the index URL; `tools/ext/build_index.py` writes one from a `sources/` directory. Browse → Extensions
+shows what's installed (built in vs installed, with updates), the repository URL (typed on a keyboard with URL
+punctuation) and what's available. Install checks api_level, then the checksums, stages into
+`<data>/sources/.<id>.new`, loads the extension, and swaps it in with no restart; uninstall brings a bundled
+source of the same id back. main loads installed sources first, then bundled ones with the same id skipped.

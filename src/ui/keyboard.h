@@ -16,7 +16,8 @@ enum class KeyInput { Char, Backspace, Enter };
 using KeyHandler = std::function<void(KeyInput, char)>;
 
 // `enter_icon`: the enter key's glyph (search by default; a check for naming things).
-std::unique_ptr<Node> keyboard(KeyHandler on_key, char32_t enter_icon = 0);
+// `symbols`: replaces the space key with the punctuation a URL needs (: / . - _ ~), for typing addresses.
+std::unique_ptr<Node> keyboard(KeyHandler on_key, char32_t enter_icon = 0, bool symbols = false);
 
 // A single-line text field: current text (or a placeholder in a lighter tone) plus a caret bar.
 class TextField : public Node {

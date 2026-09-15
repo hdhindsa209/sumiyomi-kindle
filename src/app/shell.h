@@ -55,7 +55,7 @@ private:
     enum Tab { kLibrary, kUpdates, kHistory, kBrowse, kMore };
 
     struct Route {
-        enum Kind { TabRoot, Source, Search, Detail, Reader, Downloads, Categories, CategoryName, Settings, Storage };
+        enum Kind { TabRoot, Source, Search, Detail, Reader, Downloads, Categories, CategoryName, Settings, Storage, RepoUrl };
         Route(Kind k = TabRoot, int tab_index = kLibrary) : kind(k), tab(tab_index) {}
         Kind           kind;
         int            tab;
@@ -114,6 +114,12 @@ private:
     void update_library(int64_t category);
     void show_auto_download_sheet();
     void show_browse();
+    // Browse -> Extensions: what's installed, the repository, and what it offers.
+    std::vector<std::unique_ptr<ui::Node>> extension_rows();
+    void fetch_repo(bool force);
+    void show_extension_sheet(const SourceInfo& source, const source::RepoEntry* update);
+    void install_extension(source::RepoEntry entry);
+    void show_repo_url(const Route& r);
     void show_more();
     void show_settings(ui::Change change = ui::Change::NewScreen);
     void show_storage(ui::Change change = ui::Change::NewScreen);
@@ -161,6 +167,9 @@ private:
     std::vector<Route> stack_;
     uint64_t generation_ = 0;
     int      browse_tab_ = 0;
+    RepoListing repo_;                 // Browse -> Extensions: the repository's sources, once fetched
+    std::string repo_error_;
+    bool     repo_fetched_ = false;
 
     // Current screen's live parts (valid for the current generation only).
     bool           waiting_ = false;          // a loading page is (or is about to be) up

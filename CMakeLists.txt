@@ -197,8 +197,9 @@ add_library(sumi_source STATIC
   src/source/util.cpp
   src/source/lua_vm.cpp
   src/source/lua_api.cpp
-  src/source/extension.cpp)
-target_link_libraries(sumi_source PUBLIC sumi_net lua lexbor_static)
+  src/source/extension.cpp
+  src/source/repo_index.cpp)
+target_link_libraries(sumi_source PUBLIC sumi_net lua lexbor_static mbedcrypto)
 target_include_directories(sumi_source SYSTEM PRIVATE third_party/lexbor/source)
 
 # App services: data access for the UI over worker jobs (M3 S6).

@@ -13,13 +13,21 @@
 #include "net/fetch_pool.h"
 #include "net/http.h"
 #include "source/extension.h"
+#include "source/repo_index.h"
 
 namespace sumi::app {
 
 struct SourceInfo {
     int64_t     id = 0;
+    std::string key;                  // manifest id ("weebcentral")
     std::string name, lang, version;
     bool        has_latest = false, has_search = false;
+    bool        installed = false;    // installed from a repository (can be uninstalled); false = shipped with the app
+};
+
+struct RepoListing {
+    std::string url;
+    std::vector<source::RepoEntry> entries;
 };
 
 struct BrowseResult {
@@ -117,7 +125,20 @@ public:
     // Call before any job runs.
     void set_reader_threads(net::FetchPool* pool, Executor* pages) { pool_ = pool; pages_ = pages; }
 
-    // UI-thread safe: fixed at construction.
+    // Extensions (M5 S6): `bundled_dir` ships with the app, `installed_dir` holds sources installed from a repository
+    // (they win over a bundled one with the same id). `http` is the client new extensions use. Call before any job.
+    void set_extension_dirs(std::string bundled_dir, std::string installed_dir, net::Client* http);
+    void repo_url(std::function<void(std::string)> done);
+    void set_repo_url(std::string url, std::function<void()> done = nullptr);
+    // Fetch the saved repository's index.
+    void fetch_repo(std::function<void(RepoListing, std::string err)> done);
+    // Install or update: files downloaded, checked against their SHA-256, loaded (api_level, required functions),
+    // then swapped in without a restart. `err` empty on success.
+    void install_extension(source::RepoEntry entry, std::function<void(std::string err)> done);
+    // Only installed sources; a bundled source with the same id takes over again.
+    void uninstall_extension(int64_t source, std::function<void(std::string err)> done);
+
+    // UI thread. Changes when extensions are installed or removed (a result delivered to the UI thread swaps it).
     const std::vector<SourceInfo>& sources() const { return sources_; }
     const SourceInfo* source_info(int64_t id) const;
 
@@ -257,6 +278,10 @@ public:
 
 private:
     source::Extension* extension(int64_t source);
+    std::vector<SourceInfo> describe_sources();   // worker: from extensions_
+    void publish_sources();                      // worker: register them and swap the UI's list
+    std::string bundled_dir_, installed_dir_;
+    net::Client* source_http_ = nullptr;
     bool fetch_page(int64_t source, const std::string& url, const image::ProcessOptions& opt, bool into_ram,
                     std::vector<image::Gray>& parts, std::string& err);
     net::Request image_request(int64_t source, const std::string& url);

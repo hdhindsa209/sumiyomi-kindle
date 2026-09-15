@@ -53,11 +53,7 @@ AppData::AppData(Executor& exec, data::Db& db, std::vector<std::unique_ptr<sourc
     : exec_(exec), db_(db), repo_(db), extensions_(std::move(extensions)), images_(images), cache_(cache),
       downloads_dir_(std::move(downloads_dir))
 {
-    for (const auto& e : extensions_) {
-        const source::Manifest& m = e->manifest();
-        auto has = [&](const char* cap) { return std::find(m.capabilities.begin(), m.capabilities.end(), cap) != m.capabilities.end(); };
-        sources_.push_back({e->id(), m.name, m.lang, m.version, has("latest"), has("search")});
-    }
+    sources_ = describe_sources();
     exec_.submit([this] {
         for (const auto& e : extensions_) {
             const source::Manifest& m = e->manifest();
@@ -65,6 +61,38 @@ AppData::AppData(Executor& exec, data::Db& db, std::vector<std::unique_ptr<sourc
                 SUMI_LOGE("app", "cannot register source %s: %s", m.id.c_str(), db_.error().c_str());
         }
     });
+}
+
+std::vector<SourceInfo> AppData::describe_sources()
+{
+    std::vector<SourceInfo> out;
+    for (const auto& e : extensions_) {
+        const source::Manifest& m = e->manifest();
+        auto has = [&](const char* cap) { return std::find(m.capabilities.begin(), m.capabilities.end(), cap) != m.capabilities.end(); };
+        SourceInfo info{e->id(), m.id, m.name, m.lang, m.version, has("latest"), has("search"), false};
+        struct stat st {};
+        info.installed = !installed_dir_.empty() && stat((installed_dir_ + "/" + m.id + "/manifest.json").c_str(), &st) == 0;
+        out.push_back(std::move(info));
+    }
+    std::sort(out.begin(), out.end(), [](const SourceInfo& a, const SourceInfo& b) { return a.name < b.name; });
+    return out;
+}
+
+void AppData::publish_sources()
+{
+    for (const auto& e : extensions_) {
+        const source::Manifest& m = e->manifest();
+        repo_.upsert_source({e->id(), m.name, m.lang, m.version, true, m.nsfw});
+    }
+    exec_.post([this, list = describe_sources()]() mutable { sources_ = std::move(list); });
+}
+
+void AppData::set_extension_dirs(std::string bundled_dir, std::string installed_dir, net::Client* http)
+{
+    bundled_dir_ = std::move(bundled_dir);
+    installed_dir_ = std::move(installed_dir);
+    source_http_ = http;
+    sources_ = describe_sources();
 }
 
 const SourceInfo* AppData::source_info(int64_t id) const
@@ -548,6 +576,157 @@ void AppData::delete_all_downloads(std::function<void()> done)
         std::vector<int64_t> ids;
         for (const data::DownloadItem& d : repo_.downloads()) ids.push_back(d.chapter_id);
         delete_downloads(std::move(ids), std::move(done));
+    });
+}
+
+// ---------------------------------------------------------------- extensions
+
+void AppData::repo_url(std::function<void(std::string)> done)
+{
+    exec_.submit([this, done = std::move(done)] {
+        std::string url = repo_.pref("extensions.repo").value_or("");
+        exec_.post([done, url] { done(url); });
+    });
+}
+
+void AppData::set_repo_url(std::string url, std::function<void()> done)
+{
+    exec_.submit([this, url = std::move(url), done = std::move(done)] {
+        repo_.set_pref("extensions.repo", url);
+        exec_.post([done] { if (done) done(); });
+    });
+}
+
+namespace {
+
+bool make_dirs(const std::string& path);   // defined with the download helpers below
+
+bool fetch_text(net::Client* http, const std::string& url, std::string& body, std::string& err)
+{
+    if (!http) {
+        err = "network unavailable";
+        return false;
+    }
+    net::Request req;
+    req.url = url;
+    net::Response res = http->fetch(req);
+    if (!res.transport_ok()) err = res.error;
+    else if (!res.http_ok()) err = "HTTP " + std::to_string(res.status) + " for " + url;
+    if (!err.empty()) return false;
+    body = std::move(res.body);
+    return true;
+}
+
+bool write_text(const std::string& path, const std::string& text)
+{
+    std::ofstream f(path, std::ios::binary | std::ios::trunc);
+    f.write(text.data(), static_cast<std::streamsize>(text.size()));
+    return static_cast<bool>(f);
+}
+
+void remove_tree(const std::string& dir)
+{
+    if (DIR* d = opendir(dir.c_str())) {
+        while (dirent* e = readdir(d)) {
+            std::string name = e->d_name;
+            if (name == "." || name == "..") continue;
+            std::string path = dir + "/" + name;
+            struct stat st {};
+            if (stat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) remove_tree(path);
+            else unlink(path.c_str());
+        }
+        closedir(d);
+    }
+    rmdir(dir.c_str());
+}
+
+} // namespace
+
+void AppData::fetch_repo(std::function<void(RepoListing, std::string)> done)
+{
+    exec_.submit([this, done = std::move(done)] {
+        RepoListing listing;
+        std::string err, body;
+        listing.url = repo_.pref("extensions.repo").value_or("");
+        if (listing.url.empty()) err = "no repository set";
+        else if (fetch_text(source_http_, listing.url, body, err)) source::parse_repo_index(body, listing.url, listing.entries, err);
+        exec_.post([done, listing = std::move(listing), err]() mutable { done(std::move(listing), err); });
+    });
+}
+
+void AppData::install_extension(source::RepoEntry entry, std::function<void(std::string)> done)
+{
+    exec_.submit([this, entry = std::move(entry), done = std::move(done)] {
+        std::string err, manifest, code;
+        auto finish = [&] {
+            if (!err.empty()) SUMI_LOGW("ext", "install %s: %s", entry.id.c_str(), err.c_str());
+            exec_.post([done, err] { if (done) done(err); });
+        };
+        if (installed_dir_.empty()) err = "extensions can't be installed here";
+        else if (entry.api_level != source::Extension::kApiLevel)
+            err = entry.name + " needs a newer Sumiyomi (api level " + std::to_string(entry.api_level) + ")";
+        if (!err.empty() || !fetch_text(source_http_, entry.manifest_url, manifest, err) || !fetch_text(source_http_, entry.source_url, code, err))
+            return finish();
+        if (source::sha256_hex(manifest) != entry.manifest_sha256 || source::sha256_hex(code) != entry.source_sha256) {
+            err = "the downloaded files don't match the repository's checksums";
+            return finish();
+        }
+        // Stage in a temporary directory; only a source that loads replaces anything.
+        make_dirs(installed_dir_);
+        std::string staging = installed_dir_ + "/." + entry.id + ".new", final_dir = installed_dir_ + "/" + entry.id;
+        remove_tree(staging);
+        make_dirs(staging);
+        if (!write_text(staging + "/manifest.json", manifest) || !write_text(staging + "/source.lua", code)) {
+            err = "cannot write to " + staging;
+            remove_tree(staging);
+            return finish();
+        }
+        auto ext = source::Extension::load(staging, source_http_, err);
+        if (ext && ext->manifest().id != entry.id) err = "the manifest's id doesn't match the repository (" + ext->manifest().id + ")";
+        if (!ext || !err.empty()) {
+            remove_tree(staging);
+            return finish();
+        }
+        remove_tree(final_dir);
+        if (std::rename(staging.c_str(), final_dir.c_str()) != 0) {
+            err = "cannot install into " + final_dir;
+            remove_tree(staging);
+            return finish();
+        }
+        int64_t id = ext->id();
+        SUMI_LOGI("ext", "installed %s %s", ext->manifest().name.c_str(), ext->manifest().version.c_str());
+        bool replaced = false;
+        for (auto& e : extensions_)
+            if (e->id() == id) {
+                e = std::move(ext);
+                replaced = true;
+                break;
+            }
+        if (!replaced) extensions_.push_back(std::move(ext));
+        publish_sources();
+        finish();
+    });
+}
+
+void AppData::uninstall_extension(int64_t source, std::function<void(std::string)> done)
+{
+    exec_.submit([this, source, done = std::move(done)] {
+        std::string err;
+        auto it = std::find_if(extensions_.begin(), extensions_.end(), [&](const auto& e) { return e->id() == source; });
+        std::string key = it != extensions_.end() ? (*it)->manifest().id : "";
+        struct stat st {};
+        if (key.empty() || installed_dir_.empty() || stat((installed_dir_ + "/" + key).c_str(), &st) != 0) {
+            err = "only installed sources can be removed";
+        } else {
+            remove_tree(installed_dir_ + "/" + key);
+            extensions_.erase(it);
+            std::string bundled_err;
+            if (!bundled_dir_.empty() && stat((bundled_dir_ + "/" + key + "/manifest.json").c_str(), &st) == 0)
+                if (auto ext = source::Extension::load(bundled_dir_ + "/" + key, source_http_, bundled_err)) extensions_.push_back(std::move(ext));
+            SUMI_LOGI("ext", "uninstalled %s", key.c_str());
+            publish_sources();
+        }
+        exec_.post([done, err] { if (done) done(err); });
     });
 }
 

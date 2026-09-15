@@ -234,6 +234,7 @@ void Shell::show(const Route& r)
     case Route::CategoryName: show_category_name(r); break;
     case Route::Settings: show_settings(); break;
     case Route::Storage: show_storage(); break;
+    case Route::RepoUrl: show_repo_url(r); break;
     }
 }
 
@@ -931,12 +932,7 @@ void Shell::show_browse()
         }
         if (data_.sources().empty()) items.push_back(message("No sources installed."));
     } else if (browse_tab_ == 1) {
-        items.push_back(section_header("Installed", std::to_string(data_.sources().size())));
-        for (const SourceInfo& s : data_.sources()) {
-            RowSpec r{s.name, s.version + kDot + s.lang, false, false, icon::check_circle, [] {}};
-            r.leading = icon::extension;
-            items.push_back(list_row(r));
-        }
+        for (auto& row : extension_rows()) items.push_back(std::move(row));
     } else {
         items.push_back(message("Migration arrives with a second source."));
     }
@@ -948,7 +944,163 @@ void Shell::show_browse()
         go({Route::TabRoot, kBrowse});
     }));
     body->add(paged(std::move(items)));
-    present(scaffold(app_bar("Browse", nullptr, with_light({})), std::move(body), kBrowse));
+    std::vector<Action> actions;
+    if (browse_tab_ == 1) actions.push_back({icon::refresh, [this] { fetch_repo(true); }});
+    present(scaffold(app_bar("Browse", nullptr, with_light(std::move(actions))), std::move(body), kBrowse));
+    if (browse_tab_ == 1 && !repo_fetched_) fetch_repo(false);   // first visit: look the repository up once
+}
+
+std::vector<std::unique_ptr<Node>> Shell::extension_rows()
+{
+    std::vector<std::unique_ptr<Node>> items;
+    const std::vector<SourceInfo>& installed = data_.sources();
+    items.push_back(section_header("Installed", std::to_string(installed.size())));
+    for (const SourceInfo& s : installed) {
+        // An entry with a higher version in the repository is an update.
+        const source::RepoEntry* update = nullptr;
+        for (const source::RepoEntry& e : repo_.entries)
+            if (e.id == s.key && source::compare_versions(e.version, s.version) > 0) update = &e;
+        std::string sub = s.version + kDot + s.lang + kDot + (s.installed ? "Installed" : "Built in");
+        if (update) sub += kDot + std::string("Update to ") + update->version;
+        SourceInfo copy = s;
+        source::RepoEntry entry;
+        if (update) entry = *update;
+        RowSpec r{s.name, sub, update != nullptr, false, update ? icon::download : icon::check_circle,
+                  [this, copy, entry, has_update = update != nullptr] {
+                      show_extension_sheet(copy, has_update ? &entry : nullptr);
+                  }};
+        r.leading = icon::extension;
+        items.push_back(list_row(r));
+    }
+
+    std::string url = repo_.url;
+    items.push_back(section_header("Repository"));
+    RowSpec repo_row{url.empty() ? "No repository set" : url,
+                     url.empty() ? "Add the address of an index.json to install more sources" : "Tap to change it",
+                     false, false, icon::chevron_right, [this, url] {
+                         Route r{Route::RepoUrl};
+                         r.query = url;
+                         go(r);
+                     }};
+    repo_row.leading = icon::open_in_new;
+    items.push_back(list_row(repo_row));
+    if (!repo_error_.empty()) items.push_back(message("Couldn't read the repository: " + repo_error_, "Retry", [this] { fetch_repo(true); }));
+
+    std::vector<const source::RepoEntry*> available;
+    for (const source::RepoEntry& e : repo_.entries) {
+        bool have = false;
+        for (const SourceInfo& s : installed) have = have || s.key == e.id;
+        if (!have) available.push_back(&e);
+    }
+    if (!available.empty()) {
+        items.push_back(section_header("Available", std::to_string(available.size())));
+        for (const source::RepoEntry* e : available) {
+            source::RepoEntry entry = *e;
+            std::string sub = entry.version + kDot + entry.lang + (entry.nsfw ? std::string(kDot) + "18+" : "");
+            RowSpec r{entry.name, sub, false, false, icon::download_for_offline, [this, entry] { install_extension(entry); }};
+            r.leading = icon::extension;
+            items.push_back(list_row(r));
+        }
+    } else if (!url.empty() && repo_fetched_ && repo_error_.empty()) {
+        items.push_back(message("Nothing else in this repository."));
+    }
+    return items;
+}
+
+void Shell::fetch_repo(bool force)
+{
+    uint64_t gen = generation_;
+    if (!force && repo_fetched_) return;
+    repo_fetched_ = true;
+    data_.fetch_repo([this, gen, force](RepoListing listing, std::string err) {
+        if (!current(gen)) return;
+        bool same = listing.url == repo_.url && listing.entries.size() == repo_.entries.size() && err == repo_error_;
+        repo_ = std::move(listing);
+        repo_error_ = err == "no repository set" ? "" : err;   // not an error: it just isn't set up yet
+        if (!same || force) show_browse();
+    });
+}
+
+void Shell::show_extension_sheet(const SourceInfo& source, const source::RepoEntry* update)
+{
+    uint64_t gen = generation_;
+    std::vector<std::unique_ptr<Node>> rows;
+    if (update) {
+        source::RepoEntry entry = *update;
+        rows.push_back(list_row({"Update to " + entry.version, "From the repository", false, false, icon::download,
+                                 [this, entry] {
+                                     screen_.hide_overlay();
+                                     install_extension(entry);
+                                 }}));
+    }
+    if (source.installed) {
+        int64_t id = source.id;
+        rows.push_back(list_row({"Uninstall", "Manga from it stay in your library but can't be opened", false, false, icon::delete_,
+                                 [this, gen, id] {
+                                     screen_.hide_overlay();
+                                     data_.uninstall_extension(id, [this, gen](std::string err) {
+                                         if (!current(gen)) return;
+                                         if (!err.empty()) repo_error_ = err;
+                                         show_browse();
+                                     });
+                                 }}));
+    } else {
+        rows.push_back(message("This source is built into the app."));
+    }
+    screen_.show_overlay(sheet(source.name + kDot + source.version, std::move(rows)));
+}
+
+void Shell::install_extension(source::RepoEntry entry)
+{
+    uint64_t gen = begin();
+    browse_tab_ = 1;
+    loading(gen, "Installing " + entry.name + kEllipsis, nullptr);
+    data_.install_extension(entry, [this, gen](std::string err) {
+        if (!current(gen)) return;
+        repo_error_ = err;
+        show_browse();
+    });
+}
+
+void Shell::show_repo_url(const Route& r)
+{
+    uint64_t gen = begin();
+    browse_tab_ = 1;
+    query_ = r.query;
+    auto root = column();
+    root->opaque = true;
+    root->add(app_bar("Repository", [this] { on_back(); }, {}));
+    auto field = std::make_unique<TextField>("https://example.com/sources/index.json");
+    field->set_text(query_);
+    field_ = field.get();
+    root->add(std::move(field));
+    auto note = std::make_unique<Node>();
+    note->height = Dim::fill();
+    note->padding = Insets{32, 24, 32, 0};
+    note->emplace<Label>("The address of a repository's index.json. Leave it empty to remove it. "
+                         "Type it without \"https://\" and it's added for you.",
+                         type::LIST_SECONDARY, FontId::InterRegular, tone::BLACK, 3)->width = Dim::fill();
+    root->add(std::move(note));
+    auto kb = keyboard([this, gen](KeyInput in, char c) {
+        if (!current(gen) || !field_) return;
+        bool enter = field_->apply(in, c);
+        query_ = field_->text();
+        if (!enter) return;
+        std::string url = query_;
+        while (!url.empty() && url.back() == ' ') url.pop_back();
+        if (!url.empty() && url.find("://") == std::string::npos) url = "https://" + url;
+        data_.set_repo_url(url, [this, gen] {
+            if (!current(gen)) return;
+            repo_ = {};
+            repo_error_.clear();
+            repo_fetched_ = false;
+            on_back();
+            fetch_repo(true);
+        });
+    }, icon::check, true);
+    keyboard_ = kb.get();
+    root->add(std::move(kb));
+    present(std::move(root));
 }
 
 void Shell::show_source(int64_t source, Browse mode)

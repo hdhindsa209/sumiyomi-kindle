@@ -1,5 +1,7 @@
 // AppData over the real WeebCentral source, recorded fixtures, an in-memory DB, and an inline executor.
 #include "app/app_data.h"
+
+#include "source/repo_index.h"
 #include "app/format.h"
 
 #include "check.h"
@@ -287,6 +289,147 @@ void test_settings_storage_incognito()
     CHECK_EQ(env.cache.disk_files(), 0);
 }
 
+// A repository served from memory: index.json plus each source's two files.
+struct RepoTransport final : net::Transport {
+    explicit RepoTransport(net::Transport& fallback) : fallback_(fallback) {}
+    std::map<std::string, std::string> files;   // url -> body
+    int hits = 0;
+    net::Response perform(const net::Request& req) override
+    {
+        auto it = files.find(req.url);
+        if (it == files.end()) return fallback_.perform(req);
+        ++hits;
+        return net::Response{200, it->second, {}, req.url, "", false};
+    }
+
+private:
+    net::Transport& fallback_;
+};
+
+std::string sha_of(const std::string& s) { return source::sha256_hex(s); }
+
+std::string test_manifest(const std::string& id, const std::string& version, int api_level = 1)
+{
+    return "{\"id\":\"" + id + "\",\"name\":\"Test " + id + "\",\"lang\":\"en\",\"version\":\"" + version +
+           "\",\"api_level\":" + std::to_string(api_level) + ",\"base_url\":\"https://example.test\",\"capabilities\":[\"popular\"]}";
+}
+
+constexpr const char* kTestLua = R"(
+local Source = {}
+function Source.popular_manga(page) return { mangas = {}, has_next_page = false } end
+function Source.manga_details(manga) return manga end
+function Source.chapter_list(manga) return {} end
+function Source.page_list(chapter) return {} end
+return Source
+)";
+
+std::string index_json(const std::vector<std::string>& entries)
+{
+    std::string s = "{\"format\":1,\"sources\":[";
+    for (size_t i = 0; i < entries.size(); ++i) s += (i ? "," : "") + entries[i];
+    return s + "]}";
+}
+
+std::string index_entry(const std::string& id, const std::string& version, const std::string& manifest,
+                        const std::string& code, int api_level = 1, const std::string& manifest_sha = "")
+{
+    return "{\"id\":\"" + id + "\",\"name\":\"Test " + id + "\",\"lang\":\"en\",\"version\":\"" + version +
+           "\",\"api_level\":" + std::to_string(api_level) + ",\"manifest\":\"" + id +
+           "/manifest.json\",\"manifest_sha256\":\"" + (manifest_sha.empty() ? sha_of(manifest) : manifest_sha) +
+           "\",\"source\":\"" + id + "/source.lua\",\"source_sha256\":\"" + sha_of(code) + "\"}";
+}
+
+void test_extension_repository()
+{
+    Env env;
+    RepoTransport repo_transport(env.transport);
+    net::Client repo_client(repo_transport, no_wait());
+    std::string installed = env.cache_dir + "/installed_sources";
+    env.app->set_extension_dirs(SUMI_SOURCE_DIR "/sources", installed, &repo_client);
+    CHECK_EQ(env.app->sources().size(), 1);
+    CHECK(!env.app->sources()[0].installed);                       // the bundled WeebCentral
+
+    const std::string base = "https://repo.test/";
+    std::string manifest = test_manifest("testsource", "1.0.0"), code = kTestLua;
+    repo_transport.files[base + "testsource/manifest.json"] = manifest;
+    repo_transport.files[base + "testsource/source.lua"] = code;
+    repo_transport.files[base + "index.json"] = index_json({index_entry("testsource", "1.0.0", manifest, code)});
+
+    // No repository set yet.
+    RepoListing listing;
+    std::string err = "unset";
+    env.app->fetch_repo([&](RepoListing l, std::string e) { listing = std::move(l); err = e; });
+    CHECK(err == "no repository set");
+    env.app->set_repo_url(base + "index.json");
+    env.app->fetch_repo([&](RepoListing l, std::string e) { listing = std::move(l); err = e; });
+    CHECK(err.empty());
+    CHECK_EQ(listing.entries.size(), 1);
+    if (listing.entries.empty()) return;
+    CHECK(listing.entries[0].manifest_url == base + "testsource/manifest.json");   // relative to the index
+
+    // Install: usable at once, no restart.
+    env.app->install_extension(listing.entries[0], [&](std::string e) { err = e; });
+    CHECK(err.empty());
+    CHECK_EQ(env.app->sources().size(), 2);
+    const SourceInfo* installed_info = nullptr;
+    for (const SourceInfo& s : env.app->sources())
+        if (s.key == "testsource") installed_info = &s;
+    CHECK(installed_info != nullptr);
+    if (installed_info) {
+        CHECK(installed_info->installed && installed_info->version == "1.0.0" && installed_info->name == "Test testsource");
+        BrowseResult r;
+        env.app->browse(installed_info->id, Browse::Popular, 1, "", [&](BrowseResult got, std::string e) { r = std::move(got); err = e; });
+        CHECK(err.empty() && r.mangas.empty());                    // the new source answers
+    }
+
+    // Update to a newer version.
+    std::string manifest2 = test_manifest("testsource", "1.1.0");
+    repo_transport.files[base + "testsource/manifest.json"] = manifest2;
+    repo_transport.files[base + "index.json"] = index_json({index_entry("testsource", "1.1.0", manifest2, code)});
+    env.app->fetch_repo([&](RepoListing l, std::string e) { listing = std::move(l); err = e; });
+    CHECK(err.empty() && listing.entries.size() == 1);
+    CHECK_EQ(source::compare_versions(listing.entries[0].version, "1.0.0"), 1);
+    env.app->install_extension(listing.entries[0], [&](std::string e) { err = e; });
+    CHECK(err.empty());
+    CHECK_EQ(env.app->sources().size(), 2);
+    for (const SourceInfo& s : env.app->sources())
+        if (s.key == "testsource") CHECK(s.version == "1.1.0");
+
+    // A file that doesn't match its checksum is refused, and the installed one is untouched.
+    repo_transport.files[base + "testsource/manifest.json"] = test_manifest("testsource", "9.9.9");
+    env.app->install_extension(listing.entries[0], [&](std::string e) { err = e; });
+    CHECK(err.find("checksum") != std::string::npos);
+    for (const SourceInfo& s : env.app->sources())
+        if (s.key == "testsource") CHECK(s.version == "1.1.0");
+
+    // A source needing a newer api level is refused before anything is downloaded.
+    std::string future = test_manifest("future", "1.0.0", 2);
+    repo_transport.files[base + "future/manifest.json"] = future;
+    repo_transport.files[base + "future/source.lua"] = code;
+    repo_transport.files[base + "index.json"] = index_json({index_entry("future", "1.0.0", future, code, 2)});
+    env.app->fetch_repo([&](RepoListing l, std::string e) { listing = std::move(l); err = e; });
+    int before = repo_transport.hits;
+    env.app->install_extension(listing.entries[0], [&](std::string e) { err = e; });
+    CHECK(err.find("api level") != std::string::npos);
+    CHECK_EQ(repo_transport.hits, before);
+    CHECK_EQ(env.app->sources().size(), 2);
+
+    // Uninstall.
+    int64_t id = 0;
+    for (const SourceInfo& s : env.app->sources())
+        if (s.key == "testsource") id = s.id;
+    env.app->uninstall_extension(id, [&](std::string e) { err = e; });
+    CHECK(err.empty());
+    CHECK_EQ(env.app->sources().size(), 1);
+    env.app->uninstall_extension(env.dex, [&](std::string e) { err = e; });   // bundled: refused
+    CHECK(err == "only installed sources can be removed");
+    CHECK_EQ(env.app->sources().size(), 1);
+
+    std::string cmd = "rm -rf " + env.cache_dir;
+    int rc = std::system(cmd.c_str());
+    (void)rc;
+}
+
 void test_format_helpers()
 {
     constexpr int64_t day = 86400000;
@@ -510,6 +653,7 @@ int main()
     RUN(test_favorite_read_and_library);
     RUN(test_update_library_auto_download);
     RUN(test_settings_storage_incognito);
+    RUN(test_extension_repository);
     RUN(test_format_helpers);
     RUN(test_reader_settings_persist);
     RUN(test_open_chapter_and_load_pages);

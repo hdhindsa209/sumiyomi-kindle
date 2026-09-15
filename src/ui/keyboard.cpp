@@ -1,5 +1,7 @@
 #include "ui/keyboard.h"
 
+#include <string>
+
 #include "icons.h"
 
 namespace sumi::ui {
@@ -39,7 +41,7 @@ std::unique_ptr<Node> row(int32_t side_padding)
 
 } // namespace
 
-std::unique_ptr<Node> keyboard(KeyHandler on_key, char32_t enter_icon)
+std::unique_ptr<Node> keyboard(KeyHandler on_key, char32_t enter_icon, bool symbols)
 {
     auto kb = std::make_unique<Node>();
     kb->layout = Layout::Column;
@@ -67,7 +69,11 @@ std::unique_ptr<Node> keyboard(KeyHandler on_key, char32_t enter_icon)
     kb->add(std::move(last));
 
     auto bottom = row(0);
-    bottom->add(key("space", 5, [on_key] { on_key(KeyInput::Char, ' '); }));
+    if (symbols) {
+        for (char c : std::string(":/.-_~")) bottom->add(key(std::string(1, c), 1, [on_key, c] { on_key(KeyInput::Char, c); }));
+    } else {
+        bottom->add(key("space", 5, [on_key] { on_key(KeyInput::Char, ' '); }));
+    }
     bottom->add(key("", 2, [on_key] { on_key(KeyInput::Enter, 0); }, enter_icon ? enter_icon : icon::search));
     kb->add(std::move(bottom));
     return kb;
