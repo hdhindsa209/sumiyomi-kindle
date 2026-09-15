@@ -370,7 +370,7 @@ std::unique_ptr<Node> cta_bar(char32_t icon, const std::string& label, std::func
 std::unique_ptr<Node> segmented(const std::vector<std::string>& labels, int selected, std::function<void(int)> on_select)
 {
     auto row = container(Layout::Row);
-    row->height = Dim::px(96);
+    row->height = Dim::px(84);
     row->opaque = true;
     row->border = Insets::all(tone::RULE);
     row->border_gray = tone::BLACK;

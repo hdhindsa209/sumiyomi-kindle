@@ -167,14 +167,62 @@ Gray crop(const Gray& g, const Rect& r)
     return out;
 }
 
+bool is_strip(int32_t w, int32_t h, const ProcessOptions& opt)
+{
+    if (w <= 0 || h <= 0) return false;
+    if (opt.fit == Fit::Width) return static_cast<int64_t>(h) * opt.screen_w > static_cast<int64_t>(opt.screen_h) * w;
+    return static_cast<float>(h) > static_cast<float>(w) * kStripAspect;
+}
+
+DecodeOptions decode_options_for(int32_t w, int32_t h, const ProcessOptions& opt)
+{
+    DecodeOptions d;
+    d.fit_w = opt.screen_w;
+    d.fit_h = is_strip(w, h, opt) ? 0 : opt.screen_h;   // strips are shown at full width
+    return d;
+}
+
+std::vector<Gray> slice_tall(const Gray& g, int32_t screen_h)
+{
+    std::vector<Gray> out;
+    if (g.h <= screen_h) {
+        out.push_back(g);
+        return out;
+    }
+    // A row is a clean cut if it's almost entirely near-white (the gutter between panels).
+    auto blank_row = [&](int32_t y) {
+        int32_t ink = 0, allowed = std::max<int32_t>(2, g.w / 100);
+        for (int32_t x = 0; x < g.w; ++x)
+            if (g.at(x, y) < 200 && ++ink > allowed) return false;
+        return true;
+    };
+    int32_t top = 0;
+    while (top < g.h) {
+        int32_t bottom = std::min(g.h, top + screen_h);
+        int32_t next = bottom;
+        if (bottom < g.h) {
+            // Search upwards through the lower quarter of the slice for a gutter.
+            int32_t cut = -1;
+            for (int32_t y = bottom - 1; y > top + screen_h * 3 / 4; --y)
+                if (blank_row(y)) { cut = y; break; }
+            if (cut > 0) bottom = next = cut + 1;
+            else next = bottom - std::max<int32_t>(8, kSliceOverlap * screen_h / 1448);   // no gutter: repeat a strip
+        }
+        out.push_back(crop(g, {0, top, g.w, bottom - top}));
+        if (bottom >= g.h) break;
+        top = next;
+    }
+    return out;
+}
+
 void fit_size(int32_t w, int32_t h, const ProcessOptions& opt, int32_t& out_w, int32_t& out_h)
 {
     double s = static_cast<double>(opt.screen_w) / w;
-    if (opt.fit == Fit::Screen) s = std::min(s, static_cast<double>(opt.screen_h) / h);
+    if (opt.fit == Fit::Screen && !is_strip(w, h, opt)) s = std::min(s, static_cast<double>(opt.screen_h) / h);
     out_w = std::max<int32_t>(1, static_cast<int32_t>(std::lround(w * s)));
     out_h = std::max<int32_t>(1, static_cast<int32_t>(std::lround(h * s)));
     out_w = std::min(out_w, opt.screen_w);
-    if (opt.fit == Fit::Screen) out_h = std::min(out_h, opt.screen_h);
+    if (opt.fit == Fit::Screen && !is_strip(w, h, opt)) out_h = std::min(out_h, opt.screen_h);
 }
 
 Gray resize(const Gray& g, int32_t w, int32_t h)
@@ -269,13 +317,23 @@ std::vector<Gray> process_page(const Gray& decoded, const ProcessOptions& opt)
         parts.push_back(std::move(src));
     }
 
-    for (Gray& part : parts) {
+    auto finish = [&](const Gray& piece) {
         int32_t w = 0, h = 0;
-        fit_size(part.w, part.h, opt, w, h);
-        Gray page = resize(part, w, h);
+        fit_size(piece.w, piece.h, opt, w, h);
+        Gray page = resize(piece, w, h);
         apply_tone(page, opt);
         quantize16(page, opt.dither);
         pages.push_back(std::move(page));
+    };
+    for (Gray& part : parts) {
+        if (!is_strip(part.w, part.h, opt)) {
+            finish(part);
+            continue;
+        }
+        // Slice in source pixels first (one screen-height's worth each), then scale each slice: a
+        // full-width webtoon strip can be 40 000 px tall, far too big to process whole on the device.
+        auto slice_h = static_cast<int32_t>(static_cast<int64_t>(opt.screen_h) * part.w / std::max(1, opt.screen_w));
+        for (const Gray& slice : slice_tall(part, std::max<int32_t>(16, slice_h))) finish(slice);
     }
     return pages;
 }

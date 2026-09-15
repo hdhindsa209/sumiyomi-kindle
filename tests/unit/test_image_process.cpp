@@ -190,6 +190,54 @@ void test_process_page_end_to_end()
     CHECK(pages[0].at(pages[0].w / 2, 3) < 250);        // margins were cropped: content reaches the top
 }
 
+void test_long_strips_are_sliced()
+{
+    ProcessOptions o;
+    CHECK(!is_strip(800, 1200, o));
+    CHECK(is_strip(800, 4000, o));                         // webtoon strip, even in Fit screen
+    CHECK(!is_strip(2000, 1000, o));
+    o.fit = Fit::Width;
+    CHECK(is_strip(800, 1200, o));                          // taller than the screen's aspect
+    CHECK(!is_strip(1200, 800, o));
+    o.fit = Fit::Screen;
+
+    // Decoding a strip must not shrink it to fit the screen height.
+    DecodeOptions d = decode_options_for(800, 8000, o);
+    CHECK(d.fit_w == 1072 && d.fit_h == 0);
+    d = decode_options_for(800, 1200, o);
+    CHECK(d.fit_h == 1448);
+
+    // 800x6000 strip: panels separated by white gutters every 1000 px (gutter rows 960..1000).
+    Gray strip = solid(800, 6000, 150);
+    for (int32_t g = 960; g < 6000; g += 1000) fill(strip, {0, g, 800, 40}, 255);
+    o.crop_borders = false;
+    auto pages = process_page(strip, o);
+    CHECK(pages.size() >= 5 && pages.size() <= 7);
+    int32_t total_h = 0;
+    for (const Gray& p : pages) {
+        CHECK(std::abs(p.w - 1072) <= 1);                   // full width
+        CHECK(p.h <= 1449);                                  // never taller than the screen
+        CHECK(all_levels(p));
+        total_h += p.h;
+    }
+    CHECK(total_h >= 6000 * 1072 / 800 - 10);                // nothing lost
+    // Cuts landed in gutters: each slice (but the last) ends on white.
+    for (size_t k = 0; k + 1 < pages.size(); ++k) CHECK(pages[k].at(pages[k].w / 2, pages[k].h - 1) == 255);
+
+    // No gutters at all: slices overlap instead, still covering everything.
+    Gray solid_strip = solid(800, 5000, 150);
+    auto overlapped = process_page(solid_strip, o);
+    int32_t sum = 0;
+    for (const Gray& p : overlapped) sum += p.h;
+    CHECK(overlapped.size() >= 4);
+    CHECK(sum > 5000 * 1072 / 800);                          // more than the strip: the overlap
+
+    // Fit width on a normal page slices it into two screens.
+    o.fit = Fit::Width;
+    auto wide = process_page(solid(800, 1600, 128), o);
+    CHECK_EQ(wide.size(), 2);
+}
+
 } // namespace
 
 int main()
@@ -201,5 +249,6 @@ int main()
     RUN(test_tone_curve);
     RUN(test_quantize_levels_and_dither_behavior);
     RUN(test_process_page_end_to_end);
+    RUN(test_long_strips_are_sliced);
     return check_result();
 }

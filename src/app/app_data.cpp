@@ -324,9 +324,10 @@ bool AppData::fetch_page(int64_t source, const std::string& url, const image::Pr
     if (!res.transport_ok()) err = res.error;
     else if (!res.http_ok()) err = "HTTP " + std::to_string(res.status);
     image::Gray decoded;
+    image::Info info;
     image::DecodeOptions dopt;
-    dopt.fit_w = opt.screen_w;
-    dopt.fit_h = opt.fit == image::Fit::Screen ? opt.screen_h : 0;
+    if (err.empty() && image::probe(reinterpret_cast<const uint8_t*>(res.body.data()), res.body.size(), info, err))
+        dopt = image::decode_options_for(info.w, info.h, opt);
     uint64_t t1 = mono_ms();
     if (!err.empty() || !image::decode_gray(reinterpret_cast<const uint8_t*>(res.body.data()), res.body.size(), dopt, decoded, err)) {
         SUMI_LOGW("app", "page %s: %s", url.c_str(), err.c_str());
@@ -335,6 +336,7 @@ bool AppData::fetch_page(int64_t source, const std::string& url, const image::Pr
     uint64_t t2 = mono_ms();
     parts = image::process_page(decoded, opt);
     uint64_t t3 = mono_ms();
+    if (parts.size() > 255) parts.resize(255);   // cache format limit (a 255-screen strip is ~370 000 px tall)
     for (size_t i = 0; i < parts.size(); ++i) {
         std::string cache_err;
         if (cache_ && !cache_->put(image::PageCache::key(url, static_cast<int>(i), opt),

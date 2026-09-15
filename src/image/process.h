@@ -12,8 +12,8 @@ namespace sumi::image {
 // grays (multiples of 17), so the waveform shows exactly what was computed.
 
 enum class Fit : uint8_t {
-    Screen,   // whole page visible (default)
-    Width,    // fill the width; a tall result is shown in screen-height slices (M4 S7)
+    Screen,   // whole page visible (default); long strips still fill the width (see kStripAspect)
+    Width,    // always fill the width; anything taller than the screen is cut into slices
 };
 
 enum class Dither : uint8_t {
@@ -36,13 +36,25 @@ struct ProcessOptions {
 };
 
 static constexpr float kSpreadAspect = 1.2f;
+// Height/width above which a page is a long strip (webtoon): shown at full width in slices,
+// because fitting it whole would make it a sliver.
+static constexpr float kStripAspect = 2.2f;
+static constexpr int32_t kSliceOverlap = 64;   // px repeated between slices when no clean cut is found
+
+// True if a w×h source page is shown width-filled and sliced under `opt`.
+bool is_strip(int32_t w, int32_t h, const ProcessOptions& opt);
+// Decode options for a w×h source page: the size it will actually be shown at.
+DecodeOptions decode_options_for(int32_t w, int32_t h, const ProcessOptions& opt);
+// Screen-height slices of a width-filled page, in reading order (top to bottom). Cuts at a blank
+// row near each boundary when there is one; otherwise slices overlap by kSliceOverlap.
+std::vector<Gray> slice_tall(const Gray& g, int32_t screen_h);
 
 // Rect of `g` left after trimming near-uniform white or black borders. Never trims more than
 // 20% of either dimension from one side, and returns the full image when unsure.
 Rect content_bounds(const Gray& g);
 
-// Crop -> split -> resize -> tone -> quantize. One output page, or two for a split spread
-// (in reading order). Never empty for a non-empty input.
+// Crop -> split -> resize -> tone -> quantize -> slice. One output page, two for a split spread
+// (in reading order), or several slices for a long strip. Never empty for a non-empty input.
 std::vector<Gray> process_page(const Gray& decoded, const ProcessOptions& opt);
 
 // Individual stages (exposed for tests and page_bench).

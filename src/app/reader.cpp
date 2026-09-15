@@ -386,14 +386,14 @@ void Reader::present_settings()
     auto body = std::make_unique<Node>();
     body->layout = Layout::Column;
     body->height = Dim::fill();
-    body->padding = Insets{32, 16, 32, 16};
-    body->gap = 12;
+    body->padding = Insets{32, 12, 32, 0};
+    body->gap = 8;
     auto section = [&](const std::string& title, std::unique_ptr<Node> control) {
         auto* l = body->emplace<Label>(title, type::LIST_PRIMARY, FontId::InterSemiBold, tone::BLACK);
         l->width = Dim::fill();
         body->add(std::move(control));
         auto spacer = std::make_unique<Node>();
-        spacer->height = Dim::px(20);
+        spacer->height = Dim::px(10);
         body->add(std::move(spacer));
     };
     auto save = [this](ReaderSettings s) {
@@ -421,6 +421,11 @@ void Reader::present_settings()
         s.flash_every = kFlash[i];
         save(s);
     }));
+    section("Page fit", segmented({"Fit screen", "Fit width"}, settings_.fit == image::Fit::Width ? 1 : 0, [this, save](int i) {
+        ReaderSettings s = settings_;
+        s.fit = i == 1 ? image::Fit::Width : image::Fit::Screen;
+        save(s);
+    }));
     section("Dithering", segmented({"Sharp", "Balanced", "Smooth"}, static_cast<int>(settings_.dither), [this, save](int i) {
         ReaderSettings s = settings_;
         s.dither = static_cast<image::Dither>(i);
@@ -438,7 +443,7 @@ void Reader::present_settings()
     }));
     root->add(std::move(body));
     auto done = std::make_unique<Node>();
-    done->padding = Insets{32, 0, 32, 32};
+    done->padding = Insets{32, 0, 32, 24};
     done->add(button("Done", [this] { close_settings(); }, true));
     root->add(std::move(done));
     // First entry is a new screen; option changes redraw it in place without a flash.

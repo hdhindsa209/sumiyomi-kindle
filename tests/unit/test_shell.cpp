@@ -532,6 +532,28 @@ void test_device_loop_reader()
     CHECK_EQ(env.display.stale_pixels(), 0);
 }
 
+void test_reader_long_strip_slices()
+{
+    Env env;
+    open_detail(env);
+    env.tap(env.find("Chapter 25"));
+    auto left = [&] { env.tap(Point{100, 700}); };     // right-to-left: left is next
+    auto right = [&] { env.tap(Point{kW - 100, 700}); };
+    for (int i = 0; i < 4; ++i) left();
+    CHECK_EQ(bars_on_panel(env), 5);                  // page 5, slice 1 (the bars are at its top)
+    left();
+    CHECK_EQ(bars_on_panel(env), 0);                  // still page 5: a lower slice
+    CHECK_EQ(env.display.stale_pixels(), 0);
+    int slices = 1;
+    while (bars_on_panel(env) != 6 && slices < 10) { left(); ++slices; }
+    CHECK(slices >= 3 && slices <= 5);                 // 784x4000 at full width = ~5360 px: 4 screens
+    CHECK_EQ(bars_on_panel(env), 6);
+    right();                                           // back from page 6 lands on page 5's LAST slice
+    CHECK_EQ(bars_on_panel(env), 0);
+    for (int i = 1; i < slices; ++i) right();
+    CHECK_EQ(bars_on_panel(env), 5);
+}
+
 void test_long_press_chapter_toggles_read()
 {
     Env env;
@@ -594,6 +616,7 @@ int main()
     RUN(test_reader_end_of_chapter_marks_read);
     RUN(test_reader_page_error_and_cancel);
     RUN(test_device_loop_reader);
+    RUN(test_reader_long_strip_slices);
     RUN(test_long_press_chapter_toggles_read);
     RUN(test_updates_refresh_reports);
     RUN(test_more_exit);

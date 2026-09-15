@@ -1,7 +1,7 @@
 // Test transport for page images: serves generated JPEG pages for image-host URLs and passes
 // everything else to another transport (recorded source fixtures). Counts image requests, and can
 // fail specific URLs. Pages are 784x1145 (a real WeebCentral size) with the page number drawn as
-// that many black bars, so tests can tell pages apart after processing.
+// that many black bars, so tests can tell pages apart after processing. Page 5 is a 784x4000 strip.
 #pragma once
 #include <cstdio>
 #include <cstdlib>
@@ -79,7 +79,8 @@ public:
             return r;
         }
         r.status = 200;
-        r.body = jpeg_page(page_number(req.url));
+        int n = page_number(req.url);
+        r.body = n == 5 ? jpeg_page(n, 784, 4000) : jpeg_page(n);   // page 5 is a long strip
         return r;
     }
 

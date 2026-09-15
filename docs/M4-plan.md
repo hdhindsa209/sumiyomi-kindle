@@ -33,3 +33,20 @@ a commit per stage, device checks only when the result is something to look at.
 | S7 | Long strips (webtoon pages taller than ~2× screen): split into screen-height slices with a small overlap, paged | Tests on a synthetic tall image |
 
 Out of scope: WebP (added only if a source needs it), downloads (M5), covers.
+
+## Status (2026-09-15)
+
+S1–S7 built and tested on host (panel model + real event loop tests); S4 verified on the device (quality good,
+pages fast). Changes from the table above, from device feedback:
+
+- **S5 became whole-chapter loading**: opening a chapter loads every page into the page cache in the background,
+  from the reading position on (user: "the whole chapter should be loaded in"). This is loading, not downloading:
+  pages stay in the evictable cache; downloads (kept copies, user-initiated) remain M5.
+- **S6 menu**: direction toggle applies to the current manga; defaults and all processing options are on a
+  separate settings page. Long-press a chapter row toggles read.
+- **S7**: strips (h > 2.2 w, or anything taller than the screen in Fit width) are sliced in source pixels before
+  scaling, at white gutters when possible, else with a small overlap. Slices reuse the split-spread "parts" path.
+
+Device timing (first S4 run, WeebCentral JPEG 1050×1536): fetch 0.7–1.3 s, decode ~80 ms, process ~255 ms,
+cache write ~65 ms. Processing is over the §7.2 budget (180 ms): resize + dither are the candidates for NEON work.
+Not yet measured: peak memory on a long strip.
