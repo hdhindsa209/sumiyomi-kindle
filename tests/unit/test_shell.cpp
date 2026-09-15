@@ -979,6 +979,84 @@ void test_history_resume_and_remove()
     CHECK(repo.history().empty());
 }
 
+void test_library_selection()
+{
+    Env env;
+    source::SManga seed{"/series/01KTEH8Z2TJ9NQ2NDZ75EM36SS/neechan-no-tomodachi-ga-uzai-hanashi", kTitle, "", "", "", "", {}, 0};
+    int64_t first = 0;
+    env.data->open_manga(env.data->sources()[0].id, seed, [&](app::MangaView v, bool, std::string) { first = v.manga.id; });
+    env.data->set_favorite(first, true, [](bool) {});
+    data::Repo repo(env.db);
+    data::Manga other;
+    other.source_id = env.data->sources()[0].id;
+    other.url = "/series/other";
+    other.title = "Another Manga";
+    other.thumbnail_url = "https://temp.compsci88.com/cover/fallback/other.jpg";
+    CHECK(repo.upsert_manga(other) && repo.set_favorite(other.id, true, 1));
+    data::Chapter c1, c2;
+    c1.url = "/chapters/o1"; c1.name = "Chapter 1";
+    c2.url = "/chapters/o2"; c2.name = "Chapter 2";
+    CHECK(repo.sync_chapters(other.id, {c2, c1}, 1) == 2);
+    auto reading = repo.create_category("Reading");
+    env.tap(env.nav_cell(1));
+    env.tap(env.nav_cell(0));
+    CHECK(env.shows("Hold a manga to select it."));
+
+    // Hold: selection with that manga, the nav bar swapped for actions.
+    hold(env, env.find(kTitle));
+    CHECK(env.shows("1 selected") && env.shows("Categories") && env.shows("Remove") && !env.shows("Updates"));
+    CHECK_EQ(env.display.stale_pixels(), 0);
+    size_t calls = env.display.calls.size();
+    env.tap(env.find("Another Manga"));                                  // tap adds to the selection
+    CHECK(env.shows("2 selected"));
+    for (size_t i = calls; i < env.display.calls.size(); ++i) CHECK(env.display.calls[i].rect.h < kH / 2);   // row + title only
+    CHECK(env.golden("library_select"));
+
+    // Categories for both.
+    env.tap(env.find("Categories"));
+    CHECK(env.shows("Categories for 2 manga"));
+    env.tap(env.find("Reading"));
+    CHECK(repo.categories_of(first).size() == 1 && repo.categories_of(other.id).size() == 1);
+    env.tap(env.find("Done"));
+    CHECK(env.shows("All") && env.shows("Reading") && env.shows("Updates"));   // back to the library, tabs and nav
+
+    // Mark read, from select-all.
+    hold(env, env.find("Another Manga"));
+    const auto& actions = env.root()->children()[0]->children();
+    env.tap(actions.back().get());                                       // select all
+    CHECK(env.shows("2 selected"));
+    env.tap(env.find("Mark"));
+    env.tap(env.find("Mark as read"));
+    CHECK_EQ(repo.library()[0].unread + repo.library()[1].unread, 0);
+    CHECK(env.shows("Up to date \xC2\xB7 2 chapters"));
+
+    // Download a selection's unread chapters.
+    hold(env, env.find("Another Manga"));
+    env.tap(env.find("Mark"));
+    env.tap(env.find("Mark as unread"));
+    hold(env, env.find("Another Manga"));
+    env.tap(env.find("Download"));
+    CHECK(env.shows("2 unread chapters queued for download."));
+    env.tap(env.find("Done"));
+    CHECK_EQ(repo.downloads().size(), 2);
+
+    // Covers: hold a cover, then remove it from the library.
+    CHECK(repo.set_pref("library.display", "covers"));
+    env.tap(env.nav_cell(1));
+    env.tap(env.nav_cell(0));
+    hold(env, env.find("Another Manga"));
+    CHECK(env.shows("1 selected"));
+    CHECK_EQ(env.display.stale_pixels(), 0);
+    CHECK(env.golden("library_select_covers"));
+    env.tap(env.find("Remove"));
+    CHECK(env.shows("Remove 1 manga?"));
+    env.tap(env.find("Remove and delete downloads"));
+    CHECK_EQ(repo.library().size(), 1);
+    CHECK(repo.downloads().empty());
+    CHECK(!env.shows("Another Manga") && env.shows(kTitle));
+    (void)reading;
+}
+
 void test_battery_status()
 {
     Env env;
@@ -1044,6 +1122,7 @@ int main()
     RUN(test_categories);
     RUN(test_updates_refresh_reports);
     RUN(test_history_resume_and_remove);
+    RUN(test_library_selection);
     RUN(test_battery_status);
     RUN(test_more_exit);
     return check_result();

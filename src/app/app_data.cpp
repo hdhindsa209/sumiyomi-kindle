@@ -434,6 +434,66 @@ void AppData::set_category_auto_download(int64_t category, bool on, std::functio
     });
 }
 
+void AppData::remove_from_library(std::vector<int64_t> manga_ids, bool delete_downloads, std::function<void()> done)
+{
+    exec_.submit([this, ids = std::move(manga_ids), delete_downloads, done = std::move(done)] {
+        std::vector<int64_t> chapters;
+        for (int64_t id : ids) repo_.set_favorite(id, false, wall_ms());
+        if (delete_downloads)
+            for (const data::DownloadItem& d : repo_.downloads())
+                if (std::find(ids.begin(), ids.end(), d.manga_id) != ids.end()) chapters.push_back(d.chapter_id);
+        if (!chapters.empty()) this->delete_downloads(chapters);   // queued after this job, same worker
+        exec_.post([done] { if (done) done(); });
+    });
+}
+
+void AppData::mark_manga_read(std::vector<int64_t> manga_ids, bool read, std::function<void()> done)
+{
+    exec_.submit([this, ids = std::move(manga_ids), read, done = std::move(done)] {
+        for (int64_t id : ids) repo_.set_manga_read(id, read);
+        exec_.post([done] { if (done) done(); });
+    });
+}
+
+void AppData::download_unread(std::vector<int64_t> manga_ids, std::function<void(int)> done)
+{
+    exec_.submit([this, ids = std::move(manga_ids), done = std::move(done)] {
+        std::vector<int64_t> queue;
+        for (int64_t id : ids) {
+            auto have = downloads_of(id);
+            std::vector<data::Chapter> chapters = repo_.chapters(id);
+            for (auto it = chapters.rbegin(); it != chapters.rend(); ++it) {   // source order is newest first
+                auto d = have.find(it->id);
+                bool kept = d != have.end() && d->second.state != data::DownloadState::Error;
+                if (!it->read && !kept) queue.push_back(it->id);
+            }
+        }
+        int n = static_cast<int>(queue.size());
+        if (!queue.empty()) download_chapters(std::move(queue));
+        exec_.post([done, n] { if (done) done(n); });
+    });
+}
+
+void AppData::categories_for(std::vector<int64_t> manga_ids,
+                             std::function<void(std::vector<data::Category>, std::map<int64_t, int>)> done)
+{
+    exec_.submit([this, ids = std::move(manga_ids), done = std::move(done)] {
+        std::map<int64_t, int> in;
+        for (int64_t id : ids)
+            for (int64_t c : repo_.categories_of(id)) ++in[c];
+        auto cats = repo_.categories();
+        exec_.post([done, cats = std::move(cats), in = std::move(in)]() mutable { done(std::move(cats), std::move(in)); });
+    });
+}
+
+void AppData::set_category_for(std::vector<int64_t> manga_ids, int64_t category, bool in, std::function<void()> done)
+{
+    exec_.submit([this, ids = std::move(manga_ids), category, in, done = std::move(done)] {
+        for (int64_t id : ids) repo_.set_in_category(id, category, in);
+        exec_.post([done] { if (done) done(); });
+    });
+}
+
 void AppData::remove_history(int64_t chapter_id, std::function<void()> done)
 {
     exec_.submit([this, chapter_id, done = std::move(done)] {

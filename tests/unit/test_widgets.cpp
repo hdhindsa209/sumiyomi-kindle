@@ -75,10 +75,15 @@ void test_golden_list_rows()
 
 void test_golden_cover_grid()
 {
+    auto spec = [](const char* title, int unread) {
+        CoverSpec c;
+        c.title = title;
+        c.unread = unread;
+        return c;
+    };
     std::vector<CoverSpec> covers = {
-        {"Chainsaw Man", 12, nullptr, nullptr}, {"Frieren: Beyond Journey's End", 3, nullptr, nullptr},
-        {"Dandadan", 0, nullptr, nullptr}, {"Blue Period", 0, nullptr, nullptr},
-        {"The Apothecary Diaries", 1, nullptr, nullptr},
+        spec("Chainsaw Man", 12), spec("Frieren: Beyond Journey's End", 3), spec("Dandadan", 0), spec("Blue Period", 0),
+        spec("The Apothecary Diaries", 1),
     };
     // One tile with an image: a vertical gradient in panel levels.
     int32_t cw = 0, ch = 0;
@@ -215,7 +220,9 @@ void test_cover_grid_geometry()
 {
     GlyphCache cache;
     Text text(*g_fonts, cache);
-    std::vector<CoverSpec> covers(7, CoverSpec{"Title", 0, nullptr, nullptr});
+    CoverSpec title;
+    title.title = "Title";
+    std::vector<CoverSpec> covers(7, title);
     auto grid = cover_grid(covers, 3, kW);
     grid->layout_in(text, *g_fonts, {0, 0, kW, 3000});
     CHECK_EQ(grid->children().size(), 3);                       // 3 + 3 + 1

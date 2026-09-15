@@ -89,7 +89,16 @@ private:
 
     void show_library();
     static constexpr int kLibraryColumns = 3;
-    void present_library(AppData::LibraryScreen lib, std::map<int64_t, image::Gray> thumbs);
+    // Draws lib_ (with the selection, if any). Update keeps the list page.
+    void present_library(ui::Change change);
+    // Library selection (hold a manga): tap toggles, a bottom bar acts on all of them.
+    void set_library_selecting(bool on, int64_t first = 0);
+    void toggle_library_selected(int64_t manga_id);
+    std::unique_ptr<ui::Node> library_app_bar();
+    std::unique_ptr<ui::Node> library_item(size_t index);   // list row, or the cover row holding item `index`
+    std::unique_ptr<ui::Node> library_selection_bar();
+    void show_library_categories_sheet();
+    std::vector<int64_t> library_selection() const { return {lib_selected_.begin(), lib_selected_.end()}; }
     // Category tabs for the Library: "All" + each category, at most kVisibleTabs at once with arrows to the rest.
     static constexpr size_t kVisibleTabs = 4;
     std::unique_ptr<ui::Node> category_tabs(const AppData::LibraryScreen& lib);
@@ -142,6 +151,7 @@ private:
     void watch_battery();
     // The battery status node for the current reading (null without a battery or while unknown).
     std::unique_ptr<ui::Node> battery_node();
+    std::unique_ptr<ui::Node> with_battery(std::unique_ptr<ui::Node> bar);   // app bar + status after its title
 
     std::vector<Route> stack_;
     uint64_t generation_ = 0;
@@ -153,6 +163,10 @@ private:
     bool           waiting_ = false;          // a loading page is (or is about to be) up
     ui::Label*     loading_label_ = nullptr;  // the loading page's text, once it's shown
     int64_t        library_category_ = 0;     // the Library tab last shown (0 = All)
+    AppData::LibraryScreen lib_;              // Library: what's shown
+    std::map<int64_t, std::shared_ptr<const std::vector<uint8_t>>> lib_images_;   // Library: covers by manga id
+    bool           lib_selecting_ = false;
+    std::set<int64_t> lib_selected_;
     std::shared_ptr<std::atomic<bool>> update_cancel_;
     ui::PagedList* list_ = nullptr;
     std::vector<source::SManga> results_;

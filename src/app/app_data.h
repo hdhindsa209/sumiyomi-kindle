@@ -159,6 +159,17 @@ public:
     void save_auto_download(int mode);
     void set_category_auto_download(int64_t category, bool on, std::function<void(bool ok)> done);
 
+    // --- library selection (several manga at once) ---
+    // Leaves the library; `delete_downloads` also removes their downloaded chapters.
+    void remove_from_library(std::vector<int64_t> manga_ids, bool delete_downloads, std::function<void()> done);
+    void mark_manga_read(std::vector<int64_t> manga_ids, bool read, std::function<void()> done);
+    // Queues every unread chapter that isn't downloaded yet (oldest first). Reports how many.
+    void download_unread(std::vector<int64_t> manga_ids, std::function<void(int queued)> done);
+    // All categories, and for each how many of these manga are in it.
+    void categories_for(std::vector<int64_t> manga_ids,
+                        std::function<void(std::vector<data::Category>, std::map<int64_t, int> in_category)> done);
+    void set_category_for(std::vector<int64_t> manga_ids, int64_t category, bool in, std::function<void()> done);
+
     void remove_history(int64_t chapter_id, std::function<void()> done);
     void clear_history(std::function<void()> done);
 

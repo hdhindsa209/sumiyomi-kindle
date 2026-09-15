@@ -25,5 +25,10 @@ S3 device-verified. S4 built on host: library check from the Library (current ta
 per worker job with an in-place "Checking N of M" loading page and Cancel, result shown on Updates; Updates rows tap →
 reader, hold → manga; auto-download (off / all / chosen categories via `categories.flags`) for entries that already
 had chapters; History shows page progress, tap resumes, hold → open manga / remove, clear all with a confirm.
+S4 device-verified. User requests (2026-09-15), built on host: (1) no "Loading page" on turns — a chapter loads
+completely behind one counting loading page (3-connection FetchPool + worker processing), cached pages read on a
+separate page thread; (2) battery level in app bars and the reader menu (powerd lipc, sysfs fallback — to confirm on
+device); (3) Library selection: hold a manga (list or cover) → select more / select all → Categories, Download
+unread, Mark read/unread, Remove (optionally deleting downloads).
 
 Deferred to M6 (design doc): trackers, migration, statistics, backup/restore.

@@ -41,6 +41,8 @@ public:
     std::optional<Chapter> chapter(int64_t chapter_id);
     bool set_read(int64_t chapter_id, bool read);
     bool set_progress(int64_t chapter_id, int last_page_read, int pages_total);
+    // Every chapter of a manga; marking unread also forgets reading positions.
+    bool set_manga_read(int64_t manga_id, bool read);
 
     // Chapters found by library updates, newest first (§8.5 Updates): chapters of favorites fetched
     // after the manga entered the library.
@@ -56,6 +58,7 @@ public:
     bool move_category(int64_t id, int delta);
     std::vector<int64_t> categories_of(int64_t manga_id);
     bool set_categories(int64_t manga_id, const std::vector<int64_t>& category_ids);
+    bool set_in_category(int64_t manga_id, int64_t category_id, bool in);
 
     // --- history ---
     bool record_read(int64_t chapter_id, int64_t now_ms, int64_t time_read_ms);

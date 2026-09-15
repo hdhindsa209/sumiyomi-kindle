@@ -232,25 +232,49 @@ private:
 
 class CoverCell : public Node {
 public:
-    CoverCell(const CoverSpec& spec, int32_t cover_w, int32_t cover_h) : unread_(spec.unread)
+    CoverCell(const CoverSpec& spec, int32_t cover_w, int32_t cover_h) : unread_(spec.selecting ? 0 : spec.unread), selected_(spec.selected)
     {
         layout = Layout::Column;
         width = Dim::px(cover_w);
         height = Dim::wrap();
         on_tap = spec.on_tap;
+        on_long_press = spec.on_long_press;
         refresh = Wave::GL16;
 
         auto cover = std::make_unique<CoverImage>(spec.image, cover_w, cover_h);
         cover->width = Dim::fill();
         cover->height = Dim::px(cover_h);
+        cover->layout = Layout::Stack;
+        cover->align_main = Align::Start;
+        cover->align_cross = Align::Start;
         if (!spec.image) {
             // No cover: initials in an outlined box.
-            cover->layout = Layout::Stack;
-            cover->align_main = Align::Center;
-            cover->align_cross = Align::Center;
             cover->border = Insets::all(tone::RULE);
             cover->border_gray = tone::BLACK;
-            cover->emplace<Label>(initials(spec.title), TypeRole{40, 48}, FontId::InterSemiBold, tone::BLACK);
+            auto center = container(Layout::Stack);
+            center->width = Dim::fill();
+            center->height = Dim::fill();
+            center->align_main = Align::Center;
+            center->align_cross = Align::Center;
+            center->emplace<Label>(initials(spec.title), TypeRole{40, 48}, FontId::InterSemiBold, tone::BLACK);
+            cover->add(std::move(center));
+        }
+        if (spec.selecting) {
+            // Check box in the top-left corner, on a white square so it reads on any cover.
+            auto box = container(Layout::Stack);
+            box->width = Dim::px(72);
+            box->height = Dim::px(72);
+            box->padding = Insets::all(12);
+            auto mark = container(Layout::Stack);
+            mark->width = Dim::fill();
+            mark->height = Dim::fill();
+            mark->opaque = true;
+            mark->background = tone::WHITE;
+            mark->align_main = Align::Center;
+            mark->align_cross = Align::Center;
+            mark->emplace<Icon>(spec.selected ? icon::check_box : icon::check_box_outline_blank, 26, tone::BLACK, spec.selected);
+            box->add(std::move(mark));
+            cover->add(std::move(box));
         }
         add(std::move(cover));
 
@@ -266,6 +290,8 @@ protected:
     // Unread badge over the cover's top-right corner (§8.2), drawn after the cover.
     void paint_overlay(PaintCtx& ctx) override
     {
+        if (selected_ && !children().empty())
+            ctx.canvas.stroke_rect(children()[0]->frame().clipped(ctx.clip), tone::BLACK, 10);
         if (unread_ <= 0) return;
         TextStyle s{FontId::InterSemiBold, ctx.fonts.sp(type::CHIP.size_sp), tone::SURFACE};
         std::string n = std::to_string(unread_);
@@ -282,7 +308,8 @@ protected:
     }
 
 private:
-    int unread_;
+    int  unread_;
+    bool selected_;
 };
 
 } // namespace

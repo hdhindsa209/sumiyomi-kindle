@@ -201,6 +201,12 @@ bool Repo::set_progress(int64_t chapter_id, int last_page_read, int pages_total)
         && db_.changes() == 1;
 }
 
+bool Repo::set_manga_read(int64_t manga_id, bool read)
+{
+    return read ? db_.prepare("UPDATE chapters SET read = 1 WHERE manga_id = ?1").bind(1, manga_id).run()
+                : db_.prepare("UPDATE chapters SET read = 0, last_page_read = 0 WHERE manga_id = ?1").bind(1, manga_id).run();
+}
+
 std::vector<UpdateItem> Repo::updates(int limit)
 {
     Stmt s = db_.prepare(R"(SELECT c.id, m.id, m.title, c.name, c.read, c.date_fetch
@@ -271,6 +277,14 @@ bool Repo::move_category(int64_t id, int delta)
         if (!set.bind(1, all[k].id).bind(2, static_cast<int64_t>(k)).run()) return false;
     }
     return tx.commit();
+}
+
+bool Repo::set_in_category(int64_t manga_id, int64_t category_id, bool in)
+{
+    return in ? db_.prepare("INSERT OR IGNORE INTO manga_categories (manga_id, category_id) VALUES (?1, ?2)")
+                    .bind(1, manga_id).bind(2, category_id).run()
+              : db_.prepare("DELETE FROM manga_categories WHERE manga_id = ?1 AND category_id = ?2")
+                    .bind(1, manga_id).bind(2, category_id).run();
 }
 
 std::vector<int64_t> Repo::categories_of(int64_t manga_id)

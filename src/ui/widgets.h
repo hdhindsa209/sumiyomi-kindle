@@ -64,6 +64,9 @@ struct CoverSpec {
     std::function<void()> on_tap;
     // Cover image: 8-bit gray, exactly cover_w × cover_h (already processed for the panel). Empty = initials.
     std::shared_ptr<const std::vector<uint8_t>> image;
+    std::function<void()> on_long_press;
+    bool selecting = false;   // selection mode: a check box in the cover's corner
+    bool selected = false;    // ticked, with a heavy black frame around the cover
 };
 
 // Size of one cover image in a `columns`-wide grid of `width` px (images must be exactly this size).
