@@ -162,7 +162,7 @@ target_link_libraries(sumi_text PUBLIC sumi_core harfbuzz)
 
 # UI: tone scale, node tree + layout, screen host (M2 S4).
 # Image pipeline (M4): decode, process, cache.
-add_library(sumi_image STATIC src/image/decode.cpp src/image/process.cpp)
+add_library(sumi_image STATIC src/image/decode.cpp src/image/process.cpp src/image/page_cache.cpp)
 target_link_libraries(sumi_image PUBLIC sumi_core PRIVATE jpeg_static png_static)
 
 add_executable(page_bench tools/image/page_bench.cpp)
@@ -234,6 +234,10 @@ if(NOT CMAKE_CROSSCOMPILING)
   add_executable(test_image_process tests/unit/test_image_process.cpp)
   target_link_libraries(test_image_process PRIVATE sumi_image)
   add_test(NAME image_process COMMAND test_image_process)
+
+  add_executable(test_page_cache tests/unit/test_page_cache.cpp)
+  target_link_libraries(test_page_cache PRIVATE sumi_image)
+  add_test(NAME page_cache COMMAND test_page_cache)
 
   add_executable(test_widgets tests/unit/test_widgets.cpp)
   target_compile_definitions(test_widgets PRIVATE SUMI_ASSETS_DIR="${SUMI_ASSETS_DIR}"
