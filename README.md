@@ -2,7 +2,7 @@
 
 A native manga reader for jailbroken Kindle e-ink devices, modeled on Mihon's UI/UX and rendered
 directly to the framebuffer via [FBInk](https://github.com/NiLuJe/FBInk). Not affiliated with Mihon
-or Amazon. Status: **M1 skeleton and M2 render engine done; M3 (data + MangaDex) in device testing.**
+or Amazon. Status: **M1 skeleton and M2 render engine done; M3 (data + WeebCentral) in device testing.**
 
 - Design: `sumiyomi-design-doc (1).md` · M1 spec: `sumiyomi-M1-implementation-spec.md`
 - Target device facts: `docs/DEVICE_FACTS.md` · Measurements and decisions: `docs/M1-notes.md`
@@ -40,7 +40,7 @@ USBNet must be up; the Kindle is `192.168.15.244` (override with `KINDLE_HOST`).
 ./tools/deploy.sh                     # package + copy to /mnt/us/extensions/sumiyomi
 ```
 
-Then on the Kindle (with Wi-Fi on): **KUAL → Sumiyomi → Start Sumiyomi**. Browse → MangaDex to find manga,
+Then on the Kindle (with Wi-Fi on): **KUAL → Sumiyomi → Start Sumiyomi**. Browse → WeebCentral to find manga,
 add them to the library; exit with **More → Exit Sumiyomi**. Library data: `/mnt/us/sumiyomi/sumiyomi.db`,
 logs: `/mnt/us/sumiyomi/logs/`. The M1 latency test card is still built as `build/kindle/bin/m1_testcard`.
 
@@ -49,8 +49,8 @@ logs: `/mnt/us/sumiyomi/logs/`. The M1 latency test card is still built as `buil
 Sources live in `sources/<id>/{manifest.json,source.lua}` (Lua 5.4, sandboxed; API in design doc §6.3).
 
 ```sh
-./build/host/ext_runner sources/mangadex --live --search "frieren"        # run a source against the real site
-./build/host/ext_runner sources/mangadex --record tests/fixtures/x ...    # capture fixtures for tests
+./build/host/ext_runner sources/weebcentral --live --search "frieren"        # run a source against the real site
+./build/host/ext_runner sources/weebcentral --record tests/fixtures/x ...    # capture fixtures for tests
 ```
 
 ## Device checks

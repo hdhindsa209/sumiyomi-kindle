@@ -1,12 +1,12 @@
 {
-  "id": "mangadex",
-  "name": "MangaDex",
+  "id": "weebcentral",
+  "name": "WeebCentral",
   "lang": "en",
   "version": "1.0.0",
   "api_level": 1,
-  "base_url": "https://mangadex.org",
+  "base_url": "https://weebcentral.com",
   "nsfw": false,
-  "rate_limit": { "requests": 5, "per_seconds": 1 },
+  "rate_limit": { "requests": 1, "per_seconds": 2 },
   "auth": "none",
   "capabilities": ["popular", "latest", "search"]
 }

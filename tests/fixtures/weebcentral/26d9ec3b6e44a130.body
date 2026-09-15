@@ -1,0 +1,84 @@
+
+<article class="bg-base-300 flex gap-4 p-4">
+    <section class="w-full lg:w-[25%] xl:w-[20%]">
+        <a href="https://weebcentral.com/series/01KTEH8Z2TJ9NQ2NDZ75EM36SS/neechan-no-tomodachi-ga-uzai-hanashi">
+            <article class="hidden lg:block w-full aspect-4/6  overflow-hidden">
+                <picture>
+                    <source srcset="https://temp.compsci88.com/cover/normal/01KTEH8Z2TJ9NQ2NDZ75EM36SS.webp" width="400" height="600" media="(min-width: 768px)" type="image/webp">
+                    <source srcset="https://temp.compsci88.com/cover/small/01KTEH8Z2TJ9NQ2NDZ75EM36SS.webp" width="200" height="300" type="image/webp">
+                    <img src="https://temp.compsci88.com/cover/fallback/01KTEH8Z2TJ9NQ2NDZ75EM36SS.jpg" alt="Nee-chan no Tomodachi ga Uzai Hanashi cover" width="400" height="600" decoding="async">
+                </picture>
+            </article>
+            <article class="lg:hidden relative overflow-hidden">
+                
+                <div>
+                    <div class="w-full aspect-4/6 overflow-hidden">
+                        <picture>
+                            <source srcset="https://temp.compsci88.com/cover/normal/01KTEH8Z2TJ9NQ2NDZ75EM36SS.webp" width="400" height="600" media="(min-width: 768px)" type="image/webp">
+                            <source srcset="https://temp.compsci88.com/cover/small/01KTEH8Z2TJ9NQ2NDZ75EM36SS.webp" width="200" height="300" type="image/webp">
+                            <img src="https://temp.compsci88.com/cover/fallback/01KTEH8Z2TJ9NQ2NDZ75EM36SS.jpg" alt="Nee-chan no Tomodachi ga Uzai Hanashi cover" width="400" height="600" decoding="async">
+                        </picture>
+                    </div>
+                    <div class="w-full h-16 absolute bottom-0 flex flex-col items-center justify-center bg-linear-to-r from-black to-slate-900 hover:from-slate-900 hover:to-black opacity-90">
+                        <div class="text-ellipsis truncate text-white text-center text-lg z-20 w-[90%]">Nee-chan no Tomodachi ga Uzai Hanashi</div>
+                    </div>
+                    
+                    <div class="absolute left-2 bottom-[4.5rem]">
+                        <span class="tooltip tooltip-top" data-tip="Manga">
+                            <svg class="w-8 h-8" version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 512 512" xml:space="preserve" fill="#000000">
+                                <g id="SVGRepo_bgCarrier" stroke-width="0"></g>
+                                <g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"></g>
+                                <g id="SVGRepo_iconCarrier">
+                                    <circle style="fill:#F0F0F0;" cx="256" cy="256" r="256"></circle>
+                                    <circle style="fill:#D80027;" cx="256" cy="256" r="111.304"></circle>
+                                </g>
+                            </svg>
+                        </span>
+                    </div>
+                    
+                </div>
+            </article>
+        </a>
+    </section>
+    <section class="hidden lg:block lg:w-[75%] xl:w-[80%]">
+        <div class="text-lg font-semibold flex items-center gap-1">
+            
+            
+            
+            <span class="tooltip tooltip-bottom" data-tip="Nee-chan no Tomodachi ga Uzai Hanashi">
+                <a href="https://weebcentral.com/series/01KTEH8Z2TJ9NQ2NDZ75EM36SS/neechan-no-tomodachi-ga-uzai-hanashi" class="line-clamp-1 link link-hover">Nee-chan no Tomodachi ga Uzai Hanashi</a>
+            </span>
+        </div>
+        <div class="opacity-70">
+            <strong>Year:</strong>
+            <span>2021</span>
+        </div>
+        <div class="opacity-70">
+            <strong>Status:</strong>
+            <span>Ongoing</span>
+        </div>
+        <div class="opacity-70">
+            <strong>Type:</strong>
+            <span>Manga</span>
+        </div>
+        <div>
+            <strong class="opacity-70">Author(s): </strong>
+            
+            <span><a href="https://weebcentral.com/search?author=AZUSA+Kina" class="link link-info link-hover">AZUSA Kina</a></span>
+            
+        </div>
+        <div class="opacity-70">
+            <strong>Tag(s): </strong>
+            
+            <span>Comedy,</span>
+            
+            <span>Romance,</span>
+            
+            <span>Shoujo,</span>
+            
+            <span>Slice of Life</span>
+            
+        </div>
+    </section>
+</article>
+

@@ -1,4 +1,4 @@
-// M3 S6: the shell on real data — MangaDex source (recorded fixtures), in-memory SQLite, inline
+// M3 S6: the shell on real data — WeebCentral source (recorded fixtures), in-memory SQLite, inline
 // executor (async results arrive synchronously). Navigation, search via the on-screen keyboard,
 // detail, library persistence, updates, error states; goldens lock the screens in.
 #include "app/shell.h"
@@ -34,7 +34,7 @@ struct Env {
     FrameScheduler frames;
     Screen         screen;
 
-    fixtures::ReplayTransport transport{SUMI_SOURCE_DIR "/tests/fixtures/mangadex"};
+    fixtures::ReplayTransport transport{SUMI_SOURCE_DIR "/tests/fixtures/weebcentral"};
     net::Client    client{transport, no_wait()};
     InlineExecutor exec;
     data::Db       db;
@@ -51,10 +51,10 @@ struct Env {
         std::string err;
         CHECK(db.open(":memory:", err));
         std::vector<std::unique_ptr<source::Extension>> exts;
-        if (auto ext = source::Extension::load(SUMI_SOURCE_DIR "/sources/mangadex", &client, err)) exts.push_back(std::move(ext));
+        if (auto ext = source::Extension::load(SUMI_SOURCE_DIR "/sources/weebcentral", &client, err)) exts.push_back(std::move(ext));
         data = std::make_unique<app::AppData>(exec, db, std::move(exts));
         // Fixed "now" (2026-09-14 13:00 UTC) so relative dates in goldens never drift.
-        shell = std::make_unique<app::Shell>(screen, *data, kW, [this] { exited = true; },
+        shell = std::make_unique<app::Shell>(screen, *data, [this] { exited = true; },
                                              [] { return int64_t{1789344000000LL + 13 * 3600000LL}; });
         shell->start();
         screen.frame();
@@ -108,10 +108,10 @@ struct Env {
     }
 };
 
-void open_mangadex(Env& env)
+void open_source(Env& env)
 {
     env.tap(env.nav_cell(3));   // Browse
-    env.tap(env.find("MangaDex"));
+    env.tap(env.find("WeebCentral"));
 }
 
 void test_library_starts_empty()
@@ -120,15 +120,15 @@ void test_library_starts_empty()
     CHECK(env.shows("Your library is empty.\nAdd manga from a source in Browse."));
     CHECK(env.golden("library_empty"));
     env.tap(env.find("Browse sources"));
-    CHECK(env.shows("MangaDex"));
+    CHECK(env.shows("WeebCentral"));
 }
 
-void test_browse_source_popular_grid_and_load_more_error()
+void test_browse_source_popular_list_and_load_more_error()
 {
     Env env;
-    open_mangadex(env);
+    open_source(env);
     CHECK(env.shows("Popular") && env.shows("Latest"));
-    CHECK(env.shows("Chainsaw Man"));                             // from the recorded popular list
+    CHECK(env.shows("One Piece"));                             // from the recorded popular list
     CHECK(env.golden("source_popular"));
 
     // Page to the end: "Load more". Page 2 isn't recorded, so the load fails with a retry.
@@ -137,7 +137,7 @@ void test_browse_source_popular_grid_and_load_more_error()
     env.tap(env.find("Load more"));
     CHECK(env.shows("Couldn't load more \xC2\xB7 Retry"));
     for (int i = 0; i < 10; ++i) env.key(Key::PagePrev);
-    CHECK(env.shows("Chainsaw Man"));                             // the loaded results are kept
+    CHECK(env.shows("One Piece"));                             // the loaded results are kept
     CHECK(env.shell->on_back());
     CHECK(env.shows("Sources"));
 }
@@ -145,7 +145,7 @@ void test_browse_source_popular_grid_and_load_more_error()
 void test_search_with_keyboard_detail_and_library_state()
 {
     Env env;
-    open_mangadex(env);
+    open_source(env);
     env.tap(env.root()->children()[0]->children().back().get()); // app bar: search action
     CHECK(env.shows("Type a title, then tap search."));
     for (char c : std::string("nee chan no tomodachi")) env.tap(env.find(c == ' ' ? "space" : std::string(1, c)));
@@ -159,19 +159,19 @@ void test_search_with_keyboard_detail_and_library_state()
     CHECK(env.shows(kTitle));
 
     env.tap(env.find(kTitle));
-    CHECK(env.shows("Azusa Kina"));
-    CHECK(env.shows("29 chapters"));
-    CHECK(env.shows("Ch.25"));
+    CHECK(env.shows("AZUSA Kina"));
+    CHECK(env.shows("28 chapters"));
+    CHECK(env.shows("Chapter 25"));
     CHECK(env.shows("Add to library"));
     CHECK(env.golden("detail"));
 
     env.tap(env.find("Add to library"));
     CHECK(env.shows("In library"));
-    env.tap(env.find("Ch.25"));                                   // mark read
+    env.tap(env.find("Chapter 25"));                                   // mark read
     data::Repo repo(env.db);
     auto lib = repo.library();
     CHECK_EQ(lib.size(), 1);
-    if (!lib.empty()) CHECK_EQ(lib[0].unread, 28);
+    if (!lib.empty()) CHECK_EQ(lib[0].unread, 27);
 
     CHECK(env.shell->on_back());                                  // detail -> search results
     CHECK(env.shows(kTitle));
@@ -180,7 +180,7 @@ void test_search_with_keyboard_detail_and_library_state()
 void test_library_shows_saved_manga_and_reopens_detail()
 {
     Env env;
-    source::SManga seed{"/manga/d2d22b38-4b3f-4ffb-9387-d18f870d5a91", kTitle, "", "", "", "", {}, 0};
+    source::SManga seed{"/series/01KTEH8Z2TJ9NQ2NDZ75EM36SS/neechan-no-tomodachi-ga-uzai-hanashi", kTitle, "", "", "", "", {}, 0};
     int64_t id = 0;
     env.data->open_manga(env.data->sources()[0].id, seed, [&](app::MangaView v, bool, std::string) { id = v.manga.id; });
     env.data->set_favorite(id, true, [](bool) {});
@@ -223,7 +223,7 @@ int main()
     }
     g_fonts = &fonts;
     RUN(test_library_starts_empty);
-    RUN(test_browse_source_popular_grid_and_load_more_error);
+    RUN(test_browse_source_popular_list_and_load_more_error);
     RUN(test_search_with_keyboard_detail_and_library_state);
     RUN(test_library_shows_saved_manga_and_reopens_detail);
     RUN(test_updates_refresh_reports);

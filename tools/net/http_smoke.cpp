@@ -9,7 +9,7 @@
 
 int main(int argc, char** argv)
 {
-    std::string url = argc > 1 ? argv[1] : "https://api.mangadex.org/ping";
+    std::string url = argc > 1 ? argv[1] : "https://weebcentral.com/";
     std::string ca  = argc > 2 ? argv[2] : SUMI_ASSETS_DIR "/certs/cacert.pem";
     std::string err;
     auto transport = sumi::net::make_curl_transport({ca, "", "Sumiyomi/0.3 (+https://github.com/)"}, err);

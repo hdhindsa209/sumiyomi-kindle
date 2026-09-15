@@ -1,4 +1,4 @@
-// AppData over the real MangaDex source, recorded fixtures, an in-memory DB, and an inline executor.
+// AppData over the real WeebCentral source, recorded fixtures, an in-memory DB, and an inline executor.
 #include "app/app_data.h"
 #include "app/format.h"
 
@@ -12,7 +12,7 @@ using namespace sumi::app;
 
 namespace {
 
-constexpr const char* kSeedUrl = "/manga/d2d22b38-4b3f-4ffb-9387-d18f870d5a91";
+constexpr const char* kSeedUrl = "/series/01KTEH8Z2TJ9NQ2NDZ75EM36SS/neechan-no-tomodachi-ga-uzai-hanashi";
 
 net::Client::Clock no_wait()
 {
@@ -20,7 +20,7 @@ net::Client::Clock no_wait()
 }
 
 struct Env {
-    fixtures::ReplayTransport transport{SUMI_SOURCE_DIR "/tests/fixtures/mangadex"};
+    fixtures::ReplayTransport transport{SUMI_SOURCE_DIR "/tests/fixtures/weebcentral"};
     net::Client client{transport, no_wait()};
     InlineExecutor exec;
     data::Db db;
@@ -32,7 +32,7 @@ struct Env {
         std::string err;
         CHECK(db.open(":memory:", err));
         std::vector<std::unique_ptr<source::Extension>> exts;
-        auto ext = source::Extension::load(SUMI_SOURCE_DIR "/sources/mangadex", &client, err);
+        auto ext = source::Extension::load(SUMI_SOURCE_DIR "/sources/weebcentral", &client, err);
         CHECK(ext != nullptr);
         if (ext) exts.push_back(std::move(ext));
         app = std::make_unique<AppData>(exec, db, std::move(exts));
@@ -45,7 +45,7 @@ void test_sources_registered()
     Env env;
     CHECK_EQ(env.app->sources().size(), 1);
     const SourceInfo* s = env.app->source_info(env.dex);
-    CHECK(s && s->name == "MangaDex" && s->has_latest && s->has_search);
+    CHECK(s && s->name == "WeebCentral" && s->has_latest && s->has_search);
     data::Repo repo(env.db);
     CHECK(repo.source(env.dex).has_value());                   // persisted for foreign keys
 }
@@ -57,10 +57,10 @@ void test_browse_popular_and_search()
     std::string err = "unset";
     env.app->browse(env.dex, Browse::Popular, 1, "", [&](BrowseResult r, std::string e) { got = std::move(r); err = e; });
     CHECK(err.empty());
-    CHECK_EQ(got.mangas.size(), 20);
+    CHECK_EQ(got.mangas.size(), 32);
     CHECK(got.has_next);
 
-    env.app->browse(env.dex, Browse::Search, 1, "Nee-chan no Tomodachi ga Uzai Hanashi",
+    env.app->browse(env.dex, Browse::Search, 1, "nee chan no tomodachi",
                     [&](BrowseResult r, std::string e) { got = std::move(r); err = e; });
     CHECK(err.empty());
     CHECK(!got.mangas.empty() && got.mangas[0].url == kSeedUrl);
@@ -89,11 +89,11 @@ void test_open_manga_persists_then_serves_local_first()
     const MangaView& v = updates[0].first;
     CHECK(updates[0].second);
     CHECK(v.manga.id > 0);
-    CHECK(v.manga.author == "Azusa Kina");
+    CHECK(v.manga.author == "AZUSA Kina");
     CHECK(v.manga.status == data::MangaStatus::Ongoing);
     CHECK(v.manga.genre.find('\n') != std::string::npos);        // genres joined with newlines
-    CHECK_EQ(v.chapters.size(), 29);
-    CHECK(v.chapters[0].name == "Ch.25");
+    CHECK_EQ(v.chapters.size(), 28);
+    CHECK(v.chapters[0].name == "Chapter 25");
     int64_t id = v.manga.id;
 
     // Second open: the stored copy arrives first, then the refresh.
@@ -101,7 +101,7 @@ void test_open_manga_persists_then_serves_local_first()
     env.app->open_manga(env.dex, seed, [&](MangaView view, bool refreshed, std::string) { updates.emplace_back(std::move(view), refreshed); });
     CHECK_EQ(updates.size(), 2);
     if (updates.size() == 2) {
-        CHECK(!updates[0].second && updates[0].first.manga.id == id && updates[0].first.chapters.size() == 29);
+        CHECK(!updates[0].second && updates[0].first.manga.id == id && updates[0].first.chapters.size() == 28);
         CHECK(updates[1].second && updates[1].first.manga.id == id);
     }
 
@@ -128,8 +128,8 @@ void test_favorite_read_and_library()
     env.app->library([&](auto items) { lib = std::move(items); });
     CHECK_EQ(lib.size(), 1);
     if (!lib.empty()) {
-        CHECK_EQ(lib[0].total, 29);
-        CHECK_EQ(lib[0].unread, 28);
+        CHECK_EQ(lib[0].total, 28);
+        CHECK_EQ(lib[0].unread, 27);
     }
 
     // A library update re-syncs from the source: nothing new, read state kept.
@@ -138,7 +138,7 @@ void test_favorite_read_and_library()
     CHECK_EQ(added, 0);
     CHECK_EQ(failed, 0);
     env.app->library([&](auto items) { lib = std::move(items); });
-    CHECK(!lib.empty() && lib[0].unread == 28);
+    CHECK(!lib.empty() && lib[0].unread == 27);
     std::vector<data::UpdateItem> ups;
     env.app->updates([&](auto items) { ups = std::move(items); });
     CHECK(ups.empty());                                            // all chapters predate adding to the library

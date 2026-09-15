@@ -21,7 +21,7 @@ namespace sumi::app {
 class Shell {
 public:
     // `now_ms`: wall clock for relative dates (injectable so tests render deterministic dates).
-    Shell(ui::Screen& screen, AppData& data, int32_t width, std::function<void()> on_exit,
+    Shell(ui::Screen& screen, AppData& data, std::function<void()> on_exit,
           std::function<int64_t()> now_ms = nullptr);
 
     void start();
@@ -65,7 +65,6 @@ private:
 
     ui::Screen& screen_;
     AppData&    data_;
-    int32_t     width_;
     std::function<void()> on_exit_;
     std::function<int64_t()> now_ms_;
 

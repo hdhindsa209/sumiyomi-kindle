@@ -140,7 +140,7 @@ int main(int argc, char** argv)
         return 1;
     }
     sumi::app::AppData app_data(worker, db, load_extensions(env_or("SUMI_SOURCES", SUMI_SOURCES_DIR), http));
-    sumi::app::Shell shell(screen, app_data, di.width, [&loop] { loop.stop(); });
+    sumi::app::Shell shell(screen, app_data, [&loop] { loop.stop(); });
 
     uint64_t t_start = sumi::mono_ms();
     shell.start();

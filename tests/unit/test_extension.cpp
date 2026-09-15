@@ -1,5 +1,5 @@
-// Extension runner tests (design doc §11.3): the real MangaDex source against recorded API
-// responses (tests/fixtures/mangadex, captured with tools/ext/ext_runner --record). No network.
+// Extension runner tests (design doc §11.3): the real WeebCentral source against recorded HTML
+// responses (tests/fixtures/weebcentral, captured with tools/ext/ext_runner --record). No network.
 #include "fixture_transport.h"
 #include "source/extension.h"
 
@@ -15,8 +15,8 @@ using namespace sumi::source;
 
 namespace {
 
-const std::string kSource   = SUMI_SOURCE_DIR "/sources/mangadex";
-const std::string kFixtures = SUMI_SOURCE_DIR "/tests/fixtures/mangadex";
+const std::string kSource   = SUMI_SOURCE_DIR "/sources/weebcentral";
+const std::string kFixtures = SUMI_SOURCE_DIR "/tests/fixtures/weebcentral";
 
 net::Client::Clock no_wait()
 {
@@ -58,11 +58,11 @@ void test_manifest_and_stable_id()
     CHECK(env.ext != nullptr);
     if (!env.ext) { std::fprintf(stderr, "%s\n", env.err.c_str()); return; }
     const Manifest& m = env.ext->manifest();
-    CHECK(m.id == "mangadex" && m.name == "MangaDex" && m.lang == "en" && m.api_level == 1 && !m.nsfw);
-    CHECK_EQ(m.rate_requests, 5);
-    CHECK_EQ(m.rate_per_ms, 1000);
-    CHECK_EQ(env.ext->id(), 1280265887656964444LL);             // never changes: library rows depend on it
-    CHECK(env.transport.size() == 7);
+    CHECK(m.id == "weebcentral" && m.name == "WeebCentral" && m.lang == "en" && m.api_level == 1 && !m.nsfw);
+    CHECK_EQ(m.rate_requests, 1);
+    CHECK_EQ(m.rate_per_ms, 2000);
+    CHECK_EQ(env.ext->id(), 3912729834847906329LL);             // never changes: library rows depend on it
+    CHECK(env.transport.size() == 6);
 }
 
 void test_popular_and_latest()
@@ -71,15 +71,14 @@ void test_popular_and_latest()
     if (!env.ext) return;
     SMangaPage page;
     CHECK(env.ext->popular(1, page, env.err));
-    CHECK_EQ(page.mangas.size(), 20);
+    CHECK_EQ(page.mangas.size(), 32);
     CHECK(page.has_next_page);
     for (const SManga& m : page.mangas) {
-        CHECK(starts_with(m.url, "/manga/"));
+        CHECK(starts_with(m.url, "/series/"));
         CHECK(!m.title.empty());
-        CHECK(starts_with(m.thumbnail_url, "https://uploads.mangadex.org/covers/"));
     }
     CHECK(env.ext->latest(1, page, env.err));
-    CHECK_EQ(page.mangas.size(), 20);
+    CHECK_EQ(page.mangas.size(), 32);
     CHECK_EQ(env.transport.misses, 0);
 }
 
@@ -88,39 +87,37 @@ void test_search_details_chapters_pages()
     Env env;
     if (!env.ext) return;
     SMangaPage found;
-    CHECK(env.ext->search(1, "Nee-chan no Tomodachi ga Uzai Hanashi", found, env.err));
+    CHECK(env.ext->search(1, "nee chan no tomodachi", found, env.err));
     CHECK(!found.mangas.empty());
     if (found.mangas.empty()) return;
     const SManga& hit = found.mangas[0];
     CHECK(hit.title == "Nee-chan no Tomodachi ga Uzai Hanashi");
-    CHECK(hit.url == "/manga/d2d22b38-4b3f-4ffb-9387-d18f870d5a91");
+    CHECK(hit.url == "/series/01KTEH8Z2TJ9NQ2NDZ75EM36SS/neechan-no-tomodachi-ga-uzai-hanashi");
 
     SManga d;
     CHECK(env.ext->details(hit, d, env.err));
-    CHECK(d.author == "Azusa Kina" && d.artist == "Azusa Kina");
+    CHECK(d.author == "AZUSA Kina" && d.artist.empty());
     CHECK_EQ(d.status, 1);                                        // ongoing
-    CHECK_EQ(d.genres.size(), 3);
-    CHECK(starts_with(d.description, "High school freshman"));
+    CHECK_EQ(d.genres.size(), 5);
+    CHECK(starts_with(d.description, "A high school boy"));
 
     std::vector<SChapter> chapters;
     CHECK(env.ext->chapters(hit, chapters, env.err));
-    CHECK_EQ(chapters.size(), 29);
+    CHECK_EQ(chapters.size(), 28);
     if (chapters.empty()) return;
-    CHECK(chapters[0].name == "Ch.25");
+    CHECK(chapters[0].name == "Chapter 25");
     CHECK(chapters[0].chapter_number == 25.0);
-    CHECK(chapters[0].url == "/chapter/8d61a5b0-51e8-484e-b545-0ee753ceb498");
-    CHECK(chapters[0].scanlator == "Luminare Translations");
-    CHECK_EQ(chapters[0].date_upload, 1788535105000LL);
-    bool half = false;
-    for (const SChapter& c : chapters) half = half || (c.name == "Vol.4 Ch.21.5" && c.chapter_number == 21.5);
-    CHECK(half);
+    CHECK(chapters[0].url == "/chapters/01M1PHAMYVD6FVKZAQM99VZS0X");
+    CHECK(chapters[0].scanlator.empty());
+    CHECK_EQ(chapters[0].date_upload, 1788536509403LL);
+    CHECK(chapters.back().name == "Chapter 1" && chapters.back().chapter_number == 1.0);
 
     std::vector<SPage> pages;
     CHECK(env.ext->pages(chapters[0], pages, env.err));
     CHECK_EQ(pages.size(), 33);
     if (!pages.empty()) {
         CHECK_EQ(pages[0].index, 1);
-        CHECK(contains(pages[0].url, "/data/c1f73bc4080f3735d2533ec3e0ce6216/"));
+        CHECK(pages[0].url == "https://scans.lastation.us/manga/neechan-no-tomodachi-ga-uzai-hanashi/0025-001.png");
         CHECK_EQ(pages.back().index, 33);
     }
     CHECK_EQ(env.transport.misses, 0);
@@ -133,7 +130,7 @@ void test_network_failure_is_reported()
     SMangaPage page;
     CHECK(!env.ext->popular(7, page, env.err));                   // page 7 was never recorded
     CHECK(contains(env.err, "no fixture"));
-    CHECK(contains(env.err, "offset=120"));
+    CHECK(contains(env.err, "offset=192"));
     CHECK(env.ext->popular(1, page, env.err));                    // VM still fine afterwards
 }
 
@@ -144,10 +141,10 @@ void test_bad_urls_raise_clean_errors()
     SManga bogus;
     bogus.url = "/not-a-manga";
     bogus.title = "x";
-    SManga out;
-    CHECK(!env.ext->details(bogus, out, env.err));
-    CHECK(contains(env.err, "not a MangaDex manga url"));
-    CHECK(contains(env.err, "mangadex/source.lua:"));             // points at the extension line
+    std::vector<SChapter> out;
+    CHECK(!env.ext->chapters(bogus, out, env.err));
+    CHECK(contains(env.err, "not a WeebCentral series url"));
+    CHECK(contains(env.err, "weebcentral/source.lua:"));             // points at the extension line
 }
 
 void test_manifest_validation()

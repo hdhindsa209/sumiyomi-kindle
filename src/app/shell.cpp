@@ -71,8 +71,8 @@ std::unique_ptr<Node> action_button(char32_t icon, const std::string& label, boo
 
 } // namespace
 
-Shell::Shell(Screen& screen, AppData& data, int32_t width, std::function<void()> on_exit, std::function<int64_t()> now_ms)
-    : screen_(screen), data_(data), width_(width), on_exit_(std::move(on_exit)),
+Shell::Shell(Screen& screen, AppData& data, std::function<void()> on_exit, std::function<int64_t()> now_ms)
+    : screen_(screen), data_(data), on_exit_(std::move(on_exit)),
       now_ms_(now_ms ? std::move(now_ms) : std::function<int64_t()>(wall_ms))
 {
 }
@@ -158,7 +158,6 @@ void Shell::show_library()
 {
     uint64_t gen = begin();
     auto list = std::make_unique<PagedList>();
-    list->refresh = Wave::GL16;
     list_ = list.get();
     list->add(message(std::string("Loading library") + kEllipsis));
     screen_.set_root(scaffold(app_bar("Library", nullptr, {{icon::refresh, [this] { go({Route::TabRoot, kUpdates}); }}}),
@@ -171,16 +170,16 @@ void Shell::show_library()
             nodes.push_back(message("Your library is empty.\nAdd manga from a source in Browse.", "Browse sources",
                                     [this] { go({Route::TabRoot, kBrowse}); }));
         } else {
-            std::vector<CoverSpec> covers;
             for (const data::LibraryItem& it : items) {
                 int64_t id = it.manga.id;
-                covers.push_back({it.manga.title, it.unread, [this, id] {
-                                      Route r{Route::Detail};
-                                      r.manga_id = id;
-                                      go(r);
-                                  }});
+                std::string sub = it.unread > 0 ? std::to_string(it.unread) + " unread" : "Up to date";
+                sub += kDot + std::to_string(it.total) + " chapters";
+                nodes.push_back(list_row({it.manga.title, sub, it.unread > 0, false, icon::chevron_right, [this, id] {
+                                              Route r{Route::Detail};
+                                              r.manga_id = id;
+                                              go(r);
+                                          }}));
             }
-            nodes = cover_rows(covers, 3, width_);
         }
         set_body_items(std::move(nodes));
     });
@@ -331,7 +330,6 @@ void Shell::show_source(int64_t source, Browse mode)
         }));
     }
     auto list = std::make_unique<PagedList>();
-    list->refresh = Wave::GL16;
     list_ = list.get();
     list->add(message("Loading " + name + kEllipsis));
     body->add(std::move(list));
@@ -358,16 +356,15 @@ void Shell::load_source_page(uint64_t gen, int64_t source, Browse mode, const st
         results_.insert(results_.end(), r.mangas.begin(), r.mangas.end());
         if (err.empty()) next_page_ = page + 1;
 
-        std::vector<CoverSpec> covers;
+        std::vector<std::unique_ptr<Node>> nodes;
         for (size_t i = 0; i < results_.size(); ++i) {
-            covers.push_back({results_[i].title, 0, [this, source, i] {
-                                  Route rt{Route::Detail};
-                                  rt.source = source;
-                                  rt.seed = results_[i];
-                                  go(rt);
-                              }});
+            nodes.push_back(list_row({results_[i].title, "", false, false, icon::chevron_right, [this, source, i] {
+                                          Route rt{Route::Detail};
+                                          rt.source = source;
+                                          rt.seed = results_[i];
+                                          go(rt);
+                                      }}));
         }
-        std::vector<std::unique_ptr<Node>> nodes = cover_rows(covers, 3, width_);
         if (results_.empty()) nodes.push_back(message(mode == Browse::Search ? "No results." : "Nothing here."));
         if (r.has_next || !err.empty()) {
             std::string label = err.empty() ? "Load more" : std::string("Couldn't load more") + kDot + "Retry";
@@ -401,7 +398,6 @@ void Shell::show_search(const Route& r)
     root->add(std::move(field));
 
     auto list = std::make_unique<PagedList>();
-    list->refresh = Wave::GL16;
     list->height = Dim::fill();
     list_ = list.get();
     list->add(message("Type a title, then tap search."));
@@ -447,7 +443,6 @@ void Shell::show_detail(const Route& r)
     root->opaque = true;
     root->add(app_bar("", [this] { on_back(); }, {}));
     auto list = std::make_unique<PagedList>();
-    list->refresh = Wave::GL16;
     list_ = list.get();
     root->add(std::move(list));
     screen_.set_root(std::move(root));
@@ -468,24 +463,10 @@ void Shell::fill_detail(uint64_t gen, MangaView view, bool refreshed, const std:
     const data::Manga& m = view_.manga;
     std::vector<std::unique_ptr<Node>> items;
 
-    // Header (§8.3): cover placeholder + title / author / status line.
+    // Header (§8.3), text only: title / author / status line.
     auto header = std::make_unique<Node>();
     header->layout = Layout::Row;
-    header->height = Dim::px(340);
     header->padding = Insets{32, 20, 32, 20};
-    header->gap = 32;
-    header->align_cross = Align::Start;
-    auto cover = std::make_unique<Node>();
-    cover->layout = Layout::Stack;
-    cover->width = Dim::px(200);
-    cover->height = Dim::px(300);
-    cover->opaque = true;
-    cover->radius = 12;
-    cover->background = tone::SURFACE_2;
-    cover->align_main = Align::Center;
-    cover->align_cross = Align::Center;
-    cover->emplace<Icon>(icon::collections_bookmark, 48, tone::ON_SURFACE_VARIANT);
-    header->add(std::move(cover));
     auto info = column();
     info->width = Dim::fill();
     info->height = Dim::wrap();
@@ -588,7 +569,7 @@ void Shell::show_more()
     struct Entry { char32_t icon; const char* title; const char* subtitle; };
     for (const Entry& e : {Entry{icon::download, "Download queue", "Arrives in M5"}, Entry{icon::label, "Categories", ""},
                            Entry{icon::storage, "Data and storage", ""}, Entry{icon::settings, "Settings", ""},
-                           Entry{icon::info, "About", "Sumiyomi 0.3 (M3: data + MangaDex)"}}) {
+                           Entry{icon::info, "About", "Sumiyomi 0.3 (M3: data + WeebCentral)"}}) {
         RowSpec r{e.title, e.subtitle, false, false, 0, [] {}};
         r.leading = e.icon;
         list->add(list_row(r));

@@ -1,0 +1,706 @@
+
+<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2026-09-04T15:41:49.403236Z') }" x-show="mark_chapters == 'null' || (mark_chapters == 'read' && 'False'.toLowerCase() === 'false') || (mark_chapters == 'unread' && 'False'.toLowerCase() === 'true')">
+    <a href="/chapters/01M1PHAMYVD6FVKZAQM99VZS0X" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            
+            <img src="/static/images/chapter-badge.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+            
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 25</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '01M1PHAMYVD6FVKZAQM99VZS0X'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true">
+                    <path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/>
+                </svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2026-09-04T15:41:49.403Z">2026-09-04T15:41:49.403236Z</time>
+    </a>
+    <input type="checkbox" value="01M1PHAMYVD6FVKZAQM99VZS0X" name="chapter_id" form="mark-as-read-form" class="checkbox ms-4" x-show="mark_chapters == 'read'">
+    <input type="checkbox" value="01M1PHAMYVD6FVKZAQM99VZS0X" name="chapter_id" form="mark-as-unread-form" class="checkbox ms-4" x-show="mark_chapters == 'unread'">
+</div>
+
+<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2026-07-07T15:21:18.966969Z') }" x-show="mark_chapters == 'null' || (mark_chapters == 'read' && 'False'.toLowerCase() === 'false') || (mark_chapters == 'unread' && 'False'.toLowerCase() === 'true')">
+    <a href="/chapters/01KWYJPPBPKEP62VMCS2MPXZQJ" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            
+            <img src="/static/images/chapter-badge.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+            
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 24</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '01KWYJPPBPKEP62VMCS2MPXZQJ'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true">
+                    <path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/>
+                </svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2026-07-07T15:21:18.966Z">2026-07-07T15:21:18.966969Z</time>
+    </a>
+    <input type="checkbox" value="01KWYJPPBPKEP62VMCS2MPXZQJ" name="chapter_id" form="mark-as-read-form" class="checkbox ms-4" x-show="mark_chapters == 'read'">
+    <input type="checkbox" value="01KWYJPPBPKEP62VMCS2MPXZQJ" name="chapter_id" form="mark-as-unread-form" class="checkbox ms-4" x-show="mark_chapters == 'unread'">
+</div>
+
+<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2026-06-06T13:17:33.023292Z') }" x-show="mark_chapters == 'null' || (mark_chapters == 'read' && 'False'.toLowerCase() === 'false') || (mark_chapters == 'unread' && 'False'.toLowerCase() === 'true')">
+    <a href="/chapters/01KTEH9SEZH5V9NPVN259W8A2E" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            
+            <img src="/static/images/chapter-badge.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+            
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 23</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '01KTEH9SEZH5V9NPVN259W8A2E'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true">
+                    <path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/>
+                </svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2026-06-06T13:17:33.023Z">2026-06-06T13:17:33.023292Z</time>
+    </a>
+    <input type="checkbox" value="01KTEH9SEZH5V9NPVN259W8A2E" name="chapter_id" form="mark-as-read-form" class="checkbox ms-4" x-show="mark_chapters == 'read'">
+    <input type="checkbox" value="01KTEH9SEZH5V9NPVN259W8A2E" name="chapter_id" form="mark-as-unread-form" class="checkbox ms-4" x-show="mark_chapters == 'unread'">
+</div>
+
+<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2026-06-06T13:17:27.114484Z') }" x-show="mark_chapters == 'null' || (mark_chapters == 'read' && 'False'.toLowerCase() === 'false') || (mark_chapters == 'unread' && 'False'.toLowerCase() === 'true')">
+    <a href="/chapters/01KTEH9KPAR03HWCHN4DRV6SEA" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            
+            <img src="/static/images/chapter-badge.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+            
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 22</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '01KTEH9KPAR03HWCHN4DRV6SEA'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true">
+                    <path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/>
+                </svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2026-06-06T13:17:27.114Z">2026-06-06T13:17:27.114484Z</time>
+    </a>
+    <input type="checkbox" value="01KTEH9KPAR03HWCHN4DRV6SEA" name="chapter_id" form="mark-as-read-form" class="checkbox ms-4" x-show="mark_chapters == 'read'">
+    <input type="checkbox" value="01KTEH9KPAR03HWCHN4DRV6SEA" name="chapter_id" form="mark-as-unread-form" class="checkbox ms-4" x-show="mark_chapters == 'unread'">
+</div>
+
+<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2026-06-06T13:17:16.952606Z') }" x-show="mark_chapters == 'null' || (mark_chapters == 'read' && 'False'.toLowerCase() === 'false') || (mark_chapters == 'unread' && 'False'.toLowerCase() === 'true')">
+    <a href="/chapters/01KTEH99R21ABNVR6M8VSWMMQM" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            
+            <img src="/static/images/chapter-badge.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+            
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 21</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '01KTEH99R21ABNVR6M8VSWMMQM'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true">
+                    <path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/>
+                </svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2026-06-06T13:17:16.952Z">2026-06-06T13:17:16.952606Z</time>
+    </a>
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQM" name="chapter_id" form="mark-as-read-form" class="checkbox ms-4" x-show="mark_chapters == 'read'">
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQM" name="chapter_id" form="mark-as-unread-form" class="checkbox ms-4" x-show="mark_chapters == 'unread'">
+</div>
+
+<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2026-06-06T13:17:16.952649Z') }" x-show="mark_chapters == 'null' || (mark_chapters == 'read' && 'False'.toLowerCase() === 'false') || (mark_chapters == 'unread' && 'False'.toLowerCase() === 'true')">
+    <a href="/chapters/01KTEH99R21ABNVR6M8VSWMMQK" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            
+            <img src="/static/images/chapter-badge.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+            
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 20</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '01KTEH99R21ABNVR6M8VSWMMQK'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true">
+                    <path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/>
+                </svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2026-06-06T13:17:16.952Z">2026-06-06T13:17:16.952649Z</time>
+    </a>
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQK" name="chapter_id" form="mark-as-read-form" class="checkbox ms-4" x-show="mark_chapters == 'read'">
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQK" name="chapter_id" form="mark-as-unread-form" class="checkbox ms-4" x-show="mark_chapters == 'unread'">
+</div>
+
+<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2026-06-06T13:17:16.952634Z') }" x-show="mark_chapters == 'null' || (mark_chapters == 'read' && 'False'.toLowerCase() === 'false') || (mark_chapters == 'unread' && 'False'.toLowerCase() === 'true')">
+    <a href="/chapters/01KTEH99R21ABNVR6M8VSWMMQJ" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            
+            <img src="/static/images/chapter-badge.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+            
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 19</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '01KTEH99R21ABNVR6M8VSWMMQJ'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true">
+                    <path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/>
+                </svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2026-06-06T13:17:16.952Z">2026-06-06T13:17:16.952634Z</time>
+    </a>
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQJ" name="chapter_id" form="mark-as-read-form" class="checkbox ms-4" x-show="mark_chapters == 'read'">
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQJ" name="chapter_id" form="mark-as-unread-form" class="checkbox ms-4" x-show="mark_chapters == 'unread'">
+</div>
+
+<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2026-06-06T13:17:16.952056Z') }" x-show="mark_chapters == 'null' || (mark_chapters == 'read' && 'False'.toLowerCase() === 'false') || (mark_chapters == 'unread' && 'False'.toLowerCase() === 'true')">
+    <a href="/chapters/01KTEH99R21ABNVR6M8VSWMMQH" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            
+            <img src="/static/images/chapter-badge.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+            
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 18</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '01KTEH99R21ABNVR6M8VSWMMQH'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true">
+                    <path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/>
+                </svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2026-06-06T13:17:16.952Z">2026-06-06T13:17:16.952056Z</time>
+    </a>
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQH" name="chapter_id" form="mark-as-read-form" class="checkbox ms-4" x-show="mark_chapters == 'read'">
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQH" name="chapter_id" form="mark-as-unread-form" class="checkbox ms-4" x-show="mark_chapters == 'unread'">
+</div>
+
+<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2026-06-06T13:17:16.951542Z') }" x-show="mark_chapters == 'null' || (mark_chapters == 'read' && 'False'.toLowerCase() === 'false') || (mark_chapters == 'unread' && 'False'.toLowerCase() === 'true')">
+    <a href="/chapters/01KTEH99R21ABNVR6M8VSWMMQG" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            
+            <img src="/static/images/chapter-badge.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+            
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 17</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '01KTEH99R21ABNVR6M8VSWMMQG'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true">
+                    <path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/>
+                </svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2026-06-06T13:17:16.951Z">2026-06-06T13:17:16.951542Z</time>
+    </a>
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQG" name="chapter_id" form="mark-as-read-form" class="checkbox ms-4" x-show="mark_chapters == 'read'">
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQG" name="chapter_id" form="mark-as-unread-form" class="checkbox ms-4" x-show="mark_chapters == 'unread'">
+</div>
+
+<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2026-06-06T13:17:16.951542Z') }" x-show="mark_chapters == 'null' || (mark_chapters == 'read' && 'False'.toLowerCase() === 'false') || (mark_chapters == 'unread' && 'False'.toLowerCase() === 'true')">
+    <a href="/chapters/01KTEH99R21ABNVR6M8VSWMMQF" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            
+            <img src="/static/images/chapter-badge.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+            
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 16.5</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '01KTEH99R21ABNVR6M8VSWMMQF'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true">
+                    <path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/>
+                </svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2026-06-06T13:17:16.951Z">2026-06-06T13:17:16.951542Z</time>
+    </a>
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQF" name="chapter_id" form="mark-as-read-form" class="checkbox ms-4" x-show="mark_chapters == 'read'">
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQF" name="chapter_id" form="mark-as-unread-form" class="checkbox ms-4" x-show="mark_chapters == 'unread'">
+</div>
+
+<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2026-06-06T13:17:16.951436Z') }" x-show="mark_chapters == 'null' || (mark_chapters == 'read' && 'False'.toLowerCase() === 'false') || (mark_chapters == 'unread' && 'False'.toLowerCase() === 'true')">
+    <a href="/chapters/01KTEH99R21ABNVR6M8VSWMMQE" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            
+            <img src="/static/images/chapter-badge.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+            
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 16</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '01KTEH99R21ABNVR6M8VSWMMQE'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true">
+                    <path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/>
+                </svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2026-06-06T13:17:16.951Z">2026-06-06T13:17:16.951436Z</time>
+    </a>
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQE" name="chapter_id" form="mark-as-read-form" class="checkbox ms-4" x-show="mark_chapters == 'read'">
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQE" name="chapter_id" form="mark-as-unread-form" class="checkbox ms-4" x-show="mark_chapters == 'unread'">
+</div>
+
+<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2026-06-06T13:17:16.951432Z') }" x-show="mark_chapters == 'null' || (mark_chapters == 'read' && 'False'.toLowerCase() === 'false') || (mark_chapters == 'unread' && 'False'.toLowerCase() === 'true')">
+    <a href="/chapters/01KTEH99R21ABNVR6M8VSWMMQD" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            
+            <img src="/static/images/chapter-badge.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+            
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 15</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '01KTEH99R21ABNVR6M8VSWMMQD'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true">
+                    <path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/>
+                </svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2026-06-06T13:17:16.951Z">2026-06-06T13:17:16.951432Z</time>
+    </a>
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQD" name="chapter_id" form="mark-as-read-form" class="checkbox ms-4" x-show="mark_chapters == 'read'">
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQD" name="chapter_id" form="mark-as-unread-form" class="checkbox ms-4" x-show="mark_chapters == 'unread'">
+</div>
+
+<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2026-06-06T13:17:16.951474Z') }" x-show="mark_chapters == 'null' || (mark_chapters == 'read' && 'False'.toLowerCase() === 'false') || (mark_chapters == 'unread' && 'False'.toLowerCase() === 'true')">
+    <a href="/chapters/01KTEH99R21ABNVR6M8VSWMMQC" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            
+            <img src="/static/images/chapter-badge.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+            
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 14</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '01KTEH99R21ABNVR6M8VSWMMQC'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true">
+                    <path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/>
+                </svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2026-06-06T13:17:16.951Z">2026-06-06T13:17:16.951474Z</time>
+    </a>
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQC" name="chapter_id" form="mark-as-read-form" class="checkbox ms-4" x-show="mark_chapters == 'read'">
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQC" name="chapter_id" form="mark-as-unread-form" class="checkbox ms-4" x-show="mark_chapters == 'unread'">
+</div>
+
+<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2026-06-06T13:17:16.951438Z') }" x-show="mark_chapters == 'null' || (mark_chapters == 'read' && 'False'.toLowerCase() === 'false') || (mark_chapters == 'unread' && 'False'.toLowerCase() === 'true')">
+    <a href="/chapters/01KTEH99R21ABNVR6M8VSWMMQB" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            
+            <img src="/static/images/chapter-badge.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+            
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 13</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '01KTEH99R21ABNVR6M8VSWMMQB'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true">
+                    <path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/>
+                </svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2026-06-06T13:17:16.951Z">2026-06-06T13:17:16.951438Z</time>
+    </a>
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQB" name="chapter_id" form="mark-as-read-form" class="checkbox ms-4" x-show="mark_chapters == 'read'">
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQB" name="chapter_id" form="mark-as-unread-form" class="checkbox ms-4" x-show="mark_chapters == 'unread'">
+</div>
+
+<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2026-06-06T13:17:16.951443Z') }" x-show="mark_chapters == 'null' || (mark_chapters == 'read' && 'False'.toLowerCase() === 'false') || (mark_chapters == 'unread' && 'False'.toLowerCase() === 'true')">
+    <a href="/chapters/01KTEH99R21ABNVR6M8VSWMMQA" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            
+            <img src="/static/images/chapter-badge.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+            
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 12</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '01KTEH99R21ABNVR6M8VSWMMQA'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true">
+                    <path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/>
+                </svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2026-06-06T13:17:16.951Z">2026-06-06T13:17:16.951443Z</time>
+    </a>
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQA" name="chapter_id" form="mark-as-read-form" class="checkbox ms-4" x-show="mark_chapters == 'read'">
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQA" name="chapter_id" form="mark-as-unread-form" class="checkbox ms-4" x-show="mark_chapters == 'unread'">
+</div>
+
+<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2026-06-06T13:17:16.951476Z') }" x-show="mark_chapters == 'null' || (mark_chapters == 'read' && 'False'.toLowerCase() === 'false') || (mark_chapters == 'unread' && 'False'.toLowerCase() === 'true')">
+    <a href="/chapters/01KTEH99R21ABNVR6M8VSWMMQ9" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            
+            <img src="/static/images/chapter-badge.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+            
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 11.5</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '01KTEH99R21ABNVR6M8VSWMMQ9'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true">
+                    <path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/>
+                </svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2026-06-06T13:17:16.951Z">2026-06-06T13:17:16.951476Z</time>
+    </a>
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQ9" name="chapter_id" form="mark-as-read-form" class="checkbox ms-4" x-show="mark_chapters == 'read'">
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQ9" name="chapter_id" form="mark-as-unread-form" class="checkbox ms-4" x-show="mark_chapters == 'unread'">
+</div>
+
+<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2026-06-06T13:17:16.951277Z') }" x-show="mark_chapters == 'null' || (mark_chapters == 'read' && 'False'.toLowerCase() === 'false') || (mark_chapters == 'unread' && 'False'.toLowerCase() === 'true')">
+    <a href="/chapters/01KTEH99R21ABNVR6M8VSWMMQ8" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            
+            <img src="/static/images/chapter-badge.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+            
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 11</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '01KTEH99R21ABNVR6M8VSWMMQ8'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true">
+                    <path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/>
+                </svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2026-06-06T13:17:16.951Z">2026-06-06T13:17:16.951277Z</time>
+    </a>
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQ8" name="chapter_id" form="mark-as-read-form" class="checkbox ms-4" x-show="mark_chapters == 'read'">
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQ8" name="chapter_id" form="mark-as-unread-form" class="checkbox ms-4" x-show="mark_chapters == 'unread'">
+</div>
+
+<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2026-06-06T13:17:16.932391Z') }" x-show="mark_chapters == 'null' || (mark_chapters == 'read' && 'False'.toLowerCase() === 'false') || (mark_chapters == 'unread' && 'False'.toLowerCase() === 'true')">
+    <a href="/chapters/01KTEH99R21ABNVR6M8VSWMMQ7" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            
+            <img src="/static/images/chapter-badge.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+            
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 10</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '01KTEH99R21ABNVR6M8VSWMMQ7'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true">
+                    <path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/>
+                </svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2026-06-06T13:17:16.932Z">2026-06-06T13:17:16.932391Z</time>
+    </a>
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQ7" name="chapter_id" form="mark-as-read-form" class="checkbox ms-4" x-show="mark_chapters == 'read'">
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQ7" name="chapter_id" form="mark-as-unread-form" class="checkbox ms-4" x-show="mark_chapters == 'unread'">
+</div>
+
+<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2026-06-06T13:17:16.952235Z') }" x-show="mark_chapters == 'null' || (mark_chapters == 'read' && 'False'.toLowerCase() === 'false') || (mark_chapters == 'unread' && 'False'.toLowerCase() === 'true')">
+    <a href="/chapters/01KTEH99R21ABNVR6M8VSWMMQ6" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            
+            <img src="/static/images/chapter-badge.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+            
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 9</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '01KTEH99R21ABNVR6M8VSWMMQ6'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true">
+                    <path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/>
+                </svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2026-06-06T13:17:16.952Z">2026-06-06T13:17:16.952235Z</time>
+    </a>
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQ6" name="chapter_id" form="mark-as-read-form" class="checkbox ms-4" x-show="mark_chapters == 'read'">
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQ6" name="chapter_id" form="mark-as-unread-form" class="checkbox ms-4" x-show="mark_chapters == 'unread'">
+</div>
+
+<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2026-06-06T13:17:16.931715Z') }" x-show="mark_chapters == 'null' || (mark_chapters == 'read' && 'False'.toLowerCase() === 'false') || (mark_chapters == 'unread' && 'False'.toLowerCase() === 'true')">
+    <a href="/chapters/01KTEH99R21ABNVR6M8VSWMMQ5" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            
+            <img src="/static/images/chapter-badge.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+            
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 8</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '01KTEH99R21ABNVR6M8VSWMMQ5'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true">
+                    <path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/>
+                </svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2026-06-06T13:17:16.931Z">2026-06-06T13:17:16.931715Z</time>
+    </a>
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQ5" name="chapter_id" form="mark-as-read-form" class="checkbox ms-4" x-show="mark_chapters == 'read'">
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQ5" name="chapter_id" form="mark-as-unread-form" class="checkbox ms-4" x-show="mark_chapters == 'unread'">
+</div>
+
+<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2026-06-06T13:17:16.931720Z') }" x-show="mark_chapters == 'null' || (mark_chapters == 'read' && 'False'.toLowerCase() === 'false') || (mark_chapters == 'unread' && 'False'.toLowerCase() === 'true')">
+    <a href="/chapters/01KTEH99R21ABNVR6M8VSWMMQ4" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            
+            <img src="/static/images/chapter-badge.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+            
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 7</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '01KTEH99R21ABNVR6M8VSWMMQ4'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true">
+                    <path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/>
+                </svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2026-06-06T13:17:16.931Z">2026-06-06T13:17:16.931720Z</time>
+    </a>
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQ4" name="chapter_id" form="mark-as-read-form" class="checkbox ms-4" x-show="mark_chapters == 'read'">
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQ4" name="chapter_id" form="mark-as-unread-form" class="checkbox ms-4" x-show="mark_chapters == 'unread'">
+</div>
+
+<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2026-06-06T13:17:16.931215Z') }" x-show="mark_chapters == 'null' || (mark_chapters == 'read' && 'False'.toLowerCase() === 'false') || (mark_chapters == 'unread' && 'False'.toLowerCase() === 'true')">
+    <a href="/chapters/01KTEH99R21ABNVR6M8VSWMMQ3" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            
+            <img src="/static/images/chapter-badge.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+            
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 6.5</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '01KTEH99R21ABNVR6M8VSWMMQ3'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true">
+                    <path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/>
+                </svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2026-06-06T13:17:16.931Z">2026-06-06T13:17:16.931215Z</time>
+    </a>
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQ3" name="chapter_id" form="mark-as-read-form" class="checkbox ms-4" x-show="mark_chapters == 'read'">
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQ3" name="chapter_id" form="mark-as-unread-form" class="checkbox ms-4" x-show="mark_chapters == 'unread'">
+</div>
+
+<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2026-06-06T13:17:16.931216Z') }" x-show="mark_chapters == 'null' || (mark_chapters == 'read' && 'False'.toLowerCase() === 'false') || (mark_chapters == 'unread' && 'False'.toLowerCase() === 'true')">
+    <a href="/chapters/01KTEH99R21ABNVR6M8VSWMMQ2" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            
+            <img src="/static/images/chapter-badge.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+            
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 6</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '01KTEH99R21ABNVR6M8VSWMMQ2'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true">
+                    <path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/>
+                </svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2026-06-06T13:17:16.931Z">2026-06-06T13:17:16.931216Z</time>
+    </a>
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQ2" name="chapter_id" form="mark-as-read-form" class="checkbox ms-4" x-show="mark_chapters == 'read'">
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQ2" name="chapter_id" form="mark-as-unread-form" class="checkbox ms-4" x-show="mark_chapters == 'unread'">
+</div>
+
+<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2026-06-06T13:17:16.931232Z') }" x-show="mark_chapters == 'null' || (mark_chapters == 'read' && 'False'.toLowerCase() === 'false') || (mark_chapters == 'unread' && 'False'.toLowerCase() === 'true')">
+    <a href="/chapters/01KTEH99R21ABNVR6M8VSWMMQ1" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            
+            <img src="/static/images/chapter-badge.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+            
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 5</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '01KTEH99R21ABNVR6M8VSWMMQ1'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true">
+                    <path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/>
+                </svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2026-06-06T13:17:16.931Z">2026-06-06T13:17:16.931232Z</time>
+    </a>
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQ1" name="chapter_id" form="mark-as-read-form" class="checkbox ms-4" x-show="mark_chapters == 'read'">
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQ1" name="chapter_id" form="mark-as-unread-form" class="checkbox ms-4" x-show="mark_chapters == 'unread'">
+</div>
+
+<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2026-06-06T13:17:16.931845Z') }" x-show="mark_chapters == 'null' || (mark_chapters == 'read' && 'False'.toLowerCase() === 'false') || (mark_chapters == 'unread' && 'False'.toLowerCase() === 'true')">
+    <a href="/chapters/01KTEH99R21ABNVR6M8VSWMMQ0" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            
+            <img src="/static/images/chapter-badge.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+            
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 4</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '01KTEH99R21ABNVR6M8VSWMMQ0'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true">
+                    <path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/>
+                </svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2026-06-06T13:17:16.931Z">2026-06-06T13:17:16.931845Z</time>
+    </a>
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQ0" name="chapter_id" form="mark-as-read-form" class="checkbox ms-4" x-show="mark_chapters == 'read'">
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMQ0" name="chapter_id" form="mark-as-unread-form" class="checkbox ms-4" x-show="mark_chapters == 'unread'">
+</div>
+
+<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2026-06-06T13:17:16.931229Z') }" x-show="mark_chapters == 'null' || (mark_chapters == 'read' && 'False'.toLowerCase() === 'false') || (mark_chapters == 'unread' && 'False'.toLowerCase() === 'true')">
+    <a href="/chapters/01KTEH99R21ABNVR6M8VSWMMPZ" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            
+            <img src="/static/images/chapter-badge.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+            
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 3</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '01KTEH99R21ABNVR6M8VSWMMPZ'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true">
+                    <path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/>
+                </svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2026-06-06T13:17:16.931Z">2026-06-06T13:17:16.931229Z</time>
+    </a>
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMPZ" name="chapter_id" form="mark-as-read-form" class="checkbox ms-4" x-show="mark_chapters == 'read'">
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMPZ" name="chapter_id" form="mark-as-unread-form" class="checkbox ms-4" x-show="mark_chapters == 'unread'">
+</div>
+
+<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2026-06-06T13:17:16.931172Z') }" x-show="mark_chapters == 'null' || (mark_chapters == 'read' && 'False'.toLowerCase() === 'false') || (mark_chapters == 'unread' && 'False'.toLowerCase() === 'true')">
+    <a href="/chapters/01KTEH99R21ABNVR6M8VSWMMPY" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            
+            <img src="/static/images/chapter-badge.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+            
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 2</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '01KTEH99R21ABNVR6M8VSWMMPY'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true">
+                    <path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/>
+                </svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2026-06-06T13:17:16.931Z">2026-06-06T13:17:16.931172Z</time>
+    </a>
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMPY" name="chapter_id" form="mark-as-read-form" class="checkbox ms-4" x-show="mark_chapters == 'read'">
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMPY" name="chapter_id" form="mark-as-unread-form" class="checkbox ms-4" x-show="mark_chapters == 'unread'">
+</div>
+
+<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2026-06-06T13:17:16.931179Z') }" x-show="mark_chapters == 'null' || (mark_chapters == 'read' && 'False'.toLowerCase() === 'false') || (mark_chapters == 'unread' && 'False'.toLowerCase() === 'true')">
+    <a href="/chapters/01KTEH99R21ABNVR6M8VSWMMPX" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            
+            <img src="/static/images/chapter-badge.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+            
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 1</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '01KTEH99R21ABNVR6M8VSWMMPX'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true">
+                    <path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/>
+                </svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2026-06-06T13:17:16.931Z">2026-06-06T13:17:16.931179Z</time>
+    </a>
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMPX" name="chapter_id" form="mark-as-read-form" class="checkbox ms-4" x-show="mark_chapters == 'read'">
+    <input type="checkbox" value="01KTEH99R21ABNVR6M8VSWMMPX" name="chapter_id" form="mark-as-unread-form" class="checkbox ms-4" x-show="mark_chapters == 'unread'">
+</div>
+
+<a href="#top" class="bg-secondary opacity-30 hover:opacity-70 fixed bottom-12 right-0 p-4" aria-label="back to top">
+    <svg class="w-4 h-4" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+        <path d="M233.4 105.4c12.5-12.5 32.8-12.5 45.3 0l192 192c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L256 173.3 86.6 342.6c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3l192-192z" />
+    </svg>
+</a>
