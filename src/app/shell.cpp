@@ -87,6 +87,7 @@ bool Shell::on_back()
     }
     if (keyboard_ && keyboard_->visible && !results_.empty()) {   // search: hide the keyboard first
         keyboard_->visible = false;
+        if (search_pager_) search_pager_->visible = true;
         screen_.invalidate_layout(Wave::GL16);
         return true;
     }
@@ -102,6 +103,7 @@ uint64_t Shell::begin()
     status_bar_ = nullptr;
     field_ = nullptr;
     keyboard_ = nullptr;
+    search_pager_ = nullptr;
     results_.clear();
     next_page_ = 1;
     return ++generation_;
@@ -144,12 +146,23 @@ std::unique_ptr<Node> Shell::scaffold(std::unique_ptr<Node> bar, std::unique_ptr
     return root;
 }
 
+std::unique_ptr<Node> Shell::paged(std::unique_ptr<PagedList> list)
+{
+    // The list plus its bottom pager bar: page changes go through the arrows, never swipes.
+    auto box = column();
+    box->opaque = true;
+    PagedList* l = list.get();
+    box->add(std::move(list));
+    box->add(std::make_unique<PagerBar>(l, [this, l](bool forward) { screen_.turn_page(l, forward); }));
+    return box;
+}
+
 void Shell::set_body_items(std::vector<std::unique_ptr<Node>> items)
 {
     if (!list_) return;
     list_->clear_children();
     for (auto& n : items) list_->add(std::move(n));
-    screen_.relayout(list_);
+    screen_.invalidate_layout(Wave::GL16);   // new content = a new page: refresh the whole panel
 }
 
 // ---------------------------------------------------------------- Library
@@ -161,7 +174,7 @@ void Shell::show_library()
     list_ = list.get();
     list->add(message(std::string("Loading library") + kEllipsis));
     screen_.set_root(scaffold(app_bar("Library", nullptr, {{icon::refresh, [this] { go({Route::TabRoot, kUpdates}); }}}),
-                              std::move(list), kLibrary));
+                              paged(std::move(list)), kLibrary));
 
     data_.library([this, gen](std::vector<data::LibraryItem> items) {
         if (!current(gen)) return;
@@ -207,7 +220,7 @@ void Shell::show_updates()
     auto list = std::make_unique<PagedList>();
     list_ = list.get();
     list->add(message(std::string("Loading updates") + kEllipsis));
-    body->add(std::move(list));
+    body->add(paged(std::move(list)));
 
     auto reload = [this, gen] {
         data_.updates([this, gen](std::vector<data::UpdateItem> items) {
@@ -232,7 +245,7 @@ void Shell::show_updates()
         static_cast<Label*>(status_bar_->children()[0].get())->set_text(std::string("Updating library") + kEllipsis);
         if (!status_bar_->visible) {
             status_bar_->visible = true;
-            screen_.relayout(status_bar_->parent());
+            screen_.invalidate_layout(Wave::GL16);
         }
         data_.update_library([this, gen, reload](int added, int failed) {
             if (!current(gen) || !status_bar_) return;
@@ -252,7 +265,7 @@ void Shell::show_history()
     auto list = std::make_unique<PagedList>();
     list_ = list.get();
     list->add(message(std::string("Loading history") + kEllipsis));
-    screen_.set_root(scaffold(app_bar("History", nullptr, {}), std::move(list), kHistory));
+    screen_.set_root(scaffold(app_bar("History", nullptr, {}), paged(std::move(list)), kHistory));
 
     data_.history([this, gen](std::vector<data::HistoryItem> items) {
         if (!current(gen)) return;
@@ -306,7 +319,7 @@ void Shell::show_browse()
         list->add(message("Migration arrives with a second source."));
     }
     list_ = list.get();
-    body->add(std::move(list));
+    body->add(paged(std::move(list)));
     screen_.set_root(scaffold(app_bar("Browse", nullptr, {}), std::move(body), kBrowse));
 }
 
@@ -332,7 +345,7 @@ void Shell::show_source(int64_t source, Browse mode)
     auto list = std::make_unique<PagedList>();
     list_ = list.get();
     list->add(message("Loading " + name + kEllipsis));
-    body->add(std::move(list));
+    body->add(paged(std::move(list)));
     screen_.set_root(scaffold(app_bar(name, [this] { on_back(); }, actions), std::move(body), -1));
     load_source_page(gen, source, mode, "", 1);
 }
@@ -392,6 +405,7 @@ void Shell::show_search(const Route& r)
     field->on_tap = [this, gen] {
         if (!current(gen) || !keyboard_ || keyboard_->visible) return;
         keyboard_->visible = true;
+        if (search_pager_) search_pager_->visible = false;
         screen_.invalidate_layout(Wave::GL16);
     };
     field_ = field.get();
@@ -401,7 +415,9 @@ void Shell::show_search(const Route& r)
     list->height = Dim::fill();
     list_ = list.get();
     list->add(message("Type a title, then tap search."));
-    root->add(std::move(list));
+    Node* page_box = root->add(paged(std::move(list)));
+    search_pager_ = page_box->children()[1].get();
+    search_pager_->visible = false;   // shown with the results, when the keyboard goes away
 
     auto kb = keyboard([this, gen, source](KeyInput in, char c) {
         if (!current(gen) || !field_) return;
@@ -422,6 +438,7 @@ void Shell::run_search(uint64_t gen, int64_t source)
     if (q.empty()) return;
     if (!stack_.empty() && stack_.back().kind == Route::Search) stack_.back().query = q;
     keyboard_->visible = false;
+    if (search_pager_) search_pager_->visible = true;
     results_.clear();
     list_->clear_children();
     list_->add(message("Searching for \xE2\x80\x9C" + q + "\xE2\x80\x9D" + kEllipsis));
@@ -444,7 +461,7 @@ void Shell::show_detail(const Route& r)
     root->add(app_bar("", [this] { on_back(); }, {}));
     auto list = std::make_unique<PagedList>();
     list_ = list.get();
-    root->add(std::move(list));
+    root->add(paged(std::move(list)));
     screen_.set_root(std::move(root));
     fill_detail(gen, view_, false, "");
 
@@ -578,7 +595,7 @@ void Shell::show_more()
     exit_row.leading = icon::close;
     list->add(list_row(exit_row));
     list_ = list.get();
-    screen_.set_root(scaffold(app_bar("More", nullptr, {}), std::move(list), kMore));
+    screen_.set_root(scaffold(app_bar("More", nullptr, {}), paged(std::move(list)), kMore));
 }
 
 } // namespace sumi::app

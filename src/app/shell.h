@@ -49,6 +49,7 @@ private:
     bool current(uint64_t gen) const { return gen == generation_; }
 
     std::unique_ptr<ui::Node> scaffold(std::unique_ptr<ui::Node> bar, std::unique_ptr<ui::Node> body, int nav_index);
+    std::unique_ptr<ui::Node> paged(std::unique_ptr<ui::PagedList> list);
     void set_body_items(std::vector<std::unique_ptr<ui::Node>> items);
 
     void show_library();
@@ -81,6 +82,7 @@ private:
     int            next_page_ = 1;
     ui::TextField* field_ = nullptr;
     ui::Node*      keyboard_ = nullptr;
+    ui::Node*      search_pager_ = nullptr;   // Search: hidden while the keyboard is up
     std::string    query_;
     MangaView      view_;
 };

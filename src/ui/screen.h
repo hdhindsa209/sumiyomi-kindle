@@ -14,11 +14,15 @@ namespace sumi::ui {
 // Hosts one node tree on the display. Turns input into press feedback and taps, and turns
 // dirty nodes into repaints + FrameScheduler damage (design doc §5.1 paint pipeline).
 //
-// Refresh rules (§5.4):
+// Refresh rules (§5.4, e-ink):
 //   - screen entry / set_root: one full-screen GC16 (flashing)
-//   - press: the node is binarized + inverted and refreshed with A2 immediately
+//   - page change, content swap (invalidate_layout): full-screen repaint + refresh; the
+//     RefreshPolicy turns every Nth full refresh into a flash to clear ghosting
+//   - press: the node is binarized + inverted and refreshed with A2 immediately (tap feedback
+//     is the only deliberately partial update, so it stays fast)
 //   - release: the node repaints normally with GL16 (content may contain grays)
 //   - other dirty nodes: their own `refresh` / `bw` hints
+// Swipes don't navigate: paging goes through turn_page (pager bar arrows) and the page keys.
 class Screen {
 public:
     Screen(Canvas& canvas, Text& text, Fonts& fonts, FrameScheduler& frames, int32_t width, int32_t height);
@@ -39,6 +43,9 @@ public:
 
     // Re-run layout and repaint everything next frame, with `mode` (structure changed in place).
     void invalidate_layout(Wave mode = Wave::GL16);
+
+    // Move `list` (a paging node) one page; on success the whole screen repaints and refreshes.
+    void turn_page(Node* list, bool forward);
 
     void on_event(const RawEvent& e);
     void on_tick(uint64_t now_ms);

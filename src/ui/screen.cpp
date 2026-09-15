@@ -101,11 +101,7 @@ void Screen::on_event(const RawEvent& e)
         if (tapped) pending_tap_ = pressed_->on_tap;
         release_press(!tapped);
     }
-    // Paged scroll (§5.5): swipe up = next page, swipe down = previous.
-    if (g && (g->kind == GestureKind::SwipeU || g->kind == GestureKind::SwipeD)) {
-        Node* tree = overlay_ ? overlay_.get() : root_.get();
-        page(tree->node_at(g->at), g->kind == GestureKind::SwipeU);
-    }
+    // Swipes are deliberately ignored: on e-ink, navigation is explicit (pager arrows, page keys).
 }
 
 Node* Screen::first_pager(Node* n)
@@ -121,12 +117,14 @@ void Screen::page(Node* start, bool forward)
 {
     for (Node* n = start; n; n = n->parent()) {
         if (!n->pages()) continue;
-        if (n->on_page(forward)) {
-            n->layout_in(text_, fonts_, n->frame());
-            n->mark_dirty();
-        }
+        turn_page(n, forward);
         return;
     }
+}
+
+void Screen::turn_page(Node* list, bool forward)
+{
+    if (list && list->on_page(forward)) invalidate_layout(Wave::GL16);   // whole screen: pager label changes too
 }
 
 void Screen::on_tick(uint64_t now_ms)

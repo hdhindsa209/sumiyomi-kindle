@@ -40,3 +40,5 @@ bar_chart
 storage
 label
 backspace
+# Pager bar (bottom arrows instead of swipes)
+chevron_left

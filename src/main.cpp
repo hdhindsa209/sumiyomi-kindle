@@ -2,6 +2,7 @@
 // Kindle (FBInk + evdev + epoll) and the host simulator (SDL).
 //   --crash=abort|segv   test only: fault deliberately after the first frame (tools/crash-tests.sh)
 #include "app/app_data.h"
+#include "app/live_frames.h"
 #include "app/shell.h"
 #include "core/log.h"
 #include "core/loop.h"
@@ -186,11 +187,7 @@ int main(int argc, char** argv)
     } else {
         for (int fd : input->fds()) loop.add_fd(fd, drain);
     }
-    // Async results (network, DB) arrive between input events: paint them right away.
-    worker.set_on_delivered([&] {
-        screen.frame();
-        loop.arm_tick(screen.wants_tick());
-    });
+    sumi::app::paint_on_results(worker, loop, screen);
     loop.set_tick([&](uint64_t now) {
         screen.on_tick(now);
         screen.frame();
