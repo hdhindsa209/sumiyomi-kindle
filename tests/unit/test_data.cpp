@@ -57,7 +57,7 @@ void test_migrations_apply_and_are_idempotent()
         Db db;
         std::string err;
         CHECK(db.open(path, err));
-        CHECK_EQ(db.schema_version(), 1);
+        CHECK_EQ(db.schema_version(), 2);
         Stmt s = db.prepare("PRAGMA journal_mode");
         CHECK(s.step() && s.text(0) == "wal");               // §4: WAL on file databases
     }
@@ -65,7 +65,7 @@ void test_migrations_apply_and_are_idempotent()
         Db db;
         std::string err;
         CHECK(db.open(path, err));                            // re-open: nothing to migrate, no error
-        CHECK_EQ(db.schema_version(), 1);
+        CHECK_EQ(db.schema_version(), 2);
         Stmt s = db.prepare("PRAGMA foreign_keys");
         CHECK(s.step() && s.i64(0) == 1);
     }
@@ -250,6 +250,39 @@ void test_updates_only_after_added_to_library()
     CHECK(f.repo.updates().empty());                                            // left the library
 }
 
+void test_preferences_and_chapter_lookup()
+{
+    Db db;
+    std::string err;
+    CHECK(db.open(":memory:", err));
+    Repo repo(db);
+    CHECK(!repo.pref("reader.direction"));
+    CHECK(repo.set_pref("reader.direction", "rtl"));
+    CHECK(repo.set_pref("reader.direction", "ltr"));          // upsert
+    CHECK(repo.pref("reader.direction") == std::string("ltr"));
+
+    CHECK(repo.upsert_source({7, "S", "en", "1", true, false}));
+    Manga m;
+    m.source_id = 7;
+    m.url = "/m";
+    m.title = "M";
+    CHECK(repo.upsert_manga(m));
+    Chapter c1, c2;
+    c1.url = "/c/2"; c1.name = "Ch 2";
+    c2.url = "/c/1"; c2.name = "Ch 1";
+    CHECK_EQ(repo.sync_chapters(m.id, {c1, c2}, 1000), 2);
+    auto list = repo.chapters(m.id);
+    CHECK_EQ(list.size(), 2);
+    if (list.size() == 2) {
+        auto one = repo.chapter(list[1].id);
+        CHECK(one && one->name == "Ch 1" && one->manga_id == m.id);
+        CHECK(repo.set_progress(list[1].id, 5, 20));
+        one = repo.chapter(list[1].id);
+        CHECK(one && one->last_page_read == 5 && one->pages_total == 20);
+    }
+    CHECK(!repo.chapter(999999));
+}
+
 void test_transaction_rolls_back()
 {
     Fixture f;
@@ -282,6 +315,7 @@ int main()
     RUN(test_categories_filter_library);
     RUN(test_history_upsert_and_cascade);
     RUN(test_updates_only_after_added_to_library);
+    RUN(test_preferences_and_chapter_lookup);
     RUN(test_transaction_rolls_back);
     return check_result();
 }

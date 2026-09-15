@@ -3,6 +3,8 @@
 #include "app/format.h"
 #include "core/log.h"
 
+#include "image/decode.h"
+
 #include <algorithm>
 
 namespace sumi::app {
@@ -36,8 +38,9 @@ std::vector<data::Chapter> to_rows(const std::vector<source::SChapter>& chapters
 
 } // namespace
 
-AppData::AppData(Executor& exec, data::Db& db, std::vector<std::unique_ptr<source::Extension>> extensions)
-    : exec_(exec), db_(db), repo_(db), extensions_(std::move(extensions))
+AppData::AppData(Executor& exec, data::Db& db, std::vector<std::unique_ptr<source::Extension>> extensions,
+                 net::Client* images, image::PageCache* cache)
+    : exec_(exec), db_(db), repo_(db), extensions_(std::move(extensions)), images_(images), cache_(cache)
 {
     for (const auto& e : extensions_) {
         const source::Manifest& m = e->manifest();
@@ -222,6 +225,123 @@ void AppData::update_library(std::function<void(int, int)> done)
             else added += n;
         }
         exec_.post([done, added, failed] { done(added, failed); });
+    });
+}
+
+// ---------------------------------------------------------------- reader
+
+void AppData::reader_settings(std::function<void(ReaderSettings)> done)
+{
+    exec_.submit([this, done = std::move(done)] {
+        ReaderSettings s;
+        auto num = [&](const char* key, int fallback) {
+            auto v = repo_.pref(key);
+            return v ? std::atoi(v->c_str()) : fallback;
+        };
+        if (auto v = repo_.pref("reader.direction")) s.rtl = *v != "ltr";
+        s.flash_every = std::clamp(num("reader.flash_every", s.flash_every), 0, 30);
+        s.fit = num("reader.fit", 0) == 1 ? image::Fit::Width : image::Fit::Screen;
+        s.dither = static_cast<image::Dither>(std::clamp(num("reader.dither", static_cast<int>(s.dither)), 0, 2));
+        s.crop_borders = num("reader.crop", 1) != 0;
+        s.split_spreads = num("reader.split", 1) != 0;
+        exec_.post([done, s] { done(s); });
+    });
+}
+
+void AppData::save_reader_settings(const ReaderSettings& s)
+{
+    exec_.submit([this, s] {
+        bool ok = repo_.set_pref("reader.direction", s.rtl ? "rtl" : "ltr")
+               && repo_.set_pref("reader.flash_every", std::to_string(s.flash_every))
+               && repo_.set_pref("reader.fit", std::to_string(static_cast<int>(s.fit)))
+               && repo_.set_pref("reader.dither", std::to_string(static_cast<int>(s.dither)))
+               && repo_.set_pref("reader.crop", s.crop_borders ? "1" : "0")
+               && repo_.set_pref("reader.split", s.split_spreads ? "1" : "0");
+        if (!ok) SUMI_LOGW("app", "cannot save reader settings: %s", db_.error().c_str());
+    });
+}
+
+void AppData::open_chapter(int64_t chapter_id, std::function<void(ChapterView, std::string)> done)
+{
+    exec_.submit([this, chapter_id, done = std::move(done)] {
+        ChapterView view;
+        std::string err;
+        auto chapter = repo_.chapter(chapter_id);
+        auto manga = chapter ? repo_.manga(chapter->manga_id) : std::nullopt;
+        source::Extension* ext = manga ? extension(manga->source_id) : nullptr;
+        if (!chapter || !manga) {
+            err = "chapter not found";
+        } else if (!ext) {
+            err = "source not installed";
+        } else {
+            view.manga = *manga;
+            view.chapter = *chapter;
+            view.chapters = repo_.chapters(manga->id);
+            std::vector<source::SPage> pages;
+            source::SChapter sc{chapter->url, chapter->name, chapter->scanlator, chapter->chapter_number, chapter->date_upload};
+            if (ext->pages(sc, pages, err)) {
+                std::sort(pages.begin(), pages.end(), [](const auto& a, const auto& b) { return a.index < b.index; });
+                for (auto& p : pages) view.pages.push_back(std::move(p.url));
+                if (view.pages.empty()) err = "this chapter has no pages";
+                else if (!repo_.record_read(chapter_id, wall_ms(), 0))
+                    SUMI_LOGW("app", "cannot record history: %s", db_.error().c_str());
+            }
+        }
+        exec_.post([done, view = std::move(view), err = std::move(err)]() mutable { done(std::move(view), std::move(err)); });
+    });
+}
+
+void AppData::load_page(int64_t source, const std::string& url, int part, const image::ProcessOptions& opt,
+                        std::function<void(PageImage, std::string)> done)
+{
+    exec_.submit([this, source, url, part, opt, done = std::move(done)] {
+        PageImage result;
+        std::string err;
+        image::PageCache::Entry hit;
+        if (cache_ && cache_->get(image::PageCache::key(url, part, opt), hit)) {
+            result.page = std::move(hit.page);
+            result.parts = hit.parts;
+        } else if (!images_) {
+            err = "network unavailable";
+        } else {
+            net::Request req;
+            req.url = url;
+            req.total_timeout_ms = 45000;   // §9.1: images
+            source::Extension* ext = extension(source);
+            if (ext && !ext->manifest().base_url.empty()) req.headers.push_back({"Referer", ext->manifest().base_url + "/"});
+            req.headers.push_back({"Accept", "image/jpeg,image/png,image/*;q=0.8"});
+            net::Response res = images_->fetch(req);
+            image::Gray decoded;
+            image::DecodeOptions dopt;
+            dopt.fit_w = opt.screen_w;
+            dopt.fit_h = opt.fit == image::Fit::Screen ? opt.screen_h : 0;
+            if (!res.transport_ok()) {
+                err = res.error;
+            } else if (!res.http_ok()) {
+                err = "HTTP " + std::to_string(res.status);
+            } else if (image::decode_gray(reinterpret_cast<const uint8_t*>(res.body.data()), res.body.size(), dopt, decoded, err)) {
+                std::vector<image::Gray> parts = image::process_page(decoded, opt);
+                result.parts = static_cast<int>(parts.size());
+                for (size_t i = 0; i < parts.size(); ++i) {
+                    std::string cache_err;
+                    if (cache_ && !cache_->put(image::PageCache::key(url, static_cast<int>(i), opt),
+                                               {parts[i], static_cast<uint8_t>(parts.size())}, cache_err))
+                        SUMI_LOGW("app", "%s", cache_err.c_str());
+                }
+                int want = std::clamp(part, 0, result.parts - 1);
+                result.page = std::move(parts[static_cast<size_t>(want)]);
+            }
+            if (!err.empty()) SUMI_LOGW("app", "page %s: %s", url.c_str(), err.c_str());
+        }
+        exec_.post([done, result = std::move(result), err = std::move(err)]() mutable { done(std::move(result), std::move(err)); });
+    });
+}
+
+void AppData::save_progress(int64_t chapter_id, int page, int pages_total, bool finished)
+{
+    exec_.submit([this, chapter_id, page, pages_total, finished] {
+        bool ok = repo_.set_progress(chapter_id, page, pages_total) && (!finished || repo_.set_read(chapter_id, true));
+        if (!ok) SUMI_LOGW("app", "cannot save progress for chapter %lld: %s", static_cast<long long>(chapter_id), db_.error().c_str());
     });
 }
 

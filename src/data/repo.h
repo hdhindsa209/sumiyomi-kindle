@@ -36,6 +36,7 @@ public:
     // when new chapters appear. Returns the number of new chapters, or -1 on error.
     int sync_chapters(int64_t manga_id, const std::vector<Chapter>& from_source, int64_t now_ms);
     std::vector<Chapter> chapters(int64_t manga_id);
+    std::optional<Chapter> chapter(int64_t chapter_id);
     bool set_read(int64_t chapter_id, bool read);
     bool set_progress(int64_t chapter_id, int last_page_read, int pages_total);
 
@@ -51,6 +52,10 @@ public:
     // --- history ---
     bool record_read(int64_t chapter_id, int64_t now_ms, int64_t time_read_ms);
     std::vector<HistoryItem> history(int limit = 100);
+
+    // --- preferences (string key/value) ---
+    std::optional<std::string> pref(const std::string& key);
+    bool set_pref(const std::string& key, const std::string& value);
 
 private:
     Db& db_;

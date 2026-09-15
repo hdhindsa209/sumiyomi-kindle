@@ -7,6 +7,8 @@
 
 #include "core/executor.h"
 #include "data/repo.h"
+#include "image/page_cache.h"
+#include "net/http.h"
 #include "source/extension.h"
 
 namespace sumi::app {
@@ -29,12 +31,37 @@ struct MangaView {
 
 enum class Browse { Popular, Latest, Search };
 
+// Reader preferences (M4), persisted in the preferences table.
+struct ReaderSettings {
+    bool          rtl = true;          // right-to-left page order (manga); false = left-to-right
+    int           flash_every = 1;     // full GC16 flash every N page turns; 0 = never (user: clarity first)
+    image::Fit    fit = image::Fit::Screen;
+    image::Dither dither = image::Dither::Balanced;
+    bool          crop_borders = true;
+    bool          split_spreads = true;
+};
+
+struct ChapterView {
+    data::Manga                manga;
+    data::Chapter              chapter;
+    std::vector<data::Chapter> chapters;   // the whole manga, source order (newest first)
+    std::vector<std::string>   pages;      // image URLs in reading order
+};
+
+struct PageImage {
+    image::Gray page;
+    int         parts = 1;   // pages this image became (2 for a split spread)
+};
+
 // Everything the UI reads or changes, done on the Executor (design doc §3.1: no SQLite, network,
 // or Lua on the UI thread). Callbacks run on the UI thread via Executor::post. All members that
 // the jobs touch (db, repo, extensions) are only used inside jobs, i.e. on the worker.
 class AppData {
 public:
-    AppData(Executor& exec, data::Db& db, std::vector<std::unique_ptr<source::Extension>> extensions);
+    // `images` fetches page images (null: pages fail with "network unavailable"); `cache` stores
+    // processed pages (null: no caching). Both are used only on the worker.
+    AppData(Executor& exec, data::Db& db, std::vector<std::unique_ptr<source::Extension>> extensions,
+            net::Client* images = nullptr, image::PageCache* cache = nullptr);
 
     // UI-thread safe: fixed at construction.
     const std::vector<SourceInfo>& sources() const { return sources_; }
@@ -62,6 +89,18 @@ public:
     // and how many entries failed.
     void update_library(std::function<void(int new_chapters, int failed)> done);
 
+    // --- reader (M4) ---
+    void reader_settings(std::function<void(ReaderSettings)> done);
+    void save_reader_settings(const ReaderSettings& s);
+    // Chapter + its manga + the page list from the source. Records the chapter in history.
+    void open_chapter(int64_t chapter_id, std::function<void(ChapterView, std::string err)> done);
+    // Part `part` of page image `url`, processed with `opt`: from the cache, or fetched, decoded,
+    // processed (all parts cached) and returned.
+    void load_page(int64_t source, const std::string& url, int part, const image::ProcessOptions& opt,
+                   std::function<void(PageImage, std::string err)> done);
+    // Remember the reading position; `finished` also marks the chapter read.
+    void save_progress(int64_t chapter_id, int page, int pages_total, bool finished);
+
 private:
     source::Extension* extension(int64_t source);
     void refresh(source::Extension* ext, data::Manga manga,
@@ -72,6 +111,8 @@ private:
     data::Repo repo_;
     std::vector<std::unique_ptr<source::Extension>> extensions_;
     std::vector<SourceInfo> sources_;
+    net::Client*       images_;
+    image::PageCache*  cache_;
 };
 
 } // namespace sumi::app

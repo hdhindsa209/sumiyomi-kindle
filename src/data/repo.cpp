@@ -177,6 +177,16 @@ std::vector<Chapter> Repo::chapters(int64_t manga_id)
     return out;
 }
 
+std::optional<Chapter> Repo::chapter(int64_t chapter_id)
+{
+    Stmt s = db_.prepare(R"(SELECT manga_id FROM chapters WHERE id = ?1)");
+    s.bind(1, chapter_id);
+    if (!s.step()) return std::nullopt;
+    for (Chapter& c : chapters(s.i64(0)))
+        if (c.id == chapter_id) return c;
+    return std::nullopt;
+}
+
 bool Repo::set_read(int64_t chapter_id, bool read)
 {
     return db_.prepare("UPDATE chapters SET read = ?2 WHERE id = ?1").bind(1, chapter_id).bind(2, read).run()
@@ -250,6 +260,23 @@ std::vector<HistoryItem> Repo::history(int limit)
     std::vector<HistoryItem> out;
     while (s.step()) out.push_back({s.i64(0), s.i64(1), s.text(2), s.text(3), s.i64(4), s.i64(5)});
     return out;
+}
+
+// ---------------------------------------------------------------- preferences
+
+std::optional<std::string> Repo::pref(const std::string& key)
+{
+    Stmt s = db_.prepare("SELECT value FROM preferences WHERE key = ?1");
+    s.bind(1, key);
+    if (!s.step()) return std::nullopt;
+    return s.text(0);
+}
+
+bool Repo::set_pref(const std::string& key, const std::string& value)
+{
+    return db_.prepare(R"(INSERT INTO preferences (key, value) VALUES (?1, ?2)
+                          ON CONFLICT(key) DO UPDATE SET value = ?2)")
+        .bind(1, key).bind(2, value).run();
 }
 
 } // namespace sumi::data

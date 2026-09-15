@@ -120,6 +120,14 @@ CREATE TABLE tracks (
     UNIQUE(manga_id, tracker_id)
 );
 )SQL",
+
+    // 2 (M4): app preferences (reader direction, refresh cadence, processing settings).
+    R"SQL(
+CREATE TABLE preferences (
+    key             TEXT PRIMARY KEY,
+    value           TEXT NOT NULL
+);
+)SQL",
 };
 
 constexpr int kSchemaVersion = static_cast<int>(sizeof(kMigrations) / sizeof(kMigrations[0]));

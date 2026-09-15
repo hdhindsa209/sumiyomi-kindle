@@ -3,9 +3,12 @@
 #include "app/format.h"
 
 #include "check.h"
+#include "fake_images.h"
 #include "fixture_transport.h"
 
+#include <cstdlib>
 #include <string>
+#include <unistd.h>
 
 using namespace sumi;
 using namespace sumi::app;
@@ -22,6 +25,10 @@ net::Client::Clock no_wait()
 struct Env {
     fixtures::ReplayTransport transport{SUMI_SOURCE_DIR "/tests/fixtures/weebcentral"};
     net::Client client{transport, no_wait()};
+    fake_images::Transport image_transport{transport};
+    net::Client images{image_transport, no_wait()};
+    std::string cache_dir = "app_data_cache_" + std::to_string(getpid());
+    image::PageCache cache{cache_dir, 64ull << 20, 5};
     InlineExecutor exec;
     data::Db db;
     std::unique_ptr<AppData> app;
@@ -35,7 +42,11 @@ struct Env {
         auto ext = source::Extension::load(SUMI_SOURCE_DIR "/sources/weebcentral", &client, err);
         CHECK(ext != nullptr);
         if (ext) exts.push_back(std::move(ext));
-        app = std::make_unique<AppData>(exec, db, std::move(exts));
+        std::string cmd = "rm -rf " + cache_dir;
+        int rc = std::system(cmd.c_str());
+        (void)rc;
+        CHECK(cache.init(err));
+        app = std::make_unique<AppData>(exec, db, std::move(exts), &images, &cache);
         if (!app->sources().empty()) dex = app->sources()[0].id;
     }
 };
@@ -163,6 +174,84 @@ void test_format_helpers()
     CHECK(status_name(1) == "Ongoing" && status_name(99) == "Unknown status");
 }
 
+void test_reader_settings_persist()
+{
+    Env env;
+    ReaderSettings s;
+    env.app->reader_settings([&](ReaderSettings got) { s = got; });
+    CHECK(s.rtl && s.flash_every == 1 && s.fit == image::Fit::Screen && s.dither == image::Dither::Balanced);
+    s.rtl = false;
+    s.flash_every = 4;
+    s.dither = image::Dither::Smooth;
+    s.crop_borders = false;
+    env.app->save_reader_settings(s);
+    ReaderSettings back;
+    env.app->reader_settings([&](ReaderSettings got) { back = got; });
+    CHECK(!back.rtl && back.flash_every == 4 && back.dither == image::Dither::Smooth && !back.crop_borders && back.split_spreads);
+}
+
+void test_open_chapter_and_load_pages()
+{
+    Env env;
+    source::SManga seed{kSeedUrl, "Nee-chan", "", "", "", "", {}, 0};
+    MangaView view;
+    env.app->open_manga(env.dex, seed, [&](MangaView v, bool, std::string) { view = std::move(v); });
+    CHECK(!view.chapters.empty());
+    if (view.chapters.empty()) return;
+
+    ChapterView ch;
+    std::string err = "unset";
+    env.app->open_chapter(view.chapters[0].id, [&](ChapterView v, std::string e) { ch = std::move(v); err = e; });
+    CHECK(err.empty());
+    CHECK(ch.chapter.name == "Chapter 25" && ch.manga.id == view.manga.id);
+    CHECK_EQ(ch.pages.size(), 33);
+    CHECK_EQ(ch.chapters.size(), 28);
+    if (ch.pages.empty()) return;
+    CHECK(ch.pages[0].find("0025-001") != std::string::npos);
+    std::vector<data::HistoryItem> hist;
+    env.app->history([&](auto h) { hist = std::move(h); });
+    CHECK(hist.size() == 1 && hist[0].chapter_name == "Chapter 25");
+
+    image::ProcessOptions opt;
+    PageImage page;
+    env.app->load_page(env.dex, ch.pages[2], 0, opt, [&](PageImage p, std::string e) { page = std::move(p); err = e; });
+    CHECK(err.empty());
+    CHECK(page.parts == 1 && page.page.w <= 1072 && page.page.h <= 1448 && page.page.h > 1000);
+    CHECK_EQ(env.image_transport.hits[ch.pages[2]], 1);
+    CHECK(env.image_transport.last_referer == "https://weebcentral.com/");
+
+    // Second load: served from the cache, no request.
+    env.cache.clear_ram();
+    PageImage again;
+    env.app->load_page(env.dex, ch.pages[2], 0, opt, [&](PageImage p, std::string) { again = std::move(p); });
+    CHECK_EQ(env.image_transport.hits[ch.pages[2]], 1);
+    CHECK(again.page.px == page.page.px);
+
+    // Different settings are a different cache entry.
+    image::ProcessOptions sharp = opt;
+    sharp.dither = image::Dither::Sharp;
+    env.app->load_page(env.dex, ch.pages[2], 0, sharp, [&](PageImage, std::string) {});
+    CHECK_EQ(env.image_transport.hits[ch.pages[2]], 2);
+
+    // A failing image reports an error and caches nothing.
+    env.image_transport.fail.insert(ch.pages[5]);
+    env.app->load_page(env.dex, ch.pages[5], 0, opt, [&](PageImage p, std::string e) { page = std::move(p); err = e; });
+    CHECK(err == "HTTP 404" && page.page.px.empty());
+
+    // Progress and finishing.
+    env.app->save_progress(ch.chapter.id, 10, 33, false);
+    MangaView after;
+    env.app->open_manga_id(view.manga.id, [&](MangaView v, bool, std::string) { after = std::move(v); });
+    CHECK(!after.chapters.empty() && after.chapters[0].last_page_read == 10 && !after.chapters[0].read);
+    env.app->save_progress(ch.chapter.id, 32, 33, true);
+    env.app->open_manga_id(view.manga.id, [&](MangaView v, bool, std::string) { after = std::move(v); });
+    CHECK(!after.chapters.empty() && after.chapters[0].read);
+
+    std::string cmd = "rm -rf " + env.cache_dir;
+    int rc = std::system(cmd.c_str());
+    (void)rc;
+}
+
 } // namespace
 
 int main()
@@ -172,5 +261,7 @@ int main()
     RUN(test_open_manga_persists_then_serves_local_first);
     RUN(test_favorite_read_and_library);
     RUN(test_format_helpers);
+    RUN(test_reader_settings_persist);
+    RUN(test_open_chapter_and_load_pages);
     return check_result();
 }
