@@ -15,9 +15,9 @@ namespace sumi::ui {
 // dirty nodes into repaints + FrameScheduler damage (design doc §5.1 paint pipeline).
 //
 // Refresh rules (§5.4, e-ink):
-//   - screen entry / set_root: one full-screen GC16 (flashing)
-//   - page change, content swap (invalidate_layout): full-screen repaint + refresh; the
-//     RefreshPolicy turns every Nth full refresh into a flash to clear ghosting
+//   - screen entry, page change, content swap: full-screen repaint + one full-screen REAGL
+//     refresh (kFullWave). REAGL clears ghosting without the black flash; the RefreshPolicy still
+//     turns every Nth full refresh into a real GC16 flash for a deep clean.
 //   - press: the node is binarized + inverted and refreshed with A2 immediately (tap feedback
 //     is the only deliberately partial update, so it stays fast)
 //   - release: the node repaints normally with GL16 (content may contain grays)
@@ -42,7 +42,8 @@ public:
     void relayout(Node* n);
 
     // Re-run layout and repaint everything next frame, with `mode` (structure changed in place).
-    void invalidate_layout(Wave mode = Wave::GL16);
+    static constexpr Wave kFullWave = Wave::REAGL;
+    void invalidate_layout(Wave mode = kFullWave);
 
     // Move `list` (a paging node) one page; on success the whole screen repaints and refreshes.
     void turn_page(Node* list, bool forward);
@@ -78,7 +79,7 @@ private:
     bool overlay_shown_  = false;        // needs its entry refresh
     Rect overlay_hidden_;                // area to restore after hide_overlay
     bool  needs_layout_ = false;
-    Wave  full_mode_    = Wave::GC16_FLASH;
+    Wave  full_mode_    = kFullWave;
 
     GestureRecognizer gestures_;
     Node*  pressed_  = nullptr;

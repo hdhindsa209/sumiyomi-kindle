@@ -132,6 +132,18 @@ void test_on_delivered_runs_after_each_batch()
     CHECK(paints >= 1);
 }
 
+void test_timeout_fires_once()
+{
+    EventLoop loop;
+    std::string err;
+    CHECK(loop.init(err));
+    int fired = 0, polls = 0;
+    loop.add_timeout([&] { ++fired; }, 20);
+    loop.add_poll([&] { if (++polls == 15) loop.stop(); }, 10);   // ~150 ms: well past the timeout
+    loop.run();
+    CHECK_EQ(fired, 1);
+}
+
 int main()
 {
     RUN(test_job_runs_off_loop_thread_and_result_returns);
@@ -140,5 +152,6 @@ int main()
     RUN(test_loop_stays_responsive_while_job_blocks);
     RUN(test_stop_drops_queued_jobs);
     RUN(test_on_delivered_runs_after_each_batch);
+    RUN(test_timeout_fires_once);
     return check_result();
 }

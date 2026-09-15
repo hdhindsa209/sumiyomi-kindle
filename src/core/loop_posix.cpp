@@ -61,6 +61,12 @@ void EventLoop::add_poll(std::function<void()> fn, uint32_t interval_ms)
     polls_.push_back({std::move(fn), interval_ms, mono_ms() + interval_ms});
 }
 
+void EventLoop::add_timeout(std::function<void()> fn, uint32_t after_ms)
+{
+    after_ms = std::max<uint32_t>(after_ms, 1);
+    polls_.push_back({std::move(fn), after_ms, mono_ms() + after_ms, true});
+}
+
 int EventLoop::wait_timeout_ms(uint64_t now) const
 {
     bool any = false;
@@ -74,11 +80,15 @@ int EventLoop::wait_timeout_ms(uint64_t now) const
 
 void EventLoop::run_polls(uint64_t now)
 {
-    for (Poll& p : polls_) {
-        if (now < p.next_ms) continue;
-        p.next_ms = now + p.interval_ms;
-        p.fn();
+    // By index: a callback may add polls (reallocating the vector).
+    for (size_t i = 0; i < polls_.size(); ++i) {
+        if (now < polls_[i].next_ms) continue;
+        polls_[i].next_ms = now + polls_[i].interval_ms;
+        polls_[i].done = polls_[i].once;
+        auto fn = polls_[i].fn;
+        fn();
     }
+    polls_.erase(std::remove_if(polls_.begin(), polls_.end(), [](const Poll& p) { return p.done; }), polls_.end());
 }
 
 void EventLoop::run()

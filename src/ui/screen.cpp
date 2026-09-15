@@ -19,7 +19,7 @@ void Screen::set_root(std::unique_ptr<Node> root)
     retired_      = std::move(root_);
     root_         = std::move(root);
     needs_layout_ = true;
-    full_mode_    = Wave::GC16_FLASH;
+    full_mode_    = kFullWave;
 }
 
 void Screen::show_overlay(std::unique_ptr<Node> overlay)
@@ -124,7 +124,7 @@ void Screen::page(Node* start, bool forward)
 
 void Screen::turn_page(Node* list, bool forward)
 {
-    if (list && list->on_page(forward)) invalidate_layout(Wave::GL16);   // whole screen: pager label changes too
+    if (list && list->on_page(forward)) invalidate_layout();   // whole screen: pager label changes too
 }
 
 void Screen::on_tick(uint64_t now_ms)
@@ -181,7 +181,7 @@ void Screen::frame()
         dirty_.clear();
         released_.clear();
         frames_.damage(screen_, full_mode_);
-        full_mode_ = Wave::GC16_FLASH;
+        full_mode_ = kFullWave;
     } else {
         if (!overlay_hidden_.empty()) {
             // Sheet dismissed: repaint what was under it.

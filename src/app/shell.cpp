@@ -88,7 +88,7 @@ bool Shell::on_back()
     if (keyboard_ && keyboard_->visible && !results_.empty()) {   // search: hide the keyboard first
         keyboard_->visible = false;
         if (search_pager_) search_pager_->visible = true;
-        screen_.invalidate_layout(Wave::GL16);
+        screen_.invalidate_layout();
         return true;
     }
     if (stack_.size() <= 1) return false;
@@ -162,7 +162,7 @@ void Shell::set_body_items(std::vector<std::unique_ptr<Node>> items)
     if (!list_) return;
     list_->clear_children();
     for (auto& n : items) list_->add(std::move(n));
-    screen_.invalidate_layout(Wave::GL16);   // new content = a new page: refresh the whole panel
+    screen_.invalidate_layout();   // new content = a new page: refresh the whole panel
 }
 
 // ---------------------------------------------------------------- Library
@@ -245,7 +245,7 @@ void Shell::show_updates()
         static_cast<Label*>(status_bar_->children()[0].get())->set_text(std::string("Updating library") + kEllipsis);
         if (!status_bar_->visible) {
             status_bar_->visible = true;
-            screen_.invalidate_layout(Wave::GL16);
+            screen_.invalidate_layout();
         }
         data_.update_library([this, gen, reload](int added, int failed) {
             if (!current(gen) || !status_bar_) return;
@@ -406,7 +406,7 @@ void Shell::show_search(const Route& r)
         if (!current(gen) || !keyboard_ || keyboard_->visible) return;
         keyboard_->visible = true;
         if (search_pager_) search_pager_->visible = false;
-        screen_.invalidate_layout(Wave::GL16);
+        screen_.invalidate_layout();
     };
     field_ = field.get();
     root->add(std::move(field));
@@ -442,7 +442,7 @@ void Shell::run_search(uint64_t gen, int64_t source)
     results_.clear();
     list_->clear_children();
     list_->add(message("Searching for \xE2\x80\x9C" + q + "\xE2\x80\x9D" + kEllipsis));
-    screen_.invalidate_layout(Wave::GL16);
+    screen_.invalidate_layout();
     load_source_page(gen, source, Browse::Search, q, 1);
 }
 

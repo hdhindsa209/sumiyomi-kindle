@@ -34,12 +34,15 @@ public:
     // Using this means the loop is never idle-silent; the device backend doesn't use it.
     void add_poll(std::function<void()> fn, uint32_t interval_ms);
 
+    // Calls fn once, after_ms from now (then forgets it: no further wake-ups).
+    void add_timeout(std::function<void()> fn, uint32_t after_ms);
+
     void run();      // blocks until stop()
     void stop() noexcept;   // async-signal-safe: a single write(2) to the wake fd
 
 private:
     struct Watch { int fd; std::function<void(int)> on_ready; };
-    struct Poll  { std::function<void()> fn; uint32_t interval_ms; uint64_t next_ms; };
+    struct Poll  { std::function<void()> fn; uint32_t interval_ms; uint64_t next_ms; bool once = false; bool done = false; };
 
     int  wait_timeout_ms(uint64_t now) const;   // -1 = block indefinitely
     void run_polls(uint64_t now);

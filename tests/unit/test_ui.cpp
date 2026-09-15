@@ -231,14 +231,14 @@ void test_golden_sample_layout()
     CHECK(ok);
 }
 
-void test_screen_entry_is_one_full_flash()
+void test_screen_entry_is_one_full_refresh()
 {
     Env env;
     int taps = 0;
     env.screen.set_root(sample_tree(&taps));
     env.screen.frame();
     CHECK_EQ(env.display.calls.size(), 1);
-    CHECK(env.display.calls[0].mode == Wave::GC16_FLASH);
+    CHECK(env.display.calls[0].mode == Wave::REAGL);     // clears ghosting without the black flash
     CHECK_EQ(env.display.calls[0].rect.w, 1072);
     env.screen.frame();                                  // nothing changed: nothing submitted
     CHECK_EQ(env.display.calls.size(), 1);
@@ -337,7 +337,7 @@ void test_tap_replacing_root_renders_new_screen()
     env.screen.on_event(e);
     env.screen.frame();                                  // release + tap + new root, same wake
     CHECK(!env.display.calls.empty());
-    CHECK(env.display.calls.back().mode == Wave::GC16_FLASH);
+    CHECK(env.display.calls.back().mode == Wave::REAGL);
     CHECK_EQ(env.display.fb[500 * 1072 + 500], tone::SURFACE_2);
 }
 
@@ -376,7 +376,7 @@ int main()
     RUN(test_label_and_icon_measure);
     RUN(test_hit_test_prefers_deepest_pressable);
     RUN(test_golden_sample_layout);
-    RUN(test_screen_entry_is_one_full_flash);
+    RUN(test_screen_entry_is_one_full_refresh);
     RUN(test_press_feedback_a2_then_release_and_tap);
     RUN(test_press_cancelled_by_move);
     RUN(test_dirty_label_damages_its_frame_with_hint);

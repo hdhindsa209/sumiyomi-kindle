@@ -27,6 +27,7 @@
 namespace {
 
 constexpr uint32_t kTickMs    = 100;   // long-press detection, armed only while needed
+constexpr uint32_t kStartupRepaintMs = 2000;   // after the framework's last home-screen redraw
 constexpr uint32_t kSdlPollMs = 10;    // fd-less input (simulator only)
 
 std::string env_or(const char* name, const char* fallback)
@@ -118,6 +119,9 @@ int main(int argc, char** argv)
     sumi::GlyphCache     glyphs;
     sumi::Text           text(fonts, glyphs);
     sumi::RefreshPolicy  policy;
+    // Screens and pages refresh with REAGL (no flash, low ghosting); a real flash every 10th
+    // full refresh cleans up what REAGL leaves behind without flashing on every change.
+    policy.set_flash_interval(10);
     sumi::FrameScheduler frames(*display, policy);
     sumi::ui::Screen     screen(canvas, text, fonts, frames, di.width, di.height);
 
@@ -188,6 +192,14 @@ int main(int argc, char** argv)
         for (int fd : input->fds()) loop.add_fd(fd, drain);
     }
     sumi::app::paint_on_results(worker, loop, screen);
+
+    // The home screen can still redraw over our first frame while the framework winds down after
+    // the KUAL launch (seen on the device). Repaint everything once with a flash after it settles.
+    loop.add_timeout([&] {
+        SUMI_LOGI("main", "startup repaint (clears any home screen drawn after launch)");
+        screen.invalidate_layout(sumi::Wave::GC16_FLASH);
+        screen.frame();
+    }, kStartupRepaintMs);
     loop.set_tick([&](uint64_t now) {
         screen.on_tick(now);
         screen.frame();
