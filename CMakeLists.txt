@@ -77,14 +77,16 @@ add_library(sumi_core STATIC
   src/core/dirty.cpp
   src/core/gesture.cpp
   src/core/refresh_policy.cpp
-  src/core/frame.cpp)
+  src/core/frame.cpp
+  src/core/worker.cpp)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   target_sources(sumi_core PRIVATE src/core/loop_linux.cpp)
 else()
   target_sources(sumi_core PRIVATE src/core/loop_posix.cpp)
 endif()
 target_include_directories(sumi_core PUBLIC src)
-target_link_libraries(sumi_core PUBLIC sumi_warnings)
+find_package(Threads REQUIRED)
+target_link_libraries(sumi_core PUBLIC sumi_warnings Threads::Threads)
 
 # Text: fonts, glyph cache, shaping/layout/drawing (M2 S3).
 add_library(sumi_text STATIC
@@ -161,7 +163,7 @@ if(NOT CMAKE_CROSSCOMPILING)
   target_link_libraries(test_data PRIVATE sumi_data)
   add_test(NAME data COMMAND test_data WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 
-  foreach(name canvas dirty gesture refresh_policy loop frame)
+  foreach(name canvas dirty gesture refresh_policy loop frame worker)
     add_executable(test_${name} tests/unit/test_${name}.cpp)
     target_link_libraries(test_${name} PRIVATE sumi_core)
     if(name STREQUAL "loop")
