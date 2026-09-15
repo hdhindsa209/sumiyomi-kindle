@@ -451,11 +451,10 @@ void test_reader_pages_zones_and_refresh()
     env.data->reader_settings([&](app::ReaderSettings got) { s = got; });
     CHECK(s.rtl && s.flash_every == 2 && s.dither == image::Dither::Sharp && s.contrast == 2);
 
-    // Leaving the reader: back to the manga, with the position shown on the chapter.
+    // Leaving the reader with the top bar's back arrow (menu open): straight back to the manga.
     middle();
-    CHECK(env.shell->on_back());                                        // closes the menu
-    CHECK(env.shell->on_back());                                        // leaves the reader
-    env.screen.frame();
+    env.tap(Point{56, 64});                                             // back arrow, top-left
+    CHECK(!env.shows("Reading"));
     CHECK(env.shows("Continue: Chapter 25"));
     CHECK(env.shows("1 week ago \xC2\xB7 Page 3 of 33"));
 }

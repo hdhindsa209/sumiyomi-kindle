@@ -644,7 +644,12 @@ void Shell::show_reader(const Route& r)
 {
     begin();
     Reader::Callbacks cb;
-    cb.exit = [this] { on_back(); };
+    // Leave the reader outright: going through on_back() would only close an open menu.
+    cb.exit = [this] {
+        if (stack_.size() <= 1 || stack_.back().kind != Route::Reader) return;
+        stack_.pop_back();
+        show(stack_.back());
+    };
     cb.open_chapter = [this](int64_t chapter_id, bool from_end) {
         if (stack_.empty() || stack_.back().kind != Route::Reader) return;
         Route next{Route::Reader};
