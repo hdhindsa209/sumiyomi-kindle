@@ -27,6 +27,20 @@ target_include_directories(harfbuzz SYSTEM PUBLIC third_party/harfbuzz/src)
 target_compile_options(harfbuzz PRIVATE -fno-exceptions -fno-rtti -w)
 target_link_libraries(harfbuzz PUBLIC freetype)
 
+# SQLite amalgamation (design doc §3.2), static.
+add_library(sqlite3 STATIC third_party/sqlite/sqlite3.c)
+target_include_directories(sqlite3 SYSTEM PUBLIC third_party/sqlite)
+target_compile_definitions(sqlite3 PUBLIC
+  SQLITE_THREADSAFE=2               # connections are never shared across threads
+  SQLITE_DQS=0
+  SQLITE_DEFAULT_FOREIGN_KEYS=1
+  SQLITE_OMIT_LOAD_EXTENSION
+  SQLITE_OMIT_DEPRECATED
+  SQLITE_OMIT_SHARED_CACHE
+  SQLITE_USE_ALLOCA
+  SQLITE_ENABLE_FTS5)
+target_compile_options(sqlite3 PRIVATE -w)
+
 set(SUMI_ASSETS_DIR "${CMAKE_SOURCE_DIR}/assets")
 
 # Backend-independent core: builds for host and device.
@@ -61,6 +75,12 @@ add_library(sumi_ui STATIC
 target_include_directories(sumi_ui PUBLIC assets/fonts)
 target_link_libraries(sumi_ui PUBLIC sumi_text)
 
+# Data: SQLite repositories (M3 S1).
+add_library(sumi_data STATIC
+  src/data/db.cpp
+  src/data/repo.cpp)
+target_link_libraries(sumi_data PUBLIC sumi_core sqlite3)
+
 if(NOT CMAKE_CROSSCOMPILING)
   # Host: unit tests, plus the SDL simulator backend (§10) when SDL2 is available.
   enable_testing()
@@ -94,6 +114,10 @@ if(NOT CMAKE_CROSSCOMPILING)
                                                SUMI_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/tests/golden")
   target_link_libraries(test_shell PRIVATE sumi_ui)
   add_test(NAME shell COMMAND test_shell)
+
+  add_executable(test_data tests/unit/test_data.cpp)
+  target_link_libraries(test_data PRIVATE sumi_data)
+  add_test(NAME data COMMAND test_data WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 
   foreach(name canvas dirty gesture refresh_policy loop frame)
     add_executable(test_${name} tests/unit/test_${name}.cpp)
