@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "app/app_data.h"
+#include "platform/frontlight.h"
 #include "ui/screen.h"
 
 namespace sumi::app {
@@ -39,7 +40,7 @@ public:
         std::function<void(int64_t chapter_id, bool from_end)> open_chapter;   // switch chapters
     };
 
-    Reader(ui::Screen& screen, AppData& data, Callbacks callbacks, Schedule schedule = nullptr);
+    Reader(ui::Screen& screen, AppData& data, Callbacks callbacks, Schedule schedule = nullptr, Frontlight* light = nullptr);
     ~Reader();
 
     // Open `chapter_id` at `start_page` (image index), or at its last page when `from_end`.
@@ -85,6 +86,7 @@ private:
     AppData&    data_;
     Callbacks   cb_;
     Schedule    schedule_;
+    Frontlight* light_;
     std::shared_ptr<int> alive_ = std::make_shared<int>(0);   // callbacks hold a weak_ptr
     uint64_t    request_ = 0;                                  // latest page request; older results are dropped
 

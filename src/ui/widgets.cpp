@@ -395,6 +395,37 @@ std::unique_ptr<Node> segmented(const std::vector<std::string>& labels, int sele
     return row;
 }
 
+// ---------------------------------------------------------------- Front light
+
+std::unique_ptr<Node> light_control(int level, int max, std::function<void(int)> set)
+{
+    auto box = container(Layout::Column);
+    box->gap = 12;
+    auto row = container(Layout::Row);
+    row->height = Dim::px(104);
+    row->gap = 16;
+    row->align_cross = Align::Center;
+    auto step = [&](const char* label, int delta) {
+        auto b = button(label, [set, level, max, delta] { set(std::clamp(level + delta, 0, max)); });
+        b->width = Dim::px(160);
+        return b;
+    };
+    row->add(step("\xE2\x88\x92", -1));   // −
+    auto* l = row->emplace<Label>(level == 0 ? std::string("Light off") : "Light " + std::to_string(level) + " of " + std::to_string(max),
+                                  type::LIST_PRIMARY, FontId::InterSemiBold, tone::BLACK);
+    l->width = Dim::fill();
+    l->text_align = Align::Center;
+    row->add(step("+", +1));
+    box->add(std::move(row));
+    // Presets as fractions of the maximum, so another model's range works too.
+    const int presets[] = {0, max / 4, max / 2, max * 5 / 6};
+    int selected = -1;
+    for (int i = 0; i < 4; ++i)
+        if (presets[i] == level) selected = i;
+    box->add(segmented({"Off", "Low", "Medium", "High"}, selected, [set, presets](int i) { set(presets[i]); }));
+    return box;
+}
+
 // ---------------------------------------------------------------- Loading page, button
 
 std::unique_ptr<Node> loading_page(const std::string& text, std::function<void()> cancel)

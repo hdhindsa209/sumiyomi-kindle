@@ -9,6 +9,7 @@
 #include "app/live_frames.h"
 #include "core/log.h"
 #include "app/shell.h"
+#include "platform/frontlight.h"
 
 #include "check.h"
 #include "fake_display.h"
@@ -56,6 +57,7 @@ struct Env {
     data::Db       db;
     std::unique_ptr<app::AppData> data;
     std::unique_ptr<app::Shell>   shell;
+    FakeFrontlight light;
     bool           exited = false;
     uint64_t       t = 10000;
 
@@ -88,7 +90,7 @@ struct Env {
         else               // inline data is instant: deferred loading pages would never be due
             schedule = [](uint32_t, std::function<void()>) {};
         shell = std::make_unique<app::Shell>(screen, *data, [this] { exited = true; },
-                                             [] { return int64_t{1789344000000LL + 13 * 3600000LL}; }, schedule);
+                                             [] { return int64_t{1789344000000LL + 13 * 3600000LL}; }, schedule, &light);
         shell->start();
         screen.frame();
     }
@@ -685,6 +687,40 @@ void test_downloads_from_manga_page()
     CHECK_EQ(env.display.stale_pixels(), 0);
 }
 
+void test_front_light_controls()
+{
+    Env env;
+    // Tab screens: the light action (first app bar action) opens the sheet.
+    env.tap(env.root()->children()[0]->children()[1].get());
+    CHECK(env.shows("Front light"));
+    CHECK(env.shows("Light 8 of 24"));
+    env.tap(env.find("+"));
+    CHECK_EQ(env.light.level(), 9);
+    CHECK(env.shows("Light 9 of 24"));
+    env.tap(env.find("Off"));
+    CHECK_EQ(env.light.level(), 0);
+    CHECK(env.shows("Light off"));
+    env.tap(env.find("High"));
+    CHECK_EQ(env.light.level(), 20);
+    CHECK_EQ(env.display.stale_pixels(), 0);
+    CHECK(env.golden("front_light"));
+    env.tap(env.find("Done"));
+    CHECK(!env.shows("Front light"));
+
+    // Reader: a Light tab in the menu; only the bar redraws.
+    open_detail(env);
+    env.tap(env.find("Chapter 25"));
+    env.tap(Point{kW / 2, 700});
+    env.tap(env.find("Light"));
+    CHECK(env.shows("Light 20 of 24"));
+    size_t calls = env.display.calls.size();
+    env.tap(env.find("\xE2\x88\x92"));
+    CHECK_EQ(env.light.level(), 19);
+    CHECK(env.shows("Light 19 of 24"));
+    for (size_t k = calls; k < env.display.calls.size(); ++k) CHECK(env.display.calls[k].rect.h < kH / 2);
+    CHECK_EQ(env.display.stale_pixels(), 0);
+}
+
 void test_updates_refresh_reports()
 {
     Env env;
@@ -725,6 +761,7 @@ int main()
     RUN(test_reader_long_strip_slices);
     RUN(test_long_press_chapter_toggles_read);
     RUN(test_downloads_from_manga_page);
+    RUN(test_front_light_controls);
     RUN(test_updates_refresh_reports);
     RUN(test_more_exit);
     return check_result();

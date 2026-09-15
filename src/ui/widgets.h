@@ -92,6 +92,10 @@ std::unique_ptr<Node> cta_bar(char32_t icon, const std::string& label, std::func
 // A row of equal options, one selected (inverted). No gray states.
 std::unique_ptr<Node> segmented(const std::vector<std::string>& labels, int selected, std::function<void(int)> on_select);
 
+// Front light control: [−] Light 8 of 24 [+], then Off / Low / Medium / High presets.
+// `set` receives the new level; the caller rebuilds the control to show it.
+std::unique_ptr<Node> light_control(int level, int max, std::function<void(int)> set);
+
 // Whole-screen loading page: centered SemiBold text on white; `cancel` adds a Cancel button.
 std::unique_ptr<Node> loading_page(const std::string& text, std::function<void()> cancel = nullptr);
 

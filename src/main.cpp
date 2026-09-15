@@ -151,6 +151,7 @@ int main(int argc, char** argv)
     sumi::app::AppData app_data(worker, db, load_extensions(env_or("SUMI_SOURCES", SUMI_SOURCES_DIR), http), &http,
                                 cache_ok ? &page_cache : nullptr, data_dir + "/downloads");
     app_data.resume_downloads();   // a queue interrupted by exiting continues
+    std::unique_ptr<sumi::Frontlight> light = sumi::make_frontlight();
     sumi::app::Shell shell(screen, app_data, [&loop] { loop.stop(); }, nullptr,
                            [&loop, &screen](uint32_t ms, std::function<void()> fn) {
                                loop.add_timeout([&loop, &screen, fn] {
@@ -158,7 +159,8 @@ int main(int argc, char** argv)
                                    screen.frame();
                                    loop.arm_tick(screen.wants_tick());
                                }, ms);
-                           });
+                           },
+                           light.get());
 
     uint64_t t_start = sumi::mono_ms();
     shell.start();

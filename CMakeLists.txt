@@ -301,7 +301,8 @@ if(NOT CMAKE_CROSSCOMPILING)
     add_library(sumi_sim STATIC
       src/platform/display_sdl.cpp
       src/platform/input_sdl.cpp
-      src/platform/power_stub.cpp)
+      src/platform/power_stub.cpp
+      src/platform/frontlight_stub.cpp)
     target_link_libraries(sumi_sim PUBLIC sumi_core SDL2::SDL2)
 
     add_executable(test_display_sdl tests/unit/test_display_sdl.cpp)
@@ -345,6 +346,7 @@ add_dependencies(fbink fbink_build)
 add_library(sumi_platform STATIC
   src/platform/signals.cpp
   src/platform/power_kindle.cpp
+  src/platform/frontlight_kindle.cpp
   src/platform/display_fbink.cpp
   src/platform/input_evdev.cpp)
 target_link_libraries(sumi_platform PUBLIC sumi_core fbink)

@@ -111,8 +111,8 @@ Label* big_text(Node* parent, const std::string& text, TypeRole role, FontId fon
 
 } // namespace
 
-Reader::Reader(Screen& screen, AppData& data, Callbacks callbacks, Schedule schedule)
-    : screen_(screen), data_(data), cb_(std::move(callbacks)), schedule_(std::move(schedule))
+Reader::Reader(Screen& screen, AppData& data, Callbacks callbacks, Schedule schedule, Frontlight* light)
+    : screen_(screen), data_(data), cb_(std::move(callbacks)), schedule_(std::move(schedule)), light_(light)
 {
 }
 
@@ -367,7 +367,9 @@ std::unique_ptr<Node> Reader::bottom_bar()
     if (!older && !newer) chapters->emplace<Label>("Only chapter", type::LIST_SECONDARY, FontId::InterRegular, tone::BLACK);
     bottom->add(std::move(chapters));
 
-    bottom->add(tabs({"Reading", "Zoom", "Crop", "Contrast"}, tab_, [this](int t) {
+    std::vector<std::string> tab_names = {"Reading", "Zoom", "Crop", "Contrast"};
+    if (light_) tab_names.push_back("Light");
+    bottom->add(tabs(tab_names, tab_, [this](int t) {
         if (t == tab_) return;
         tab_ = t;
         refresh_bottom_bar();
@@ -414,6 +416,14 @@ std::unique_ptr<Node> Reader::bottom_bar()
         row("Margins", segmented({"None", "Small", "Medium", "Large"}, settings_.margin, [this](int i) {
             change([i](ReaderSettings& s, int&) { s.margin = i; });
         }));
+        break;
+    case 4:
+        if (light_) {
+            options->add(light_control(light_->level(), light_->max(), [this](int level) {
+                light_->set(level);
+                refresh_bottom_bar();   // only the bar redraws; the page stays
+            }));
+        }
         break;
     default:
         row("Contrast", segmented({"Low", "Normal", "High", "Max"}, settings_.contrast, [this](int i) {

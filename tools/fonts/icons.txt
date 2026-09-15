@@ -46,3 +46,5 @@ chevron_left
 check_box
 check_box_outline_blank
 download_for_offline
+# Front light (M5)
+light_mode

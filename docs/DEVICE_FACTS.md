@@ -266,6 +266,22 @@ Ample room for the app, extensions, and cache budgets in the design doc.
 - **REAGL:** visibly worse than GL16/GC16 for the UI on this panel (user report). Closes U9 for UI screens; do not use.
 - **Refresh preferences (user):** clear image over speed; more flashing is acceptable in the reader.
 
+## Front light (2026-09-15, user via SSH)
+
+```
+lipc-get-prop com.lab126.powerd flIntensity      -> 0
+lipc-get-prop com.lab126.powerd flMaxIntensity   -> 24
+ls /sys/class/backlight/                          -> bl   (max_brightness 2047, brightness 0)
+lipc-get-prop com.lab126.powerd currentAmbientColor -> lipcErrNoSuchProperty
+/proc/usid                                        -> <redacted device id>
+```
+
+- Brightness: powerd `flIntensity` 0..24 (set with `lipc-set-prop com.lab126.powerd flIntensity N`). The sysfs
+  node is the raw driver under powerd; Sumiyomi goes through powerd.
+- No warmth control on this model.
+- The native quick settings can't open while Sumiyomi runs (pillow disabled, awesome stopped), so the app has
+  its own light controls. **Unverified:** that `lipc-set-prop flIntensity` takes effect while awesome is stopped.
+
 ## Outstanding
 
 - **Hotfix installed (y/n)** — unrecorded, non-blocking for now.

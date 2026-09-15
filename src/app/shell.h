@@ -8,9 +8,11 @@
 
 #include "app/app_data.h"
 #include "app/reader.h"
+#include "platform/frontlight.h"
 #include "ui/keyboard.h"
 #include "ui/paged_list.h"
 #include "ui/screen.h"
+#include "ui/widgets.h"
 
 namespace sumi::app {
 
@@ -32,8 +34,9 @@ public:
 
     // `now_ms`: wall clock for relative dates (injectable so tests render deterministic dates).
     // `schedule`: null shows loading pages immediately (tests).
+    // `light`: front light control (null: no light controls shown).
     Shell(ui::Screen& screen, AppData& data, std::function<void()> on_exit,
-          std::function<int64_t()> now_ms = nullptr, Schedule schedule = nullptr);
+          std::function<int64_t()> now_ms = nullptr, Schedule schedule = nullptr, Frontlight* light = nullptr);
 
     void start();
     // System back (simulator Esc): returns false at a top-level tab.
@@ -97,6 +100,9 @@ private:
     std::unique_ptr<ui::Node> detail_app_bar(uint64_t gen);
     std::unique_ptr<ui::Node> selection_bar(uint64_t gen);
     void show_download_sheet(uint64_t gen);
+    void show_light_sheet();
+    // A tab screen's app bar actions plus the front light action.
+    std::vector<ui::Action> with_light(std::vector<ui::Action> actions);
     void open_reader(int64_t chapter_id, int start_page);
     std::unique_ptr<ui::Node> detail_actions(uint64_t gen);
     std::unique_ptr<ui::Node> chapter_row(uint64_t gen, size_t index);
@@ -106,6 +112,7 @@ private:
     std::function<void()> on_exit_;
     std::function<int64_t()> now_ms_;
     Schedule    schedule_;
+    Frontlight* light_;
 
     std::vector<Route> stack_;
     uint64_t generation_ = 0;

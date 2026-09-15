@@ -96,9 +96,10 @@ bool same_view(const MangaView& a, const MangaView& b)
 
 } // namespace
 
-Shell::Shell(Screen& screen, AppData& data, std::function<void()> on_exit, std::function<int64_t()> now_ms, Schedule schedule)
+Shell::Shell(Screen& screen, AppData& data, std::function<void()> on_exit, std::function<int64_t()> now_ms, Schedule schedule,
+             Frontlight* light)
     : screen_(screen), data_(data), on_exit_(std::move(on_exit)),
-      now_ms_(now_ms ? std::move(now_ms) : std::function<int64_t()>(wall_ms)), schedule_(std::move(schedule))
+      now_ms_(now_ms ? std::move(now_ms) : std::function<int64_t()>(wall_ms)), schedule_(std::move(schedule)), light_(light)
 {
     data_.set_download_listener([this](const data::DownloadItem& item, bool removed) { on_download_changed(item, removed); });
 }
@@ -243,7 +244,7 @@ void Shell::show_library()
                                           go(r);
                                       }}));
         }
-        present(scaffold(app_bar("Library", nullptr, {{icon::refresh, [this] { go({Route::TabRoot, kUpdates}); }}}),
+        present(scaffold(app_bar("Library", nullptr, with_light({{icon::refresh, [this] { go({Route::TabRoot, kUpdates}); }}})),
                          paged(std::move(nodes)), kLibrary));
     });
 }
@@ -278,7 +279,7 @@ void Shell::show_updates(const std::string& status)
                 show_updates(msg);
             });
         };
-        present(scaffold(app_bar("Updates", nullptr, {{icon::refresh, refresh_library}}), paged(std::move(nodes)), kUpdates));
+        present(scaffold(app_bar("Updates", nullptr, with_light({{icon::refresh, refresh_library}})), paged(std::move(nodes)), kUpdates));
     });
 }
 
@@ -299,7 +300,7 @@ void Shell::show_history()
             nodes.push_back(list_row({h.manga_title, h.chapter_name, false, false, icon::play_arrow,
                                       [this, id] { Route r{Route::Detail}; r.manga_id = id; go(r); }}));
         }
-        present(scaffold(app_bar("History", nullptr, {}), paged(std::move(nodes)), kHistory));
+        present(scaffold(app_bar("History", nullptr, with_light({})), paged(std::move(nodes)), kHistory));
     });
 }
 
@@ -338,7 +339,7 @@ void Shell::show_browse()
         go({Route::TabRoot, kBrowse});
     }));
     body->add(paged(std::move(items)));
-    present(scaffold(app_bar("Browse", nullptr, {}), std::move(body), kBrowse));
+    present(scaffold(app_bar("Browse", nullptr, with_light({})), std::move(body), kBrowse));
 }
 
 void Shell::show_source(int64_t source, Browse mode)
@@ -938,8 +939,33 @@ void Shell::show_reader(const Route& r)
         stack_.back() = next;   // chapter switches replace the reader route: back still returns to the manga
         show(next);
     };
-    reader_ = std::make_unique<Reader>(screen_, data_, std::move(cb), schedule_);
+    reader_ = std::make_unique<Reader>(screen_, data_, std::move(cb), schedule_, light_);
     reader_->start(r.chapter_id, r.start_page, r.from_end);
+}
+
+// ---------------------------------------------------------------- Front light
+
+std::vector<Action> Shell::with_light(std::vector<Action> actions)
+{
+    if (light_) actions.insert(actions.begin(), {icon::light_mode, [this] { show_light_sheet(); }});
+    return actions;
+}
+
+void Shell::show_light_sheet()
+{
+    if (!light_) return;
+    std::vector<std::unique_ptr<Node>> rows;
+    auto box = std::make_unique<Node>();
+    box->layout = Layout::Column;
+    box->padding = Insets{32, 8, 32, 16};
+    box->gap = 16;
+    box->add(light_control(light_->level(), light_->max(), [this](int level) {
+        light_->set(level);
+        show_light_sheet();   // relabel: the sheet redraws in place
+    }));
+    box->add(button("Done", [this] { screen_.hide_overlay(); }, true));
+    rows.push_back(std::move(box));
+    screen_.show_overlay(sheet("Front light", std::move(rows)));
 }
 
 // ---------------------------------------------------------------- Download queue
@@ -1005,7 +1031,7 @@ void Shell::show_more()
     RowSpec exit_row{"Exit Sumiyomi", "Return to the Kindle home screen", false, false, 0, [this] { on_exit_(); }};
     exit_row.leading = icon::close;
     items.push_back(list_row(exit_row));
-    present(scaffold(app_bar("More", nullptr, {}), paged(std::move(items)), kMore));
+    present(scaffold(app_bar("More", nullptr, with_light({})), paged(std::move(items)), kMore));
 }
 
 } // namespace sumi::app
