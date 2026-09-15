@@ -68,6 +68,24 @@ set(CURL_CA_BUNDLE none CACHE STRING "" FORCE)   # we always pass CURLOPT_CAINFO
 set(CURL_CA_PATH none CACHE STRING "" FORCE)
 add_subdirectory(third_party/curl EXCLUDE_FROM_ALL SYSTEM)
 
+# Lua 5.4 (design doc §6), compiled as C++ so Lua errors unwind through our host functions'
+# destructors instead of longjmp-ing past them. Only the sandbox-safe libraries are built:
+# no io, os, package/loadlib, or debug — they can't be reached because they don't exist.
+set(LUA_DIR "${CMAKE_SOURCE_DIR}/third_party/lua")
+set(LUA_SOURCES lapi.c lauxlib.c lbaselib.c lcode.c lcorolib.c lctype.c ldebug.c ldo.c ldump.c lfunc.c lgc.c
+                llex.c lmathlib.c lmem.c lobject.c lopcodes.c lparser.c lstate.c lstring.c lstrlib.c ltable.c
+                ltablib.c ltm.c lundump.c lutf8lib.c lvm.c lzio.c)
+list(TRANSFORM LUA_SOURCES PREPEND "${LUA_DIR}/")
+set_source_files_properties(${LUA_SOURCES} PROPERTIES LANGUAGE CXX)
+add_library(lua STATIC ${LUA_SOURCES})
+target_include_directories(lua SYSTEM PUBLIC "${LUA_DIR}")
+target_compile_options(lua PRIVATE -w)
+
+# lexbor: HTML5 parser + CSS selectors (design doc §6.1), static.
+set(LEXBOR_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+set(LEXBOR_BUILD_STATIC ON CACHE BOOL "" FORCE)
+add_subdirectory(third_party/lexbor EXCLUDE_FROM_ALL SYSTEM)
+
 set(SUMI_ASSETS_DIR "${CMAKE_SOURCE_DIR}/assets")
 
 # Backend-independent core: builds for host and device.
@@ -116,6 +134,15 @@ add_library(sumi_net STATIC
   src/net/curl_transport.cpp)
 target_link_libraries(sumi_net PUBLIC sumi_core libcurl_static)
 
+# Source extension host: sandboxed Lua + host API + lexbor (M3 S4).
+add_library(sumi_source STATIC
+  src/source/html.cpp
+  src/source/util.cpp
+  src/source/lua_vm.cpp
+  src/source/lua_api.cpp)
+target_link_libraries(sumi_source PUBLIC sumi_net lua lexbor_static)
+target_include_directories(sumi_source SYSTEM PRIVATE third_party/lexbor/source)
+
 if(NOT CMAKE_CROSSCOMPILING)
   # Host: unit tests, plus the SDL simulator backend (§10) when SDL2 is available.
   enable_testing()
@@ -158,6 +185,10 @@ if(NOT CMAKE_CROSSCOMPILING)
   add_executable(http_smoke tools/net/http_smoke.cpp)
   target_compile_definitions(http_smoke PRIVATE SUMI_ASSETS_DIR="${SUMI_ASSETS_DIR}")
   target_link_libraries(http_smoke PRIVATE sumi_net)
+
+  add_executable(test_lua tests/unit/test_lua.cpp)
+  target_link_libraries(test_lua PRIVATE sumi_source)
+  add_test(NAME lua COMMAND test_lua)
 
   add_executable(test_data tests/unit/test_data.cpp)
   target_link_libraries(test_data PRIVATE sumi_data)

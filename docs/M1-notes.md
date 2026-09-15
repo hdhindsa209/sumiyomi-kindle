@@ -414,3 +414,26 @@ shell (8 screen goldens). Every golden was visually reviewed before it was commi
 - Against §10.1: opening detail is ≈ 68 + 478 ms GC16 ≈ 550 ms (budget 600 ✓). Tab switch ≈ 45 + 478 ms full GL16 ≈ 520 ms.
   That's **over the 400 ms budget**, which assumed DU; the GL16 choice for gray covers costs it. Revisit with real covers in M3/M4.
 - Not specifically reported: how DU text lists look vs GL16, or ghosting. Still worth a deliberate look.
+
+# M3 notes
+
+## S1–S4
+- **SQLite 3.53.4** is vendored as the amalgamation. Schema v1 = §4 plus a unique `history(chapter_id)` index (one history row per
+  chapter, as in Mihon, so re-reads upsert). Migrations use `user_version`; a database newer than the build is refused.
+- **Network:** mbedTLS **3.6 LTS**, not 4.x, is the TLS library for curl 8.22, built HTTP(S)-only. The CA bundle ships in `assets/certs`.
+  - Permanent transport failures (bad certificate, malformed URL) are not retried. Found by the live smoke test: an expired certificate
+    had been retried 3× (~3.5 s wasted).
+  - **No HTTP/2 yet** (nghttp2 not built). §9.1 wants it for CDN multiplexing; revisit when page images arrive (M4).
+- **Worker:** one thread (single-core device). Results are posted back to the UI thread through a pipe registered with the event loop.
+  ThreadSanitizer is clean.
+- **Lua 5.4.9 is compiled as C++**, so Lua errors unwind through host-function destructors (no longjmp past C++ objects).
+  - The sandbox is structural: io/os/package/debug aren't compiled. `load*`/`dofile`/`require`/`collectgarbage`/`string.dump` are removed,
+    and only text chunks are accepted (bytecode is rejected).
+  - Limits: 8 MB allocator cap, instruction limit via count hook, a per-call wall-clock budget that also caps HTTP timeouts,
+    and an 8 MB html.parse cap (lexbor memory sits outside the Lua cap).
+  - `http.*` raises on transport errors and returns HTTP errors as results (status field).
+- **lexbor bug caught by a crash:** `lxb_css_selector_list_destroy_memory` destroys the parser's *shared* CSS memory pool →
+  use-after-free on the next query. Fixed with `lxb_css_memory_clean`. Afterwards the data/http/lua/worker suites ran clean under
+  **AddressSanitizer** (macOS: no leak detection available).
+- Tooling gotcha: `\uXXXX` sequences written through the agent's file tool get converted to literal characters. The JSON escape
+  tests had to be rewritten byte-exactly.
