@@ -1,7 +1,8 @@
 #pragma once
+// ui/screen.h first: GCC -Wshadow flags RawKind::Cancel if worker.h's `Cancel` alias is seen before it.
+#include "ui/screen.h"
 #include "core/loop.h"
 #include "core/worker.h"
-#include "ui/screen.h"
 
 namespace sumi::app {
 
