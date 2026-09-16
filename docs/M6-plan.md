@@ -36,7 +36,7 @@ std/env/net/html/defaults runs seven of the eight.
 
 | Stage | What | Done when |
 |---|---|---|
-| **S1** | wasm3 vendored and building for host + Kindle; `.aix` unpacked; a module instantiated and `start` called with stub imports | A real source loads and reports its imports; builds both ways |
+| **S1** ✅ | wasm3 vendored and building for host + Kindle; `.aix` unpacked; a module instantiated and its imports/exports read | Done 2026-09-16: `tools/aidoku/aix_probe` loads Aqua Manga and Asura Scans; zip + source.json reader unit-tested |
 | S2 | Descriptor table, memory helpers, `std` + `env` (buffers, dates, print, sleep) | Unit tests against a fixture module |
 | S3 | `net`: requests through our client, rate limits, response reading, `html()` | Tests with the recorded-fixture transport |
 | S4 | `html`: the ~40 calls mapped onto lexbor | Tests comparing against the Lua html API on the same page |
@@ -54,3 +54,17 @@ std/env/net/html/defaults runs seven of the eight.
 - **Sources needing `js` or `canvas`** can't run. They're listed as unsupported rather than failing oddly.
 - Aidoku's SDK changes (0.7 → 0.9 are in the index). The host targets the current one and reports a clear
   "needs a newer Sumiyomi" for anything beyond it.
+
+## S1 notes (2026-09-16)
+
+Two real sources load in wasm3 (Aqua Manga 223 KB, Asura Scans 215 KB of WebAssembly). Their exports match the
+SDK's macro: `start`, `get_manga_list`, `get_search_manga_list`, `get_manga_update`, `get_page_list`,
+`get_image_request`, `free_result`, plus optional handlers. Imports seen across the two:
+
+- `std`: destroy, buffer_len, read_buffer, print, abort, parse_date, current_date
+- `env`: print, send_partial_result
+- `net`: init, send, send_all, set_url, set_header, set_body, set_rate_limit, data_len, read_data, html
+- `html`: parse_fragment, select, select_first, size, get, attr, text, own_text, html, base_uri, set_text
+- `defaults`: get, set
+
+That is the whole surface to implement for these two, and it lines up with what the app already has.

@@ -192,14 +192,25 @@ add_library(sumi_net STATIC
 target_link_libraries(sumi_net PUBLIC sumi_core libcurl_static)
 
 # Source extension host: sandboxed Lua + host API + lexbor (M3 S4).
+# wasm3: a small WebAssembly interpreter, for Aidoku sources (M6). Builds as C99 for host and Kindle.
+set(BUILD_WASI none CACHE STRING "" FORCE)
+add_library(wasm3 STATIC)
+file(GLOB WASM3_SOURCES "${CMAKE_SOURCE_DIR}/third_party/wasm3/source/*.c")
+list(FILTER WASM3_SOURCES EXCLUDE REGEX "m3_api_(wasi|uvwasi|tracer|meta_wasi)\\.c$")
+target_sources(wasm3 PRIVATE ${WASM3_SOURCES})
+target_include_directories(wasm3 SYSTEM PUBLIC "${CMAKE_SOURCE_DIR}/third_party/wasm3/source")
+target_compile_definitions(wasm3 PUBLIC d_m3HasWASI=0 d_m3HasTracer=0)
+target_compile_options(wasm3 PRIVATE -w)
+
 add_library(sumi_source STATIC
   src/source/html.cpp
   src/source/util.cpp
   src/source/lua_vm.cpp
   src/source/lua_api.cpp
   src/source/extension.cpp
-  src/source/repo_index.cpp)
-target_link_libraries(sumi_source PUBLIC sumi_net lua lexbor_static mbedcrypto)
+  src/source/repo_index.cpp
+  src/source/aix.cpp)
+target_link_libraries(sumi_source PUBLIC sumi_net lua lexbor_static mbedcrypto zlib_static)
 target_include_directories(sumi_source SYSTEM PRIVATE third_party/lexbor/source)
 
 # App services: data access for the UI over worker jobs (M3 S6).
@@ -270,6 +281,10 @@ if(NOT CMAKE_CROSSCOMPILING)
   target_link_libraries(test_lua PRIVATE sumi_source)
   add_test(NAME lua COMMAND test_lua)
 
+  add_executable(aix_probe tools/aidoku/aix_probe.cpp)
+  target_include_directories(aix_probe PRIVATE src)
+  target_link_libraries(aix_probe PRIVATE sumi_source wasm3 lua)
+
   add_executable(ext_runner tools/ext/ext_runner.cpp)
   target_include_directories(ext_runner PRIVATE tools/ext)
   target_compile_definitions(ext_runner PRIVATE SUMI_ASSETS_DIR="${SUMI_ASSETS_DIR}")
@@ -278,7 +293,7 @@ if(NOT CMAKE_CROSSCOMPILING)
   add_executable(test_extension tests/unit/test_extension.cpp)
   target_include_directories(test_extension PRIVATE tools/ext)
   target_compile_definitions(test_extension PRIVATE SUMI_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
-  target_link_libraries(test_extension PRIVATE sumi_source)
+  target_link_libraries(test_extension PRIVATE sumi_source zlib_static)
   add_test(NAME extension COMMAND test_extension WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 
   add_executable(test_app_data tests/unit/test_app_data.cpp)

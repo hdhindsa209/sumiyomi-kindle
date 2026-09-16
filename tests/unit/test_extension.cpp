@@ -1,9 +1,15 @@
 // Extension runner tests (design doc §11.3): the real WeebCentral source against recorded HTML
 // responses (tests/fixtures/weebcentral, captured with tools/ext/ext_runner --record). No network.
 #include "fixture_transport.h"
+#include "source/aix.h"
 #include "source/extension.h"
 
 #include "check.h"
+
+#include <fstream>
+#include <map>
+#include <unistd.h>
+#include <zlib.h>
 
 #include <cstdio>
 #include <string>
@@ -201,8 +207,98 @@ void test_extension_contract_errors()
 
 } // namespace
 
+// A zip built by hand: one stored entry, one deflated, so read_zip is tested without a checked-in binary.
+std::string zip_of(const std::vector<std::pair<std::string, std::string>>& entries)
+{
+    auto le16 = [](std::string& b, uint32_t v) { b += static_cast<char>(v & 0xFF); b += static_cast<char>((v >> 8) & 0xFF); };
+    auto le32 = [&](std::string& b, uint32_t v) { le16(b, v & 0xFFFF); le16(b, v >> 16); };
+    std::string out, dir;
+    uint32_t count = 0;
+    for (const auto& [name, content] : entries) {
+        bool deflated = count % 2 == 1;
+        std::string payload = content;
+        if (deflated) {   // raw deflate, as zip stores it
+            uLongf cap = compressBound(static_cast<uLong>(content.size())) + 32;
+            std::string buf(cap, '\0');
+            z_stream s {};
+            deflateInit2(&s, Z_DEFAULT_COMPRESSION, Z_DEFLATED, -MAX_WBITS, 8, Z_DEFAULT_STRATEGY);
+            s.next_in = reinterpret_cast<Bytef*>(const_cast<char*>(content.data()));
+            s.avail_in = static_cast<uInt>(content.size());
+            s.next_out = reinterpret_cast<Bytef*>(buf.data());
+            s.avail_out = static_cast<uInt>(buf.size());
+            deflate(&s, Z_FINISH);
+            buf.resize(s.total_out);
+            deflateEnd(&s);
+            payload = buf;
+        }
+        uint32_t offset = static_cast<uint32_t>(out.size());
+        out += "PK\x03\x04";
+        le16(out, 20); le16(out, 0); le16(out, deflated ? 8 : 0); le16(out, 0); le16(out, 0);
+        le32(out, 0);
+        le32(out, static_cast<uint32_t>(payload.size()));
+        le32(out, static_cast<uint32_t>(content.size()));
+        le16(out, static_cast<uint32_t>(name.size())); le16(out, 0);
+        out += name;
+        out += payload;
+
+        dir += "PK\x01\x02";
+        le16(dir, 20); le16(dir, 20); le16(dir, 0); le16(dir, deflated ? 8 : 0); le16(dir, 0); le16(dir, 0);
+        le32(dir, 0);
+        le32(dir, static_cast<uint32_t>(payload.size()));
+        le32(dir, static_cast<uint32_t>(content.size()));
+        le16(dir, static_cast<uint32_t>(name.size())); le16(dir, 0); le16(dir, 0); le16(dir, 0); le16(dir, 0);
+        le32(dir, 0);
+        le32(dir, offset);
+        dir += name;
+        ++count;
+    }
+    uint32_t dir_at = static_cast<uint32_t>(out.size());
+    out += dir;
+    out += "PK\x05\x06";
+    le16(out, 0); le16(out, 0); le16(out, count); le16(out, count);
+    le32(out, static_cast<uint32_t>(dir.size()));
+    le32(out, dir_at);
+    le16(out, 0);
+    return out;
+}
+
+void test_aix_package()
+{
+    std::string manifest = R"({"info":{"id":"en.test","name":"Test Source","version":3,"lang":"en",
+                              "url":"https://test.example","minAppVersion":"0.7.1"}})";
+    std::string wasm = "\0asm\x01\0\0\0";   // just a header: read_aix doesn't parse it
+    wasm.resize(8);
+    std::string zip = zip_of({{"Payload/en.test/source.json", manifest}, {"Payload/en.test/main.wasm", wasm}});
+
+    std::map<std::string, std::string> files;
+    std::string err = "unset";
+    CHECK(read_zip(zip, files, err));
+    CHECK(err.empty() || err == "unset");
+    CHECK_EQ(files.size(), 2);
+    CHECK(files["Payload/en.test/source.json"] == manifest);
+
+    std::string path = "aix_test_" + std::to_string(getpid()) + ".aix";
+    { std::ofstream f(path, std::ios::binary); f.write(zip.data(), static_cast<std::streamsize>(zip.size())); }
+    AixPackage pkg;
+    CHECK(read_aix(path, pkg, err));
+    CHECK(pkg.id == "en.test" && pkg.name == "Test Source" && pkg.version == 3);
+    CHECK(pkg.language == "en" && pkg.base_url == "https://test.example" && pkg.min_app_version == "0.7.1");
+    CHECK_EQ(pkg.wasm.size(), 8);
+    unlink(path.c_str());
+
+    // Anything that isn't a package is refused, not misread.
+    AixPackage bad;
+    CHECK(!read_aix("does-not-exist.aix", bad, err));
+    std::string html = "<!DOCTYPE html><html><body>404</body></html>";
+    { std::ofstream f(path, std::ios::binary); f << html; }
+    CHECK(!read_aix(path, bad, err));
+    CHECK(err.find("zip") != std::string::npos);
+    unlink(path.c_str());
+}
+
 int main()
 {
+    RUN(test_aix_package);
     RUN(test_manifest_and_stable_id);
     RUN(test_popular_and_latest);
     RUN(test_search_details_chapters_pages);
