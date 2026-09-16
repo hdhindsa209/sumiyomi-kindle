@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <vector>
 
 namespace sumi {
 
@@ -21,8 +22,14 @@ public:
     // device can never sleep while we're running: the idle timer and the power button both do
     // nothing. Blocks for as long as the device stays asleep. The caller must have the sleep
     // screen on the panel first — whatever is shown stays shown until it returns.
-    // Returns false with `err` if the device could not be suspended (nothing changed then).
-    bool sleep(std::string& err);
+    //
+    // `wake_fds` are the input devices: a key or touch appearing on one of them means the user is
+    // back, which is the only wake signal that works on every firmware (see the .cpp). Drain them
+    // before calling, or a stale event will look like a wake.
+    //
+    // Returns false with `err` only if the device could not be asked to suspend at all. Returning
+    // true does not promise it slept — just that the user is back and the screen should be repainted.
+    bool sleep(const std::vector<int>& wake_fds, std::string& err);
 };
 
 } // namespace sumi

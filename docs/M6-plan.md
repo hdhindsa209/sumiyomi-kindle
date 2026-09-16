@@ -127,8 +127,11 @@ state survive untouched), then `PowerGuard::sleep` suspends and returns when the
 
 Two details worth keeping:
 
-- **Knowing we actually slept.** `CLOCK_BOOTTIME` counts suspended time and `CLOCK_MONOTONIC` doesn't, so the
-  gap between them grows by exactly the length of each sleep. That's the wake signal, rather than trusting
-  powerd to report anything.
-- **Some firmwares won't suspend while the wakelock is held.** If the device is still awake after four seconds,
-  the lock is dropped, suspend is asked for again, and the lock is taken back on the way out.
+- **Knowing the user is back.** The first attempt used the `CLOCK_BOOTTIME` / `CLOCK_MONOTONIC` gap, which
+  grows by the length of each suspend on kernels that account for it. On this Kindle it never grew, even though
+  the device plainly slept — so the app sat in its poll loop for the full timeout after the user had already
+  woken it, which is what "takes quite a while to wake" was. Input is the reliable signal: our process is frozen
+  with the device, so the press that wakes it is the first thing we see on resuming. The clock check stays as a
+  second signal, since where it works we notice without the user touching anything.
+- **Some firmwares won't suspend while the wakelock is held.** If nothing happens within four seconds, the lock
+  is dropped (letting powerd sleep the device the way it normally would) and taken back when the user returns.

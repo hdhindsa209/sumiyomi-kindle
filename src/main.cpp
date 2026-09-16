@@ -232,8 +232,12 @@ int main(int argc, char** argv)
         sleep_requested = false;
         SUMI_LOGI("main", "power button: sleeping");
         sumi::app::draw_sleep_screen(*display, canvas, text, fonts);
+        // Anything still queued would look like the user waking the device straight back up.
+        events.clear();
+        for (int fd : input->fds()) input->drain(fd, events);
+        events.clear();
         std::string sleep_err;
-        if (!power.sleep(sleep_err)) SUMI_LOGW("main", "sleep: %s", sleep_err.c_str());
+        if (!power.sleep(input->fds(), sleep_err)) SUMI_LOGW("main", "sleep: %s", sleep_err.c_str());
         // Either way the sleep screen is on the panel and has to go. Drop whatever input arrived
         // while we were away (the wake press, stray touches in a bag) so it can't turn a page.
         events.clear();

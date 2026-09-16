@@ -16,7 +16,9 @@
 #include <ctime>
 #include <dirent.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <sys/wait.h>
+#include <vector>
 #include <unistd.h>
 
 extern char** environ;
@@ -120,8 +122,8 @@ size_t find_pids(const char* comm, pid_t* out, size_t cap)
 // own. The power button therefore does nothing unless we suspend the device ourselves.
 
 constexpr long    kSuspendPollMs  = 50;    // how soon after resume we notice and start repainting
-constexpr int64_t kHeldWaitMs     = 4000;    // give powerd a chance with the wakelock still held
-constexpr int64_t kReleasedWaitMs = 15000;   // and longer once we've dropped it
+constexpr int64_t kHeldWaitMs     = 4000;        // give powerd a chance with the wakelock still held
+constexpr int64_t kSleepingMs     = 12 * 3600000;// then wait for the user, however long they're away
 constexpr int64_t kSuspendedMinMs = 1000;    // a gap this big means we really did suspend
 
 int64_t clock_ms(clockid_t id) noexcept
@@ -152,15 +154,37 @@ bool trigger_suspend() noexcept
     return n > 0;
 }
 
-// Polls until the suspended-time gap has grown, i.e. we slept and woke. Returns false on timeout.
-bool wait_for_resume(int64_t base, int64_t timeout_ms) noexcept
+// Waits for the user to come back, which is either of two signals:
+//
+//  - input on one of the input devices. While the device is suspended our process is frozen along
+//    with it, so the press that wakes the device is the first thing we see on resuming. This is the
+//    signal that always works.
+//  - the suspended-time gap growing. This only works where the kernel accounts suspended time in
+//    CLOCK_BOOTTIME but not CLOCK_MONOTONIC. On the Kindle (5.17.1.0.3) it never fired even though
+//    the device demonstrably slept, so it cannot be the only signal — but where it does work, we
+//    learn we slept without the user having to touch anything.
+//
+// Returns the signal seen, or Timeout.
+enum class Wake { Input, Clock, Timeout };
+
+Wake wait_for_wake(int64_t base, int64_t timeout_ms, const std::vector<int>& fds) noexcept
 {
+    std::vector<pollfd> pfds;
+    pfds.reserve(fds.size());
+    for (int fd : fds) pfds.push_back(pollfd{fd, POLLIN, 0});
+
     for (int64_t waited = 0; waited < timeout_ms; waited += kSuspendPollMs) {
-        if (suspended_ms() - base >= kSuspendedMinMs) return true;
-        timespec nap{0, kSuspendPollMs * 1000 * 1000};
-        nanosleep(&nap, nullptr);
+        if (suspended_ms() - base >= kSuspendedMinMs) return Wake::Clock;
+        int n = pfds.empty() ? 0 : poll(pfds.data(), static_cast<nfds_t>(pfds.size()),
+                                        static_cast<int>(kSuspendPollMs));
+        if (n > 0) return Wake::Input;
+        if (n < 0 && errno != EINTR) return Wake::Timeout;
+        if (pfds.empty()) {   // nothing to poll: just wait out the interval
+            timespec nap{0, kSuspendPollMs * 1000 * 1000};
+            nanosleep(&nap, nullptr);
+        }
     }
-    return suspended_ms() - base >= kSuspendedMinMs;
+    return suspended_ms() - base >= kSuspendedMinMs ? Wake::Clock : Wake::Timeout;
 }
 
 } // namespace
@@ -259,35 +283,36 @@ void PowerGuard::restore() noexcept
     sigprocmask(SIG_SETMASK, &prev, nullptr);
 }
 
-bool PowerGuard::sleep(std::string& err)
+bool PowerGuard::sleep(const std::vector<int>& wake_fds, std::string& err)
 {
     if (lipc_exe_[0] == '\0') {
         err = "power guard not acquired";
         return false;
     }
-    int64_t base = suspended_ms();
+    int64_t base = suspended_ms(), t0 = clock_ms(CLOCK_MONOTONIC);
     if (!trigger_suspend()) {
         err = "cannot suspend: neither powerd_test nor /sys/power/state worked";
         return false;
     }
-    bool slept = wait_for_resume(base, kHeldWaitMs);
+    Wake wake = wait_for_wake(base, kHeldWaitMs, wake_fds);
 
-    // Some firmwares refuse to suspend while preventScreenSaver is set. Drop the wakelock, ask
-    // again, and take it straight back on the way out — the sleep screen is already on the panel,
-    // so even if the framework does paint its screensaver in that window, it paints over a screen
-    // we're about to repaint anyway.
-    if (!slept && set_wakelock_) {
-        SUMI_LOGI("power", "still awake after %lldms; releasing the wakelock and asking again",
-                  static_cast<long long>(kHeldWaitMs));
+    // Nothing happened in the first few seconds: powerd may be refusing because we hold its
+    // screensaver wakelock. Drop it, ask again, and take it straight back when the user returns.
+    // The sleep screen is already on the panel, so even if the framework paints its screensaver in
+    // that window, it paints over a screen we are about to repaint anyway.
+    if (wake == Wake::Timeout) {
+        SUMI_LOGI("power", "no wake signal after %llums; releasing the wakelock and asking again",
+                  static_cast<unsigned long long>(kHeldWaitMs));
         lipc_set("com.lab126.powerd", "preventScreenSaver", "0");
-        if (trigger_suspend()) slept = wait_for_resume(base, kReleasedWaitMs);
-        lipc_set("com.lab126.powerd", "preventScreenSaver", "1");
+        trigger_suspend();
+        wake = wait_for_wake(base, kSleepingMs, wake_fds);
+        if (set_wakelock_) lipc_set("com.lab126.powerd", "preventScreenSaver", "1");
     }
-    if (!slept) {
-        err = "the device did not suspend";
-        return false;
-    }
-    SUMI_LOGI("power", "woke after %lldms asleep", static_cast<long long>(suspended_ms() - base));
+
+    int64_t away = clock_ms(CLOCK_MONOTONIC) - t0, asleep = suspended_ms() - base;
+    SUMI_LOGI("power", "awake after %llums (%llums of it suspended, woken by %s)",
+              static_cast<unsigned long long>(away), static_cast<unsigned long long>(asleep),
+              wake == Wake::Input ? "input" : wake == Wake::Clock ? "the clock" : "nothing");
     return true;
 }
 

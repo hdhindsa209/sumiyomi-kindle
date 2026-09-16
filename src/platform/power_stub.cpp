@@ -13,7 +13,7 @@ bool PowerGuard::acquire(std::string& /*err*/)
 
 void PowerGuard::restore() noexcept {}
 
-bool PowerGuard::sleep(std::string& err)
+bool PowerGuard::sleep(const std::vector<int>& /*wake_fds*/, std::string& err)
 {
     // The simulator has no device to suspend. main() draws the sleep screen before calling this and
     // repaints when it returns, so the sleep screen still appears here for a moment — enough to see

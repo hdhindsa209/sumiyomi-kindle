@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed: waking from sleep took far longer than it should.** The app decided it had woken by watching the
+  clock, which on this firmware never reports suspended time — so after the device came back it went on waiting
+  instead of repainting. It now wakes on the first key or touch, which is what the user actually does.
+- Mangapill reports its covers (needs Mangapill 1.1.0 from the source repository).
+
 ## v0.3.0
 
 - **Fixed: the device couldn't be put to sleep while Sumiyomi was open.** The app holds powerd's screensaver
