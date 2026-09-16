@@ -1,21 +1,21 @@
 # Changelog
 
-## Unreleased
+## v1.0.0
 
-- **Sleep is the device's own again.** v0.3.0 tried to suspend the Kindle itself, which never actually
-  suspended it. Sumiyomi no longer holds powerd's screensaver lock and no longer touches the power button, so
-  sleeping, waking and the idle timer all behave exactly as they do elsewhere on the device. The app listens to
-  powerd instead: it shows a sleep screen on the way down and repaints the screen you were on when you come
-  back, with the reader still on its page.
+Everything in v0.1 through v0.3, with sleeping fixed. Developed and run against a jailbroken Kindle
+(11th generation, 5.17.1.0.3).
+
+- **Sleeping works, and it's the device's own sleep.** Sumiyomi no longer holds powerd's screensaver lock, so
+  the power button, the idle timer and the screensaver behave exactly as they do everywhere else on the Kindle.
+  The app listens to powerd rather than driving it: a sleep screen on the way down, and the screen you were on
+  repainted when you come back, with the reader still on its page. (v0.3.0 tried to suspend the device itself
+  and never actually suspended it; that code is gone.)
 - Mangapill reports its covers (needs Mangapill 1.1.0 from the source repository).
 
 ## v0.3.0
 
-- **Fixed: the device couldn't be put to sleep while Sumiyomi was open.** The app holds powerd's screensaver
-  wakelock for as long as it runs, so the framework can't paint over a page mid-read — which also meant powerd
-  never slept the device, and the power button did nothing. Sumiyomi now handles the power button itself: it
-  shows a sleep screen, suspends the device, and on waking repaints the screen you were on, with the reader
-  still on its page.
+- An attempt at sleeping the device by suspending it directly. It didn't work — the device never suspended —
+  and v1.0.0 replaces it. Don't run this one.
 - **WebP pages and covers.** Sources that serve WebP (Mangapill's covers, among others) now display instead of
   failing to decode. WebP is rescaled as it decodes, the way JPEG already was, so a page costs no more memory
   than before.
