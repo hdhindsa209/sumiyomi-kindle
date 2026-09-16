@@ -581,22 +581,6 @@ void AppData::delete_all_downloads(std::function<void()> done)
 
 // ---------------------------------------------------------------- extensions
 
-void AppData::repo_url(std::function<void(std::string)> done)
-{
-    exec_.submit([this, done = std::move(done)] {
-        std::string url = repo_.pref("extensions.repo").value_or("");
-        exec_.post([done, url] { done(url); });
-    });
-}
-
-void AppData::set_repo_url(std::string url, std::function<void()> done)
-{
-    exec_.submit([this, url = std::move(url), done = std::move(done)] {
-        repo_.set_pref("extensions.repo", url);
-        exec_.post([done] { if (done) done(); });
-    });
-}
-
 namespace {
 
 bool make_dirs(const std::string& path);   // defined with the download helpers below
@@ -642,15 +626,82 @@ void remove_tree(const std::string& dir)
 
 } // namespace
 
-void AppData::fetch_repo(std::function<void(RepoListing, std::string)> done)
+std::vector<std::string> AppData::load_repos()
+{
+    auto saved = repo_.pref("extensions.repos");
+    if (!saved) {
+        // First run (or an upgrade from the single-repository setting): start with Sumiyomi's own list.
+        std::string first = repo_.pref("extensions.repo").value_or(kDefaultRepo);
+        repo_.set_pref("extensions.repos", first);
+        saved = first;
+    }
+    std::vector<std::string> out;
+    std::string line;
+    for (char c : *saved + "\n") {
+        if (c != '\n') line += c;
+        else if (!line.empty()) out.push_back(line), line.clear();
+    }
+    return out;
+}
+
+void AppData::repos(std::function<void(std::vector<std::string>)> done)
 {
     exec_.submit([this, done = std::move(done)] {
-        RepoListing listing;
-        std::string err, body;
-        listing.url = repo_.pref("extensions.repo").value_or("");
-        if (listing.url.empty()) err = "no repository set";
-        else if (fetch_text(source_http_, listing.url, body, err)) source::parse_repo_index(body, listing.url, listing.entries, err);
-        exec_.post([done, listing = std::move(listing), err]() mutable { done(std::move(listing), err); });
+        auto list = load_repos();
+        exec_.post([done, list = std::move(list)]() mutable { done(std::move(list)); });
+    });
+}
+
+void AppData::add_repo(std::string url, std::function<void(std::string)> done)
+{
+    exec_.submit([this, url = std::move(url), done = std::move(done)] {
+        std::string err;
+        auto list = load_repos();
+        if (url.empty()) {
+            err = "type an address first";
+        } else if (std::find(list.begin(), list.end(), url) != list.end()) {
+            err = "that repository is already here";
+        } else {
+            // Only keep it if it really is a repository.
+            std::string body;
+            std::vector<source::RepoEntry> entries;
+            if (fetch_text(source_http_, url, body, err) && source::parse_repo_index(body, url, entries, err)) {
+                list.push_back(url);
+                std::string joined;
+                for (const std::string& u : list) joined += (joined.empty() ? "" : "\n") + u;
+                repo_.set_pref("extensions.repos", joined);
+            }
+        }
+        exec_.post([done, err] { if (done) done(err); });
+    });
+}
+
+void AppData::remove_repo(std::string url, std::function<void()> done)
+{
+    exec_.submit([this, url = std::move(url), done = std::move(done)] {
+        auto list = load_repos();
+        list.erase(std::remove(list.begin(), list.end(), url), list.end());
+        std::string joined;
+        for (const std::string& u : list) joined += (joined.empty() ? "" : "\n") + u;
+        repo_.set_pref("extensions.repos", joined);
+        exec_.post([done] { if (done) done(); });
+    });
+}
+
+void AppData::fetch_repos(std::function<void(std::vector<RepoListing>)> done)
+{
+    exec_.submit([this, done = std::move(done)] {
+        std::vector<RepoListing> out;
+        for (const std::string& url : load_repos()) {
+            RepoListing listing;
+            listing.url = url;
+            std::string body;
+            if (fetch_text(source_http_, url, body, listing.error))
+                source::parse_repo_index(body, url, listing.entries, listing.error);
+            if (!listing.error.empty()) SUMI_LOGW("ext", "repository %s: %s", url.c_str(), listing.error.c_str());
+            out.push_back(std::move(listing));
+        }
+        exec_.post([done, out = std::move(out)]() mutable { done(std::move(out)); });
     });
 }
 

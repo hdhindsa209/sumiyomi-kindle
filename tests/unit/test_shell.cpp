@@ -1240,23 +1240,31 @@ void test_extensions_tab()
 
     env.tap(env.nav_cell(3));                                            // Browse
     env.tap(env.find("Extensions"));
-    CHECK(env.shows("WeebCentral") && env.shows("No repository set"));
+    CHECK(env.shows("WeebCentral") && env.shows("Repositories"));
+    CHECK(env.shows("Add a repository"));
     CHECK(env.golden("extensions"));
 
-    // Set the repository: the URL keyboard has the punctuation.
-    env.tap(env.find("No repository set"));
-    CHECK(env.shows("Repository"));
+    // Sumiyomi's own repository is listed but unreachable here: remove it, then add the test one.
+    env.tap(env.find(app::AppData::kDefaultRepo));
+    CHECK(env.shows("Remove"));
+    env.tap(env.find("Remove"));
+    CHECK(!env.shows(app::AppData::kDefaultRepo));
+
+    // Add a repository: the URL keyboard has the punctuation.
+    env.tap(env.find("Add a repository"));
+    CHECK(env.shows("Add a repository"));
     for (char c : std::string("repo.test/index.json")) env.tap(env.find(std::string(1, c)));
     Node* kb = env.root()->children().back().get();
     env.tap(kb->children()[4]->children().back().get());                 // the check key
     CHECK(env.shows("https://repo.test/index.json"));                    // https:// filled in
     CHECK(env.shows("Available") && env.shows("Demo Source"));
+    CHECK(env.shows("1 source"));
     CHECK_EQ(env.display.stale_pixels(), 0);
 
     // Install, then it's in the Installed list and usable.
     env.tap(env.find("Demo Source"));
     CHECK(env.shows("2.0.0 \xC2\xB7 en \xC2\xB7 Installed"));
-    CHECK(env.shows("Nothing else in this repository."));
+    CHECK(env.shows("Nothing else to install from these repositories."));
     CHECK_EQ(env.data->sources().size(), 2);
     CHECK(env.shows("Installed") && env.shows("WeebCentral"));
     env.tap(env.find("Sources"));

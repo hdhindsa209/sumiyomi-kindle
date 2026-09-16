@@ -355,16 +355,29 @@ void test_extension_repository()
     repo_transport.files[base + "testsource/source.lua"] = code;
     repo_transport.files[base + "index.json"] = index_json({index_entry("testsource", "1.0.0", manifest, code)});
 
-    // No repository set yet.
-    RepoListing listing;
+    // Sumiyomi's own repository is there from the start; it just isn't reachable in this test.
+    std::vector<RepoListing> listings;
     std::string err = "unset";
-    env.app->fetch_repo([&](RepoListing l, std::string e) { listing = std::move(l); err = e; });
-    CHECK(err == "no repository set");
-    env.app->set_repo_url(base + "index.json");
-    env.app->fetch_repo([&](RepoListing l, std::string e) { listing = std::move(l); err = e; });
+    std::vector<std::string> urls;
+    env.app->repos([&](std::vector<std::string> u) { urls = std::move(u); });
+    CHECK(urls.size() == 1 && urls[0] == AppData::kDefaultRepo);
+    env.app->remove_repo(AppData::kDefaultRepo, nullptr);
+
+    // A repository is only kept if it reads as one.
+    env.app->add_repo("https://repo.test/nothing.json", [&](std::string e) { err = e; });
+    CHECK(!err.empty());
+    env.app->repos([&](std::vector<std::string> u) { urls = std::move(u); });
+    CHECK(urls.empty());
+    env.app->add_repo(base + "index.json", [&](std::string e) { err = e; });
     CHECK(err.empty());
+    env.app->add_repo(base + "index.json", [&](std::string e) { err = e; });
+    CHECK(err == "that repository is already here");
+    env.app->fetch_repos([&](std::vector<RepoListing> l) { listings = std::move(l); });
+    CHECK_EQ(listings.size(), 1);
+    if (listings.empty() || listings[0].entries.empty()) return;
+    RepoListing listing = listings[0];
+    CHECK(listing.error.empty());
     CHECK_EQ(listing.entries.size(), 1);
-    if (listing.entries.empty()) return;
     CHECK(listing.entries[0].manifest_url == base + "testsource/manifest.json");   // relative to the index
 
     // Install: usable at once, no restart.
@@ -386,8 +399,9 @@ void test_extension_repository()
     std::string manifest2 = test_manifest("testsource", "1.1.0");
     repo_transport.files[base + "testsource/manifest.json"] = manifest2;
     repo_transport.files[base + "index.json"] = index_json({index_entry("testsource", "1.1.0", manifest2, code)});
-    env.app->fetch_repo([&](RepoListing l, std::string e) { listing = std::move(l); err = e; });
-    CHECK(err.empty() && listing.entries.size() == 1);
+    env.app->fetch_repos([&](std::vector<RepoListing> l) { listings = std::move(l); });
+    listing = listings.at(0);
+    CHECK(listing.error.empty() && listing.entries.size() == 1);
     CHECK_EQ(source::compare_versions(listing.entries[0].version, "1.0.0"), 1);
     env.app->install_extension(listing.entries[0], [&](std::string e) { err = e; });
     CHECK(err.empty());
@@ -407,12 +421,20 @@ void test_extension_repository()
     repo_transport.files[base + "future/manifest.json"] = future;
     repo_transport.files[base + "future/source.lua"] = code;
     repo_transport.files[base + "index.json"] = index_json({index_entry("future", "1.0.0", future, code, 2)});
-    env.app->fetch_repo([&](RepoListing l, std::string e) { listing = std::move(l); err = e; });
+    env.app->fetch_repos([&](std::vector<RepoListing> l) { listings = std::move(l); });
+    listing = listings.at(0);
     int before = repo_transport.hits;
     env.app->install_extension(listing.entries[0], [&](std::string e) { err = e; });
     CHECK(err.find("api level") != std::string::npos);
     CHECK_EQ(repo_transport.hits, before);
     CHECK_EQ(env.app->sources().size(), 2);
+
+    // Both repositories at once: a broken one doesn't hide the good one.
+    env.app->add_repo(base + "index.json", nullptr);
+    env.app->repos([&](std::vector<std::string> u) { urls = std::move(u); });
+    CHECK_EQ(urls.size(), 1);
+    env.app->fetch_repos([&](std::vector<RepoListing> l) { listings = std::move(l); });
+    CHECK(listings.size() == 1 && listings[0].error.empty());
 
     // Uninstall.
     int64_t id = 0;

@@ -27,6 +27,8 @@ struct SourceInfo {
 
 struct RepoListing {
     std::string url;
+    std::string name;     // the index's own name, if it gives one
+    std::string error;    // empty when it was read
     std::vector<source::RepoEntry> entries;
 };
 
@@ -128,10 +130,13 @@ public:
     // Extensions (M5 S6): `bundled_dir` ships with the app, `installed_dir` holds sources installed from a repository
     // (they win over a bundled one with the same id). `http` is the client new extensions use. Call before any job.
     void set_extension_dirs(std::string bundled_dir, std::string installed_dir, net::Client* http);
-    void repo_url(std::function<void(std::string)> done);
-    void set_repo_url(std::string url, std::function<void()> done = nullptr);
-    // Fetch the saved repository's index.
-    void fetch_repo(std::function<void(RepoListing, std::string err)> done);
+    // Repositories the user has added (Sumiyomi's own is there to begin with; it can be removed like any other).
+    static constexpr const char* kDefaultRepo = "https://raw.githubusercontent.com/hdhindsa209/sumiyomi-sources/main/index.json";
+    void repos(std::function<void(std::vector<std::string>)> done);
+    void add_repo(std::string url, std::function<void(std::string err)> done);
+    void remove_repo(std::string url, std::function<void()> done);
+    // Read every repository; each listing carries its own error, so one bad repository doesn't hide the others.
+    void fetch_repos(std::function<void(std::vector<RepoListing>)> done);
     // Install or update: files downloaded, checked against their SHA-256, loaded (api_level, required functions),
     // then swapped in without a restart. `err` empty on success.
     void install_extension(source::RepoEntry entry, std::function<void(std::string err)> done);
@@ -300,6 +305,7 @@ private:
     image::PageCache*  cache_;
     net::FetchPool*    pool_ = nullptr;
     std::atomic<bool>  incognito_{false};
+    std::vector<std::string> load_repos();   // worker
     AppSettings        load_settings();   // worker
     ReaderSettings     load_reader_settings();   // worker
     void               store_reader_settings(const ReaderSettings& s);   // worker
