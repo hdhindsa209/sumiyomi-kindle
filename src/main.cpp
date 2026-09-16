@@ -42,11 +42,13 @@ std::string env_or(const char* name, const char* fallback)
 // Every <dir>/<id>/ with a manifest.json + source.lua (design doc §3.3). Sources already in `out` (installed
 // from a repository) keep their place: a bundled source with the same id is skipped.
 void load_extensions(const std::string& dir, sumi::net::Client& http,
-                     std::vector<std::unique_ptr<sumi::source::Extension>>& out)
+                     std::vector<std::unique_ptr<sumi::source::Extension>>& out, bool required = true)
 {
     DIR* d = opendir(dir.c_str());
     if (!d) {
-        SUMI_LOGW("main", "no sources directory at %s", dir.c_str());
+        // Nothing installed from a repository yet is the normal case, not a problem.
+        if (required) SUMI_LOGW("main", "no sources directory at %s", dir.c_str());
+        else SUMI_LOGI("main", "no sources installed from a repository (%s)", dir.c_str());
         return;
     }
     while (dirent* e = readdir(d)) {
@@ -156,7 +158,7 @@ int main(int argc, char** argv)
     // Installed sources first, then the ones shipped with the app.
     std::string bundled_sources = env_or("SUMI_SOURCES", SUMI_SOURCES_DIR), installed_sources = data_dir + "/sources";
     std::vector<std::unique_ptr<sumi::source::Extension>> extensions;
-    load_extensions(installed_sources, http, extensions);
+    load_extensions(installed_sources, http, extensions, false);
     load_extensions(bundled_sources, http, extensions);
     sumi::app::AppData app_data(worker, db, std::move(extensions), &http,
                                 cache_ok ? &page_cache : nullptr, data_dir + "/downloads");

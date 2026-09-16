@@ -24,7 +24,7 @@ if ssh $SSH_OPTS "root@$HOST" 'command -v rsync >/dev/null'; then
     rsync -a --delete -e "ssh $SSH_OPTS" "$PKG/" "root@$HOST:$DEST/"
 else
     # rsync isn't on the device: copy the (small) package with scp instead.
-    scp $SSH_OPTS -q -r "$PKG/config.xml" "$PKG/menu.json" "$PKG/run.sh" "root@$HOST:$DEST/"
+    scp $SSH_OPTS -q -r "$PKG/config.xml" "$PKG/menu.json" "$PKG/run.sh" "$PKG/README.md" "root@$HOST:$DEST/"
     scp $SSH_OPTS -q "$PKG/bin/sumiyomi" "$PKG/bin/http_smoke" "$PKG/bin/page_bench" "root@$HOST:$DEST/bin/"
     ssh $SSH_OPTS "root@$HOST" "mkdir -p $DEST/assets/fonts"
     scp $SSH_OPTS -q "$PKG"/assets/fonts/* "root@$HOST:$DEST/assets/fonts/"
