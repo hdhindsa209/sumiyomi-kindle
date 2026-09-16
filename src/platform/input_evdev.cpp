@@ -135,7 +135,6 @@ public:
             }
             devices_.push_back(dev);
             fds_.push_back(dev.fd);
-            if (!dev.touch) key_fds_.push_back(dev.fd);
         }
         std::free(devs);
 
@@ -155,11 +154,9 @@ public:
         }
         devices_.clear();
         fds_.clear();
-        key_fds_.clear();
     }
 
     const std::vector<int>& fds() const override { return fds_; }
-    const std::vector<int>& key_fds() const override { return key_fds_; }
 
     void drain(int fd, std::vector<RawEvent>& out) override
     {
@@ -319,7 +316,6 @@ private:
 
     DisplayInfo         info_;
     std::vector<Device> devices_;
-    std::vector<int>    key_fds_;
     std::vector<int>    fds_;
 };
 

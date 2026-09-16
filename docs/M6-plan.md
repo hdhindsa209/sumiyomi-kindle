@@ -119,19 +119,25 @@ on the device and read `/mnt/us/sumiyomi/logs/`.
 
 ## Sleeping (2026-09-16)
 
-`PowerGuard::acquire` holds powerd's `preventScreenSaver` for the whole session so the framework can't paint
-over a page, which also stops powerd sleeping the device at all: with the lock held, neither the idle timer nor
-the power button does anything. `main` therefore handles `Key::Power` itself — `app/sleep_screen.cpp` paints
-the sleep screen straight to the framebuffer (never through `ui::Screen`, so the node tree and the reader's
-state survive untouched), then `PowerGuard::sleep` suspends and returns when the device wakes.
+Sleep is powerd's, not ours. `acquire` disables pillow, pauses the window manager and stops the status bar so
+the framework can't paint over a page — but it deliberately does **not** take `preventScreenSaver`, so the power
+button, the idle timer and the screensaver behave exactly as they do everywhere else on the device.
 
-Two details worth keeping:
+Getting there took three wrong turns, all of them the same mistake — guessing at device behaviour instead of
+measuring it:
 
-- **Knowing the user is back.** The first attempt used the `CLOCK_BOOTTIME` / `CLOCK_MONOTONIC` gap, which
-  grows by the length of each suspend on kernels that account for it. On this Kindle it never grew, even though
-  the device plainly slept — so the app sat in its poll loop for the full timeout after the user had already
-  woken it, which is what "takes quite a while to wake" was. Input is the reliable signal: our process is frozen
-  with the device, so the press that wakes it is the first thing we see on resuming. The clock check stays as a
-  second signal, since where it works we notice without the user touching anything.
-- **Some firmwares won't suspend while the wakelock is held.** If nothing happens within four seconds, the lock
-  is dropped (letting powerd sleep the device the way it normally would) and taken back when the user returns.
+1. `preventScreenSaver` was held for the whole session, which is why the device could not be slept at all.
+2. Suspending it ourselves (`powerd_test -s`, then `/sys/power/state`) looked right but never suspended: the
+   device log showed `0ms of it suspended` every time, and `powerd_test -s` returns success while doing nothing
+   — probably because the suspend sequence wants the framework we had just paused.
+3. Detecting the wake by watching `CLOCK_BOOTTIME` pull ahead of `CLOCK_MONOTONIC` never fired on this kernel,
+   so after a wake the app sat in its poll loop until the timeout expired. That was the "slow wake".
+
+What works is what KOReader does: leave sleep alone and listen. `PowerEvents` runs `lipc-wait-event -m
+com.lab126.powerd '*'` as a child process and reads its pipe in the normal epoll loop — `goingToScreenSaver`
+paints the sleep screen, `outOfScreenSaver` repaints the screen that was up. While the device is suspended our
+process is frozen with it and simply carries on at the next line. Events we don't act on are logged once, so the
+device tells us its own vocabulary rather than us assuming it.
+
+`app/sleep_screen.cpp` paints straight to the framebuffer rather than through `ui::Screen`, so the node tree is
+untouched and waking is a plain repaint: the reader keeps its chapter and its page.

@@ -1,9 +1,10 @@
 // Kindle power/UI control: coexist with the native framework rather than stopping it.
 // Mirrors KOReader's default Upstart path (platform/kindle/koreader.sh, FW >= 5.7.2):
-//   acquire: preventScreenSaver 1; disableEnablePillow disable; SIGSTOP awesome; stop statusbar
-//   restore: start statusbar; SIGCONT awesome; disableEnablePillow enable + relaunch home;
-//            preventScreenSaver 0
+//   acquire: disableEnablePillow disable; SIGSTOP awesome; stop statusbar
+//   restore: start statusbar; SIGCONT awesome; disableEnablePillow enable + relaunch home
 // Background for the switch: docs/M1-notes.md -> "T02 device run #1".
+//
+// Sleep is powerd's job, not ours (see PowerEvents at the bottom, and docs/M6-plan.md).
 #include "platform/power.h"
 
 #include "core/log.h"
@@ -12,14 +13,10 @@
 #include <cerrno>
 #include <csignal>
 #include <cstdlib>
-#include <algorithm>
 #include <cstring>
-#include <ctime>
 #include <dirent.h>
 #include <fcntl.h>
-#include <poll.h>
 #include <sys/wait.h>
-#include <vector>
 #include <unistd.h>
 
 extern char** environ;
@@ -39,7 +36,6 @@ char stop_exe_[kExeMax];
 
 // What acquire() changed. Each flag is set *before* the change is attempted, so a
 // signal landing mid-acquire still restores it; cleared again if the change failed.
-volatile sig_atomic_t set_wakelock_      = 0;
 volatile sig_atomic_t disabled_pillow_   = 0;
 volatile sig_atomic_t stopped_statusbar_ = 0;
 pid_t                 awesome_pids_[kMaxPids];
@@ -117,82 +113,6 @@ size_t find_pids(const char* comm, pid_t* out, size_t cap)
     return n;
 }
 
-// --- Sleep ---------------------------------------------------------------------------------
-// We hold powerd's screensaver wakelock for the whole session (so the framework can't paint its
-// screensaver over a page mid-read), which also means powerd will never sleep the device on its
-// own. The power button therefore does nothing unless we suspend the device ourselves.
-
-constexpr long    kSuspendPollMs  = 50;    // how soon after resume we notice and start repainting
-constexpr int64_t kHeldWaitMs     = 4000;        // give powerd a chance with the wakelock still held
-constexpr int64_t kSleepingMs     = 12 * 3600000;// then wait for the user, however long they're away
-constexpr int64_t kSuspendedMinMs = 1000;    // a gap this big means we really did suspend
-
-int64_t clock_ms(clockid_t id) noexcept
-{
-    timespec ts{};
-    clock_gettime(id, &ts);
-    return static_cast<int64_t>(ts.tv_sec) * 1000 + ts.tv_nsec / 1000000;
-}
-
-// How much time this system has lost to suspend, as best the clocks can tell. CLOCK_MONOTONIC stops
-// while suspended; both BOOTTIME (where the kernel keeps it) and REALTIME (restored from the RTC on
-// resume) keep going, so either gap growing means we really slept. Whether this Kindle's kernel does
-// either is exactly what we're measuring — hence both, and hence it is never the only wake signal.
-int64_t suspended_ms() noexcept
-{
-    int64_t mono = clock_ms(CLOCK_MONOTONIC);
-    return std::max(clock_ms(CLOCK_BOOTTIME) - mono, clock_ms(CLOCK_REALTIME) - mono);
-}
-
-bool trigger_suspend() noexcept
-{
-    // powerd's own suspend path: it brings the radio and the framework down cleanly first.
-    char exe[kExeMax];
-    if (resolve_exe("powerd_test", exe)) {
-        const char* const argv[] = {"powerd_test", "-s", nullptr};
-        if (run(exe, argv) == 0) return true;
-        SUMI_LOGW("power", "powerd_test -s failed; falling back to /sys/power/state");
-    }
-    int fd = open("/sys/power/state", O_WRONLY | O_CLOEXEC);
-    if (fd < 0) return false;
-    ssize_t n = write(fd, "mem\n", 4);   // blocks here until the device resumes
-    close(fd);
-    return n > 0;
-}
-
-// Waits for the user to come back, which is either of two signals:
-//
-//  - input on one of the input devices. While the device is suspended our process is frozen along
-//    with it, so the press that wakes the device is the first thing we see on resuming. This is the
-//    signal that always works.
-//  - the suspended-time gap growing. This only works where the kernel accounts suspended time in
-//    CLOCK_BOOTTIME but not CLOCK_MONOTONIC. On the Kindle (5.17.1.0.3) it never fired even though
-//    the device demonstrably slept, so it cannot be the only signal — but where it does work, we
-//    learn we slept without the user having to touch anything.
-//
-// Returns the signal seen, or Timeout.
-enum class Wake { Input, Clock, Timeout };
-
-Wake wait_for_wake(int64_t base, int64_t timeout_ms, const std::vector<int>& fds) noexcept
-{
-    std::vector<pollfd> pfds;
-    pfds.reserve(fds.size());
-    for (int fd : fds) pfds.push_back(pollfd{fd, POLLIN, 0});
-
-    for (int64_t waited = 0; waited < timeout_ms; waited += kSuspendPollMs) {
-        if (suspended_ms() - base >= kSuspendedMinMs) return Wake::Clock;
-        int n = pfds.empty() ? 0 : poll(pfds.data(), static_cast<nfds_t>(pfds.size()),
-                                        static_cast<int>(kSuspendPollMs));
-        if (n > 0) return Wake::Input;
-        if (n < 0 && errno != EINTR) return Wake::Timeout;
-        if (pfds.empty()) {   // nothing to poll: just wait out the interval
-            timespec nap{0, kSuspendPollMs * 1000 * 1000};
-            nanosleep(&nap, nullptr);
-        }
-    }
-    return suspended_ms() - base >= kSuspendedMinMs ? Wake::Clock : Wake::Timeout;
-}
-
 } // namespace
 
 bool PowerGuard::acquire(std::string& err)
@@ -203,12 +123,8 @@ bool PowerGuard::acquire(std::string& err)
     }
     restored_.clear();
 
-    set_wakelock_ = 1;
-    if (int rc = lipc_set("com.lab126.powerd", "preventScreenSaver", "1"); rc != 0) {
-        set_wakelock_ = 0;
-        SUMI_LOGW("power", "preventScreenSaver 1 failed (rc=%d); screensaver may interrupt", rc);
-    }
-
+    // No preventScreenSaver here on purpose: powerd keeps its normal sleep behaviour, so the power
+    // button and the idle timer work the way they do everywhere else on the device.
     disabled_pillow_ = 1;
     if (int rc = lipc_set("com.lab126.pillow", "disableEnablePillow", "disable"); rc != 0) {
         disabled_pillow_ = 0;
@@ -243,9 +159,9 @@ bool PowerGuard::acquire(std::string& err)
         }
     }
 
-    SUMI_LOGI("power", "acquired: wakelock=%d pillow_disabled=%d awesome_stopped=%d statusbar_stopped=%d",
-              static_cast<int>(set_wakelock_), static_cast<int>(disabled_pillow_),
-              static_cast<int>(awesome_count_), static_cast<int>(stopped_statusbar_));
+    SUMI_LOGI("power", "acquired: pillow_disabled=%d awesome_stopped=%d statusbar_stopped=%d",
+              static_cast<int>(disabled_pillow_), static_cast<int>(awesome_count_),
+              static_cast<int>(stopped_statusbar_));
     return true;
 }
 
@@ -278,49 +194,98 @@ void PowerGuard::restore() noexcept
                 log_raw(LogLevel::W, "power", "appmgrd start home failed");
             disabled_pillow_ = 0;
         }
-        if (set_wakelock_) {
-            if (lipc_set("com.lab126.powerd", "preventScreenSaver", "0") != 0)
-                log_raw(LogLevel::W, "power", "preventScreenSaver 0 failed");
-            set_wakelock_ = 0;
-        }
+        // An older version left this set; clear it in case one was killed before it could.
+        lipc_set("com.lab126.powerd", "preventScreenSaver", "0");
         log_raw(LogLevel::I, "power", "restored");
     }
 
     sigprocmask(SIG_SETMASK, &prev, nullptr);
 }
 
-bool PowerGuard::sleep(const std::vector<int>& wake_fds, std::string& err)
+// ---------------------------------------------------------------- PowerEvents
+
+PowerEvents::~PowerEvents() { stop(); }
+
+bool PowerEvents::start(std::string& err)
 {
-    if (lipc_exe_[0] == '\0') {
-        err = "power guard not acquired";
+    stop();
+    char exe[kExeMax];
+    if (!resolve_exe("lipc-wait-event", exe)) {
+        err = "lipc-wait-event not found; sleep and wake won't be noticed";
         return false;
     }
-    int64_t base = suspended_ms(), t0 = clock_ms(CLOCK_MONOTONIC);
-    if (!trigger_suspend()) {
-        err = "cannot suspend: neither powerd_test nor /sys/power/state worked";
+    int pipe_fds[2];
+    if (pipe(pipe_fds) != 0) {
+        err = std::string("pipe: ") + std::strerror(errno);
         return false;
     }
-    Wake wake = wait_for_wake(base, kHeldWaitMs, wake_fds);
-
-    // Nothing happened in the first few seconds: powerd may be refusing because we hold its
-    // screensaver wakelock. Drop it, ask again, and take it straight back when the user returns.
-    // The sleep screen is already on the panel, so even if the framework paints its screensaver in
-    // that window, it paints over a screen we are about to repaint anyway.
-    if (wake == Wake::Timeout) {
-        SUMI_LOGI("power", "no wake signal after %llums; releasing the wakelock and asking again",
-                  static_cast<unsigned long long>(kHeldWaitMs));
-        lipc_set("com.lab126.powerd", "preventScreenSaver", "0");
-        trigger_suspend();
-        wake = wait_for_wake(base, kSleepingMs, wake_fds);
-        if (set_wakelock_) lipc_set("com.lab126.powerd", "preventScreenSaver", "1");
+    pid_t pid = fork();
+    if (pid < 0) {
+        err = std::string("fork: ") + std::strerror(errno);
+        ::close(pipe_fds[0]);
+        ::close(pipe_fds[1]);
+        return false;
     }
-
-    int64_t away = clock_ms(CLOCK_MONOTONIC) - t0;
-    int64_t asleep = std::max<int64_t>(0, suspended_ms() - base);
-    SUMI_LOGI("power", "awake after %lldms (%lldms of it suspended, woken by %s)",
-              static_cast<long long>(away), static_cast<long long>(asleep),
-              wake == Wake::Input ? "input" : wake == Wake::Clock ? "the clock" : "nothing");
+    if (pid == 0) {
+        ::close(pipe_fds[0]);
+        dup2(pipe_fds[1], STDOUT_FILENO);
+        ::close(pipe_fds[1]);
+        // -m keeps it running and prints every event as it happens, one per line.
+        const char* const argv[] = {"lipc-wait-event", "-m", "com.lab126.powerd", "*", nullptr};
+        execve(exe, const_cast<char* const*>(argv), environ);
+        _exit(127);
+    }
+    ::close(pipe_fds[1]);
+    fcntl(pipe_fds[0], F_SETFL, O_NONBLOCK);
+    fcntl(pipe_fds[0], F_SETFD, FD_CLOEXEC);
+    fd_  = pipe_fds[0];
+    pid_ = pid;
+    SUMI_LOGI("power", "listening to powerd events (pid=%d)", static_cast<int>(pid));
     return true;
+}
+
+void PowerEvents::stop() noexcept
+{
+    if (pid_ > 0) {
+        kill(pid_, SIGTERM);
+        int status = 0;
+        while (waitpid(pid_, &status, 0) < 0 && errno == EINTR) {}
+        pid_ = -1;
+    }
+    if (fd_ >= 0) {
+        ::close(fd_);
+        fd_ = -1;
+    }
+    pending_.clear();
+}
+
+void PowerEvents::drain(const std::function<void(Event)>& on_event)
+{
+    if (fd_ < 0) return;
+    char buf[512];
+    for (ssize_t n; (n = read(fd_, buf, sizeof buf)) > 0;) pending_.append(buf, static_cast<size_t>(n));
+
+    size_t nl;
+    while ((nl = pending_.find('\n')) != std::string::npos) {
+        std::string line = pending_.substr(0, nl);
+        pending_.erase(0, nl + 1);
+        if (line.empty()) continue;
+        // Lines look like "goingToScreenSaver 1" — the event name is the first word.
+        std::string name = line.substr(0, line.find(' '));
+        // The pair we care about. Everything else powerd says (charging, battery level changes,
+        // the rest) is logged once so the device tells us its own vocabulary rather than us
+        // assuming it.
+        if (name == "goingToScreenSaver" || name == "readyToSuspend") {
+            SUMI_LOGI("power", "powerd: %s", line.c_str());
+            on_event(Event::Sleeping);
+        } else if (name == "outOfScreenSaver" || name == "wakeupFromSuspend" || name == "resuming") {
+            SUMI_LOGI("power", "powerd: %s", line.c_str());
+            on_event(Event::Awake);
+        } else {
+            SUMI_LOGI("power", "powerd (ignored): %s", line.c_str());
+        }
+    }
+    if (pending_.size() > 4096) pending_.clear();   // a line this long isn't an event
 }
 
 } // namespace sumi

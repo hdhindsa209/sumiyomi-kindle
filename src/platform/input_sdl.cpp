@@ -50,7 +50,6 @@ public:
     }
 
     const std::vector<int>& fds() const override { return fds_; }
-    const std::vector<int>& key_fds() const override { return fds_; }   // SDL has neither
 
     void drain(int /*fd*/, std::vector<RawEvent>& out) override
     {

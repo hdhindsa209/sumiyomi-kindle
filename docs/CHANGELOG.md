@@ -2,10 +2,11 @@
 
 ## Unreleased
 
-- **Fixed: waking from sleep took far longer than it should.** The app decided it had woken by watching the
-  clock, which on this firmware never reports suspended time — so after the device came back it went on waiting
-  instead of repainting. It now wakes on the first key or touch, which is what the user actually does.
-- Only the buttons wake the device from sleep now; a touch doesn't.
+- **Sleep is the device's own again.** v0.3.0 tried to suspend the Kindle itself, which never actually
+  suspended it. Sumiyomi no longer holds powerd's screensaver lock and no longer touches the power button, so
+  sleeping, waking and the idle timer all behave exactly as they do elsewhere on the device. The app listens to
+  powerd instead: it shows a sleep screen on the way down and repaints the screen you were on when you come
+  back, with the reader still on its page.
 - Mangapill reports its covers (needs Mangapill 1.1.0 from the source repository).
 
 ## v0.3.0

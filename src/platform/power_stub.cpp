@@ -13,13 +13,20 @@ bool PowerGuard::acquire(std::string& /*err*/)
 
 void PowerGuard::restore() noexcept {}
 
-bool PowerGuard::sleep(const std::vector<int>& /*wake_fds*/, std::string& err)
+PowerEvents::~PowerEvents() { stop(); }
+
+bool PowerEvents::start(std::string& err)
 {
-    // The simulator has no device to suspend. main() draws the sleep screen before calling this and
-    // repaints when it returns, so the sleep screen still appears here for a moment — enough to see
-    // what it looks like, but the real behaviour only exists on the Kindle.
-    err = "no device to suspend on the host build";
+    // Nothing on the host sleeps the machine out from under us, so there is nothing to listen to.
+    err = "no powerd on the host build";
     return false;
 }
+
+void PowerEvents::stop() noexcept
+{
+    fd_  = -1;
+    pid_ = -1;
+}
+void PowerEvents::drain(const std::function<void(Event)>&) {}
 
 } // namespace sumi

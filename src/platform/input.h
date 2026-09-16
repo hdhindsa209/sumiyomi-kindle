@@ -28,10 +28,6 @@ public:
     virtual bool open(const DisplayInfo& d, std::string& err) = 0;
     virtual void close() = 0;
 
-    // The buttons only (power, page turn): the fds that should wake the device from sleep, so a
-    // hand brushing the screen in a bag doesn't. Empty where the backend has no pollable fds.
-    virtual const std::vector<int>& key_fds() const = 0;
-
     // Non-blocking fds for epoll registration.
     // May be empty for backends with nothing pollable (SDL): those must be drained
     // periodically with fd = kNoFd instead.
