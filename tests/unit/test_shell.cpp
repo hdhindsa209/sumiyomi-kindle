@@ -1360,6 +1360,28 @@ void test_more_exit()
     CHECK(env.exited);
 }
 
+// Uninstall is reachable from More, and the destructive half asks again before it does anything.
+void test_more_uninstall()
+{
+    Env env;
+    env.tap(env.nav_cell(4));
+    env.tap(env.find("Uninstall Sumiyomi"));
+    CHECK(env.shows("Remove the app, keep my library"));
+    CHECK(env.shows("Remove everything"));
+
+    // "Remove everything" confirms first: the app must still be running afterwards.
+    env.tap(env.find("Remove everything"));
+    CHECK(env.shows("Delete Sumiyomi and everything in your library?"));
+    CHECK(!env.exited);
+    env.tap(env.find("Cancel"));
+    CHECK(!env.exited);
+
+    // Keeping the library goes straight through, and the app quits so the helper can do its work.
+    env.tap(env.find("Uninstall Sumiyomi"));
+    env.tap(env.find("Remove the app, keep my library"));
+    CHECK(env.exited);
+}
+
 } // namespace
 
 int main()
@@ -1396,5 +1418,6 @@ int main()
     RUN(test_settings_and_storage);
     RUN(test_sleep_screen);
     RUN(test_more_exit);
+    RUN(test_more_uninstall);
     return check_result();
 }

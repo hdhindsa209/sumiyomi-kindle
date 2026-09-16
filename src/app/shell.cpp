@@ -1,5 +1,7 @@
 #include "app/shell.h"
 
+#include "platform/uninstall.h"
+
 #include "app/format.h"
 #include "core/log.h"
 #include "icons.h"
@@ -1859,6 +1861,7 @@ void Shell::show_more()
         std::string about = std::string("Sumiyomi ") + SUMI_VERSION + kDot + std::to_string(data_.sources().size())
                           + (data_.sources().size() == 1 ? " source" : " sources");
         entry(icon::info, "About", about, [this] { show_about_sheet(); });
+        entry(icon::delete_, "Uninstall Sumiyomi", "Remove the app from this Kindle", [this] { show_uninstall_sheet(); });
         entry(icon::close, "Exit Sumiyomi", "Return to the Kindle home screen", [this] { on_exit_(); });
         present(scaffold(app_bar("More", nullptr, with_light({})), paged(std::move(items)), kMore));
     });
@@ -1889,6 +1892,38 @@ void Shell::confirm(const std::string& title, const std::string& action, std::fu
     }, true));
     rows.push_back(std::move(box));
     screen_.show_overlay(sheet(title, std::move(rows)));
+}
+
+// Removing the app from inside it: the two cases lose very different things, so they are separate
+// choices rather than one button with a warning. Either way the app quits, and a helper left behind
+// does the deleting once this process is gone (platform/uninstall.h).
+void Shell::show_uninstall_sheet()
+{
+    std::vector<std::unique_ptr<Node>> rows;
+    rows.push_back(text_block("Removing the app keeps your library, read progress and downloads, so reinstalling "
+                              "carries on where you left off. Removing everything deletes them for good.",
+                              type::LIST_SECONDARY, FontId::InterRegular, 4, Insets{32, 8, 32, 8}));
+    auto go = [this](bool keep_data) {
+        screen_.hide_overlay();
+        std::string err;
+        if (!schedule_uninstall(keep_data, err)) {
+            SUMI_LOGE("shell", "uninstall: %s", err.c_str());
+            confirm("Couldn't uninstall: " + err, "OK", [] {});
+            return;
+        }
+        on_exit_();
+    };
+    rows.push_back(list_row({"Remove the app, keep my library", "Deletes the app only", false, false, 0,
+                             [go] { go(true); }}));
+    rows.push_back(list_row({"Remove everything", "Deletes the app, library, progress and downloads", false, false, 0,
+                             [this, go] {
+                                 confirm("Delete Sumiyomi and everything in your library?", "Delete", [go] { go(false); });
+                             }}));
+    auto done = std::make_unique<Node>();
+    done->padding = Insets{32, 8, 32, 8};
+    done->add(button("Cancel", [this] { screen_.hide_overlay(); }, true));
+    rows.push_back(std::move(done));
+    screen_.show_overlay(sheet("Uninstall Sumiyomi", std::move(rows)));
 }
 
 void Shell::show_about_sheet()

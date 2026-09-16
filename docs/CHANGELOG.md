@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.3
+
+- **Uninstall from inside the app**: **More → Uninstall Sumiyomi**, offering either removing the app and keeping
+  your library or removing everything (which asks again first). The KUAL menu entries went two versions without
+  working; this path is the app's own and is covered by a test.
+
 ## v1.0.2
 
 - **Fixed: the Uninstall menu entries did nothing.** They passed the mode as a KUAL `params` field, which KUAL

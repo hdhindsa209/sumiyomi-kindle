@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(sumiyomi VERSION 1.0.2 LANGUAGES C CXX)
+project(sumiyomi VERSION 1.0.3 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -289,7 +289,8 @@ if(NOT CMAKE_CROSSCOMPILING)
   target_link_libraries(test_widgets PRIVATE sumi_ui)
   add_test(NAME widgets COMMAND test_widgets)
 
-  add_executable(test_shell tests/unit/test_shell.cpp src/app/shell.cpp src/app/reader.cpp src/app/sleep_screen.cpp)
+  add_executable(test_shell tests/unit/test_shell.cpp src/app/shell.cpp src/app/reader.cpp src/app/sleep_screen.cpp
+                            src/platform/uninstall_stub.cpp)
   target_include_directories(test_shell PRIVATE src tools/ext)
   target_compile_definitions(test_shell PRIVATE SUMI_ASSETS_DIR="${SUMI_ASSETS_DIR}" SUMI_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
                                                SUMI_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/tests/golden")
@@ -358,7 +359,7 @@ if(NOT CMAKE_CROSSCOMPILING)
     target_link_libraries(sim_testcard PRIVATE sumi_sim)
 
     # §2 criterion 7: the same app on the desktop, SDL backend.
-    add_library(sumi_sim_platform STATIC src/platform/signals.cpp)
+    add_library(sumi_sim_platform STATIC src/platform/signals.cpp src/platform/uninstall_stub.cpp)
     target_link_libraries(sumi_sim_platform PUBLIC sumi_sim)
     add_executable(sumiyomi src/main.cpp src/app/shell.cpp src/app/reader.cpp src/app/sleep_screen.cpp)
     target_compile_definitions(sumiyomi PRIVATE SUMI_ASSETS_DIR="${SUMI_ASSETS_DIR}"
@@ -391,10 +392,13 @@ add_dependencies(fbink fbink_build)
 add_library(sumi_platform STATIC
   src/platform/signals.cpp
   src/platform/power_kindle.cpp
+  src/platform/uninstall_kindle.cpp
   src/platform/frontlight_kindle.cpp
   src/platform/battery_kindle.cpp
   src/platform/display_fbink.cpp
   src/platform/input_evdev.cpp)
+target_compile_definitions(sumi_platform PRIVATE SUMI_APP_DIR="/mnt/us/extensions/sumiyomi"
+                                                SUMI_DATA_DIR="/mnt/us/sumiyomi")
 target_link_libraries(sumi_platform PUBLIC sumi_core fbink)
 
 add_executable(sumiyomi src/main.cpp src/app/shell.cpp src/app/reader.cpp src/app/sleep_screen.cpp)

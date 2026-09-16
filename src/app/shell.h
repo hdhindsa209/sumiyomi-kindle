@@ -126,6 +126,7 @@ private:
     void show_more();
     void show_settings(ui::Change change = ui::Change::NewScreen);
     void show_about_sheet();
+    void show_uninstall_sheet();
     void show_storage(ui::Change change = ui::Change::NewScreen);
     // A titled control for settings lists (a label over a segmented control).
     std::unique_ptr<ui::Node> setting(const std::string& title, std::unique_ptr<ui::Node> control);
