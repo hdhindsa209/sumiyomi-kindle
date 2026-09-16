@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(sumiyomi VERSION 0.2.1 LANGUAGES C CXX)
+project(sumiyomi VERSION 0.2.2 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -299,7 +299,7 @@ if(NOT CMAKE_CROSSCOMPILING)
   add_executable(test_extension tests/unit/test_extension.cpp)
   target_include_directories(test_extension PRIVATE tools/ext)
   target_compile_definitions(test_extension PRIVATE SUMI_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
-  target_link_libraries(test_extension PRIVATE sumi_source zlib_static)
+  target_link_libraries(test_extension PRIVATE sumi_source zlib_static wasm3 lua)
   add_test(NAME extension COMMAND test_extension WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 
   add_executable(test_app_data tests/unit/test_app_data.cpp)
@@ -393,6 +393,9 @@ add_executable(aix_runner tools/aidoku/aix_runner.cpp)
 target_include_directories(aix_runner PRIVATE src)
 target_link_libraries(aix_runner PRIVATE sumi_source wasm3 lua)
 set_target_properties(aix_runner PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+# Statically linked so it also runs under qemu-arm on a development machine, where the cross glibc's
+# dynamic loader doesn't cooperate. This is how Aidoku sources get debugged without the device.
+target_link_options(aix_runner PRIVATE -static)
 
 add_executable(m1_bench tools/bench/m1_bench.cpp)
 target_link_libraries(m1_bench PRIVATE sumi_platform)

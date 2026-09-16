@@ -44,6 +44,19 @@ ssh root@192.168.15.244 'killall -CONT awesome; lipc-set-prop com.lab126.pillow 
 
 Worst case, hold the power button for 30 s.
 
+## Debugging an Aidoku source without the device
+
+The Kindle build of `aix_runner` is statically linked, so it runs under ARM emulation on a development machine —
+which is how the "malformed Wasm binary" bug above was found:
+
+```sh
+./tools/kbuild.sh                 # builds build/kindle/bin/aix_runner
+docker run --rm --platform linux/amd64 -v "$PWD:/src" sumiyomi-kindle-tc:2026.08 sh -c \
+  'apt-get update -qq && apt-get install -y -qq qemu-user && cd /src && qemu-arm build/kindle/bin/aix_runner path/to/source.aix'
+```
+
+On the device itself: `/mnt/us/extensions/sumiyomi/bin/aix_runner /mnt/us/sumiyomi/sources/<id>.aix`.
+
 ## Sources
 
 A source is `sources/<id>/{manifest.json,source.lua}` (Lua 5.4, sandboxed; API in the design doc §6.3).

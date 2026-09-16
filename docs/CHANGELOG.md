@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.2
+
+- **Fixed: Aidoku sources failed with "malformed Wasm binary" on the device.** The interpreter keeps a pointer to
+  a module's bytes and compiles each function the first time it's called; the source was parsed from the caller's
+  copy of the package, which was freed as soon as installing finished. Sources now keep their own copy.
+  It only showed up on the device because the freed memory happened to survive long enough elsewhere.
+- `aix_runner` (a diagnosis tool) ships with the app and finds the CA bundle on the device.
+
 ## v0.2.1
 
 - **Fixed:** upgrading from an older version didn't add Aidoku's repository, because the repository list was only

@@ -1,6 +1,11 @@
 // Extension runner tests (design doc §11.3): the real WeebCentral source against recorded HTML
 // responses (tests/fixtures/weebcentral, captured with tools/ext/ext_runner --record). No network.
 #include "fixture_transport.h"
+#include <algorithm>
+#include <cstdlib>
+#include <memory>
+
+#include "source/aidoku_source.h"
 #include "source/aix.h"
 #include "source/extension.h"
 
@@ -296,9 +301,37 @@ void test_aix_package()
     unlink(path.c_str());
 }
 
+// wasm3 compiles a function the first time it's called, reading the module's bytes then. A source must
+// therefore keep its own copy: this loads one from a package that goes away immediately afterwards.
+// (Run with SUMI_AIX=<file.aix> to exercise it; without a package there's nothing to check.)
+void test_aidoku_keeps_its_module()
+{
+    const char* path = std::getenv("SUMI_AIX");
+    if (!path) return;
+    std::string err;
+    std::unique_ptr<AidokuSource> src;
+    {
+        AixPackage pkg;
+        CHECK(read_aix(path, pkg, err));
+        src = AidokuSource::load(pkg, nullptr, {}, err);
+        CHECK(src != nullptr);
+        // Scribble over the caller's copy: a source holding a pointer into it would now be reading rubbish.
+        std::fill(pkg.wasm.begin(), pkg.wasm.end(), '\0');
+    }
+    if (!src) return;
+    // No network here, so the call fails at the first request — but it must get that far, which means
+    // its functions compiled from bytes the source still owns.
+    SMangaPage page;
+    bool ok = src->popular(1, page, err);
+    CHECK(!ok);
+    CHECK(err.find("malformed") == std::string::npos);
+    CHECK(err.find("has no") == std::string::npos);
+}
+
 int main()
 {
     RUN(test_aix_package);
+    RUN(test_aidoku_keeps_its_module);
     RUN(test_manifest_and_stable_id);
     RUN(test_popular_and_latest);
     RUN(test_search_details_chapters_pages);

@@ -818,8 +818,10 @@ std::unique_ptr<AidokuSource> AidokuSource::load(const AixPackage& pkg, net::Cli
         err = "cannot start the WebAssembly runtime";
         return nullptr;
     }
-    M3Result res = m3_ParseModule(src->env_, &src->module_, reinterpret_cast<const uint8_t*>(pkg.wasm.data()),
-                                  static_cast<uint32_t>(pkg.wasm.size()));
+    // wasm3 keeps a pointer to these bytes and compiles each function the first time it's called, so they
+    // must live as long as the source does: parse from this object's own copy, never the caller's.
+    M3Result res = m3_ParseModule(src->env_, &src->module_, reinterpret_cast<const uint8_t*>(src->pkg_.wasm.data()),
+                                  static_cast<uint32_t>(src->pkg_.wasm.size()));
     if (res) {
         err = std::string("not a usable source: ") + res;
         return nullptr;
