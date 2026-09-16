@@ -388,6 +388,12 @@ target_link_libraries(sumiyomi PRIVATE sumi_platform sumi_ui sumi_app_data)
 add_executable(m1_testcard tools/m1/testcard_main.cpp src/app/m1_testcard.cpp)
 target_link_libraries(m1_testcard PRIVATE sumi_platform)
 
+# Aidoku diagnosis on the device itself: loads a package and runs it, printing what the source asks for.
+add_executable(aix_runner tools/aidoku/aix_runner.cpp)
+target_include_directories(aix_runner PRIVATE src)
+target_link_libraries(aix_runner PRIVATE sumi_source wasm3 lua)
+set_target_properties(aix_runner PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
 add_executable(m1_bench tools/bench/m1_bench.cpp)
 target_link_libraries(m1_bench PRIVATE sumi_platform)
 

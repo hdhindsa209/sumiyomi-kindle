@@ -831,6 +831,14 @@ std::unique_ptr<AidokuSource> AidokuSource::load(const AixPackage& pkg, net::Cli
     }
     if (!src->link(err)) return nullptr;
 
+    std::string exports;
+    for (const char* fn : {"start", "get_search_manga_list", "get_manga_list", "get_manga_update", "get_page_list",
+                           "get_listings", "free_result"}) {
+        IM3Function found = nullptr;
+        if (!m3_FindFunction(&found, src->runtime_, fn) && found) exports += (exports.empty() ? "" : " ") + std::string(fn);
+    }
+    SUMI_LOGI("aidoku", "loaded %s v%d, offers: %s", pkg.id.c_str(), pkg.version, exports.empty() ? "nothing" : exports.c_str());
+
     IM3Function start = nullptr;
     if (!m3_FindFunction(&start, src->runtime_, "start") && start) {
         if (M3Result r = m3_CallV(start)) {
@@ -931,8 +939,9 @@ bool AidokuSource::link(std::string& err)
 bool AidokuSource::call(const char* fn, const std::vector<int64_t>& args, std::string& payload, std::string& err)
 {
     IM3Function f = nullptr;
-    if (m3_FindFunction(&f, runtime_, fn) || !f) {
-        err = "this source doesn't support that";
+    if (M3Result r = m3_FindFunction(&f, runtime_, fn); r || !f) {
+        err = std::string("this source has no ") + fn + (r ? std::string(" (") + r + ")" : "");
+        SUMI_LOGW("aidoku", "%s: %s", pkg_.id.c_str(), err.c_str());
         return false;
     }
     std::vector<const void*> argv;
@@ -941,7 +950,11 @@ bool AidokuSource::call(const char* fn, const std::vector<int64_t>& args, std::s
     for (int64_t a : args) storage.push_back(static_cast<int32_t>(a));
     for (int32_t& a : storage) argv.push_back(&a);
     if (M3Result r = m3_Call(f, static_cast<uint32_t>(argv.size()), argv.data())) {
-        err = std::string("the source failed: ") + r;
+        err = std::string("the source failed in ") + fn + ": " + r;
+        M3ErrorInfo info {};
+        m3_GetErrorInfo(runtime_, &info);
+        if (info.message && *info.message) err += std::string(" (") + info.message + ")";
+        SUMI_LOGW("aidoku", "%s: %s", pkg_.id.c_str(), err.c_str());
         return false;
     }
     int32_t ret = 0;
@@ -952,7 +965,8 @@ bool AidokuSource::call(const char* fn, const std::vector<int64_t>& args, std::s
     }
     trace("call", std::string(fn) + " -> " + std::to_string(ret));
     if (ret < 0) {
-        err = error_text(ret);
+        err = std::string(error_text(ret)) + " (" + fn + " returned " + std::to_string(ret) + ")";
+        SUMI_LOGW("aidoku", "%s: %s", pkg_.id.c_str(), err.c_str());
         return false;
     }
     // The result is [len i32][capacity i32][postcard bytes] in the module's memory.
