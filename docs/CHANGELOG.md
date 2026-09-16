@@ -1,48 +1,25 @@
 # Changelog
 
-## v1.0.4
+## v1.0.1 – v1.0.4
 
-- **Fixed: why Uninstall did nothing.** `deploy.sh` copied a hand-written list of files when the device has no
-  rsync, and the list never gained the uninstall scripts — so the KUAL menu entries were on the device pointing
-  at files that weren't. It now sends the whole package, so nothing can be left behind again.
-
-## v1.0.3
-
-- **Uninstall from inside the app**: **More → Uninstall Sumiyomi**, offering either removing the app and keeping
-  your library or removing everything (which asks again first). The KUAL menu entries went two versions without
-  working; this path is the app's own and is covered by a test.
-
-## v1.0.2
-
-- **Fixed: the Uninstall menu entries did nothing.** They passed the mode as a KUAL `params` field, which KUAL
-  doesn't support, so the item never ran. Each mode is its own script now. The uninstaller also runs itself from
-  /tmp before deleting anything — `/bin/sh` reads a script as it goes, so deleting its own file mid-run could
-  have killed it partway — and writes what it did to `/mnt/us/sumiyomi-uninstall.log`.
-
-## v1.0.1
-
-- **Uninstall from KUAL**: **Sumiyomi → Uninstall** removes the app, either keeping your library or deleting it
-  too. It refuses while the app is running, since the binary holds the screen and the native UI is stopped.
+- **Uninstall**: **More → Uninstall Sumiyomi** in the app, or **KUAL → Sumiyomi → Uninstall**. Either removes
+  the app and keeps your library, or removes everything.
+- **Fixed:** `deploy.sh` copied a fixed list of files on devices without rsync, so new files (the uninstall
+  scripts among them) never reached the Kindle. It sends the whole package now.
 
 ## v1.0.0
 
-Everything in v0.1 through v0.3, with sleeping fixed. Developed and run against a jailbroken Kindle
-(11th generation, 5.17.1.0.3).
+Everything in v0.1 through v0.3, with sleeping fixed. Built for a jailbroken Kindle (11th generation, 5.17.1.0.3).
 
-- **Sleeping works, and it's the device's own sleep.** Sumiyomi no longer holds powerd's screensaver lock, so
-  the power button, the idle timer and the screensaver behave exactly as they do everywhere else on the Kindle.
-  The app listens to powerd rather than driving it: a sleep screen on the way down, and the screen you were on
-  repainted when you come back, with the reader still on its page. (v0.3.0 tried to suspend the device itself
-  and never actually suspended it; that code is gone.)
-- Mangapill reports its covers (needs Mangapill 1.1.0 from the source repository).
+- **Sleep works, and it's the Kindle's own.** The app no longer holds powerd's screensaver lock: the power
+  button, idle timer and screensaver behave as they do everywhere else. It shows a sleep screen on the way down
+  and repaints your page when you come back.
+- Mangapill shows its covers (update it to 1.1.0 in Browse → Extensions).
 
 ## v0.3.0
 
-- An attempt at sleeping the device by suspending it directly. It didn't work — the device never suspended —
-  and v1.0.0 replaces it. Don't run this one.
-- **WebP pages and covers.** Sources that serve WebP (Mangapill's covers, among others) now display instead of
-  failing to decode. WebP is rescaled as it decodes, the way JPEG already was, so a page costs no more memory
-  than before.
+- Superseded by v1.0.0: its sleep fix didn't work.
+- **WebP pages and covers** now display instead of failing to decode.
 - Slow Aidoku source calls are logged with the network time separated from the interpreter time.
 - The Browse screen drops its empty "Migrate" tab; migrating a library between sources isn't built yet.
 - "Nothing else to install" no longer appears when a repository couldn't be read at all.
