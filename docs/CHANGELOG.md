@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- The Browse screen drops its empty "Migrate" tab; migrating a library between sources isn't built yet.
+- "Nothing else to install" no longer appears when a repository couldn't be read at all.
+- Tests clean up the throwaway sources they write, and those files are no longer in the repository.
+
 ## v0.2.2
 
 - **Fixed: Aidoku sources failed with "malformed Wasm binary" on the device.** The interpreter keeps a pointer to

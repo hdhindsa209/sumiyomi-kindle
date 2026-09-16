@@ -36,14 +36,14 @@ std/env/net/html/defaults runs seven of the eight.
 
 | Stage | What | Done when |
 |---|---|---|
-| **S1** ✅ | wasm3 vendored and building for host + Kindle; `.aix` unpacked; a module instantiated and its imports/exports read | Done 2026-09-16: `tools/aidoku/aix_probe` loads Aqua Manga and Asura Scans; zip + source.json reader unit-tested |
+| **S1** ✅ | wasm3 vendored and building for host + Kindle; `.aix` unpacked; a module instantiated and its imports/exports read | Done 2026-09-16: `tools/aidoku/aix_runner --probe` loads Aqua Manga and Asura Scans; zip + source.json reader unit-tested |
 | S2 ✅ | Descriptor table, memory helpers, `std` + `env` (buffers, dates, print, sleep) | Done: real sources read their arguments |
 | S3 ✅ | `net`: requests through our client, rate limits, response reading, `html()` | Done: sources fetch live pages |
 | S4 ✅ | `html`: the calls real sources use, mapped onto lexbor | Done: 21 of 25 sampled sources load |
 | S5 ✅ | postcard decoder + mirrors of Aidoku's structs | Done: listings, details, chapters and pages decode from real sources |
 | S6 ✅ | `defaults` (settings per source) | Done (settings UI is part of S7) |
 | S7 ✅ | App integration: install `.aix` from an Aidoku repository, list beside Lua sources, run through one source interface | Done: `SourceRunner` is implemented by both kinds; installing a real package is tested end to end |
-| S8 | Device: memory and speed of the interpreter on the Kindle's single core | Measured, written down here |
+| S8 | Device: memory and speed of the interpreter on the Kindle's single core | Sources run on the device (2026-09-16); speed and memory not measured yet |
 
 ## Risks, plainly
 
@@ -71,7 +71,7 @@ That is the whole surface to implement for these two, and it lines up with what 
 
 ## S2–S6 notes (2026-09-16)
 
-`tools/aidoku/aix_runner` drives a package end to end. Across the 25 English sources sampled from the community
+`tools/aidoku/aix_runner` drives a package end to end (`--probe` just unpacks and reports). Across the 25 English sources sampled from the community
 repository, 21 load and the rest say why (2 need a JavaScript engine, 1 image editing, 1 `html.kind`). Working
 end to end today, against their live sites: Guya (6 manga, 39 chapters, 20 pages), MangaBat (24/25/100),
 Drake Scans (24/119/7), EzManga (20/13/10), Danke fürs Lesen (20/1/2), Chikari, Athrea, Hive, Magus, Manga District.
@@ -96,3 +96,15 @@ offered alongside Sumiyomi's own from the first run, and the Extensions tab mark
 
 Their index carries no checksums, so an Aidoku package is trusted the way Aidoku itself trusts it: the repository
 is the authority. Sumiyomi's own repository still checks SHA-256 for every file.
+
+## The bug that only showed on the device (2026-09-16)
+
+Aidoku sources installed and loaded on the Kindle but every call failed with `malformed Wasm binary`, then
+`source aborted`. wasm3 keeps a *pointer* to a module's bytes and compiles each function the first time it is
+called; the module was parsed from the caller's copy of the package, which was freed as soon as installing
+finished. Calls then compiled from freed memory. Sources now parse from their own copy, and
+`test_aidoku_keeps_its_module` wipes the caller's copy after loading to keep it that way.
+
+It never failed on a development machine because the tools keep the package alive for the whole run — a reminder
+that "works here" says nothing about a different allocator. The Kindle build of `aix_runner` is statically linked
+so it can be run under `qemu-arm` locally, which is how this was finally cornered.

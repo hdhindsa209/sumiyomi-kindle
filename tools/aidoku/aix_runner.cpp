@@ -1,5 +1,7 @@
 // Drive an Aidoku source end to end: listing, search, details, chapters, pages.
-//   aix_runner <file.aix> [--search <query>] [--pick <n>]
+//   aix_runner <file.aix> [--search <query>] [--pick <n>] [--probe]
+// --probe only unpacks the package and reports what the source needs of the host, without running it.
+// SUMI_AIDOKU_TRACE=1 prints every call a source makes.
 #include "core/log.h"
 #include "net/http.h"
 #include "source/aidoku_source.h"
@@ -21,9 +23,11 @@ int main(int argc, char** argv)
     }
     std::string query = "";
     size_t pick = 0;
+    bool probe = false;
     for (int i = 2; i < argc; ++i) {
         if (!std::strcmp(argv[i], "--search") && i + 1 < argc) query = argv[++i];
         else if (!std::strcmp(argv[i], "--pick") && i + 1 < argc) pick = std::strtoul(argv[++i], nullptr, 10);
+        else if (!std::strcmp(argv[i], "--probe")) probe = true;
     }
 
     source::AixPackage pkg;
@@ -31,6 +35,12 @@ int main(int argc, char** argv)
     if (!source::read_aix(argv[1], pkg, err)) {
         std::fprintf(stderr, "%s\n", err.c_str());
         return 1;
+    }
+    if (probe) {
+        std::printf("%s  %s v%d (%s) %zu KB of WebAssembly, built for Aidoku %s\n", pkg.id.c_str(), pkg.name.c_str(),
+                    pkg.version, pkg.language.c_str(), pkg.wasm.size() / 1024,
+                    pkg.min_app_version.empty() ? "(unstated)" : pkg.min_app_version.c_str());
+        return 0;
     }
     // The certificates sit next to the app on the device; SUMI_ASSETS overrides for other layouts.
     std::string assets = std::getenv("SUMI_ASSETS") ? std::getenv("SUMI_ASSETS") : "";

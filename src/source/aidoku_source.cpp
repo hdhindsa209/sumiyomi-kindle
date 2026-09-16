@@ -812,7 +812,7 @@ std::unique_ptr<AidokuSource> AidokuSource::load(const AixPackage& pkg, net::Cli
 {
     std::unique_ptr<AidokuSource> src(new AidokuSource(pkg, http, std::move(settings)));
     src->env_ = m3_NewEnvironment();
-    // 16 MB of linear memory is plenty for a source; the Kindle has ~200 MB in total.
+    // 64 KB of interpreter stack (the module brings its own memory, sized by the package itself).
     src->runtime_ = m3_NewRuntime(src->env_, 64 * 1024, src.get());
     if (!src->env_ || !src->runtime_) {
         err = "cannot start the WebAssembly runtime";
@@ -1125,7 +1125,9 @@ bool AidokuSource::popular(int page, SMangaPage& out, std::string& err)
 
 bool AidokuSource::latest(int page, SMangaPage& out, std::string& err)
 {
-    return popular(page, out, err);   // listings need the source's own listing ids (S7)
+    // Aidoku's "latest" is one of a source's named listings, which means asking it for its listings first.
+    // Until that's done, these sources report only "popular" and "search", so the app never asks for latest.
+    return popular(page, out, err);
 }
 
 bool AidokuSource::details(const SManga& in, SManga& out, std::string& err)

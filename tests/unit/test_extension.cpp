@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <memory>
+#include <vector>
 
 #include "source/aidoku_source.h"
 #include "source/aix.h"
@@ -51,13 +52,32 @@ void write(const std::string& path, const std::string& text)
     std::fclose(f);
 }
 
+// A throwaway source on disk. Every one made is removed when the test program ends, so a run leaves
+// nothing behind next to the build.
+std::vector<std::string>& temp_dirs()
+{
+    static std::vector<std::string> dirs;
+    return dirs;
+}
+
 std::string temp_source(const std::string& name, const std::string& manifest, const std::string& lua)
 {
     std::string dir = "ext_test_" + name + "_" + std::to_string(getpid());
     mkdir(dir.c_str(), 0755);
     write(dir + "/manifest.json", manifest);
     write(dir + "/source.lua", lua);
+    temp_dirs().push_back(dir);
     return dir;
+}
+
+void remove_temp_sources()
+{
+    for (const std::string& dir : temp_dirs()) {
+        unlink((dir + "/manifest.json").c_str());
+        unlink((dir + "/source.lua").c_str());
+        rmdir(dir.c_str());
+    }
+    temp_dirs().clear();
 }
 
 constexpr const char* kGoodManifest =
@@ -339,5 +359,6 @@ int main()
     RUN(test_bad_urls_raise_clean_errors);
     RUN(test_manifest_validation);
     RUN(test_extension_contract_errors);
+    remove_temp_sources();
     return check_result();
 }

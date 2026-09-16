@@ -219,6 +219,16 @@ target_include_directories(sumi_source SYSTEM PRIVATE third_party/lexbor/source)
 # One version string for the whole app (user agent, About, the packaged zip).
 add_compile_definitions(SUMI_VERSION="${PROJECT_VERSION}")
 
+# Aidoku diagnosis, for a development machine or the device: unpacks a package and runs it end to end.
+add_executable(aix_runner tools/aidoku/aix_runner.cpp)
+target_include_directories(aix_runner PRIVATE src)
+target_link_libraries(aix_runner PRIVATE sumi_source wasm3 lua)
+set_target_properties(aix_runner PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+if(CMAKE_CROSSCOMPILING)
+  # Static, so the Kindle build also runs under qemu-arm on a development machine (see docs/DEVELOPING.md).
+  target_link_options(aix_runner PRIVATE -static)
+endif()
+
 add_library(sumi_app_data STATIC
   src/app/app_data.cpp
   src/app/format.cpp)
@@ -282,14 +292,6 @@ if(NOT CMAKE_CROSSCOMPILING)
   add_executable(test_lua tests/unit/test_lua.cpp)
   target_link_libraries(test_lua PRIVATE sumi_source)
   add_test(NAME lua COMMAND test_lua)
-
-  add_executable(aix_probe tools/aidoku/aix_probe.cpp)
-  target_include_directories(aix_probe PRIVATE src)
-  target_link_libraries(aix_probe PRIVATE sumi_source wasm3 lua)
-
-  add_executable(aix_runner tools/aidoku/aix_runner.cpp)
-  target_include_directories(aix_runner PRIVATE src)
-  target_link_libraries(aix_runner PRIVATE sumi_source wasm3 lua)
 
   add_executable(ext_runner tools/ext/ext_runner.cpp)
   target_include_directories(ext_runner PRIVATE tools/ext)
@@ -387,15 +389,6 @@ target_link_libraries(sumiyomi PRIVATE sumi_platform sumi_ui sumi_app_data)
 
 add_executable(m1_testcard tools/m1/testcard_main.cpp src/app/m1_testcard.cpp)
 target_link_libraries(m1_testcard PRIVATE sumi_platform)
-
-# Aidoku diagnosis on the device itself: loads a package and runs it, printing what the source asks for.
-add_executable(aix_runner tools/aidoku/aix_runner.cpp)
-target_include_directories(aix_runner PRIVATE src)
-target_link_libraries(aix_runner PRIVATE sumi_source wasm3 lua)
-set_target_properties(aix_runner PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-# Statically linked so it also runs under qemu-arm on a development machine, where the cross glibc's
-# dynamic loader doesn't cooperate. This is how Aidoku sources get debugged without the device.
-target_link_options(aix_runner PRIVATE -static)
 
 add_executable(m1_bench tools/bench/m1_bench.cpp)
 target_link_libraries(m1_bench PRIVATE sumi_platform)

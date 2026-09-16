@@ -3,3 +3,6 @@
 *.actual.pgm
 shell_cache_*/
 page_cache_test_*/
+ext_test_*/
+aix_test_*.aix
+

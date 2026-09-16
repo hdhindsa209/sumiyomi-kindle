@@ -1,1 +1,0 @@
-return { popular_manga = function() end }

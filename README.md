@@ -14,6 +14,18 @@ from the sources you install — nothing is hosted by this app.
 Needs a jailbroken Kindle with [KUAL](https://www.mobileread.com/forums/showthread.php?t=203326). Your library,
 downloads and logs live in `/mnt/us/sumiyomi/`; deleting that folder resets the app.
 
+## Sources
+
+Manga come from sources you install in **Browse → Extensions**, which lists two repositories from the first run:
+
+- **Sumiyomi's own** — small sandboxed Lua sources. WeebCentral is built in; MangaDex and Mangapill install from
+  [sumiyomi-sources](https://github.com/hdhindsa209/sumiyomi-sources).
+- **[Aidoku](https://aidoku.app)'s community sources** — WebAssembly modules covering hundreds of sites, kept
+  working by that community rather than by this app.
+
+You can add anyone else's repository, or remove either of those. A source needing a JavaScript engine or image
+editing won't install and says so, and a site that blocks plain clients (Cloudflare) will list nothing.
+
 ## Which Kindles does it work on?
 
 Built and tested only on a base Kindle (11th generation, firmware 5.17.1.0.3). It should run on other recent

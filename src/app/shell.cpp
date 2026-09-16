@@ -936,14 +936,13 @@ void Shell::show_browse()
             browse_tab_ = 1;
             go({Route::TabRoot, kBrowse});
         }));
-    } else if (browse_tab_ == 1) {
-        for (auto& row : extension_rows()) items.push_back(std::move(row));
     } else {
-        items.push_back(message("Migration arrives with a second source."));
+        for (auto& row : extension_rows()) items.push_back(std::move(row));
     }
     auto body = column();
     body->opaque = true;
-    body->add(tabs({"Sources", "Extensions", "Migrate"}, browse_tab_, [this](int t) {
+    // Migration between sources is M7 work; until it exists there's no tab for it.
+    body->add(tabs({"Sources", "Extensions"}, browse_tab_, [this](int t) {
         if (t == browse_tab_) return;
         browse_tab_ = t;
         go({Route::TabRoot, kBrowse});
@@ -1012,7 +1011,7 @@ std::vector<std::unique_ptr<Node>> Shell::extension_rows()
             r.leading = icon::extension;
             items.push_back(list_row(r));
         }
-    } else if (!repos_.empty() && repo_fetched_) {
+    } else if (repo_fetched_ && std::any_of(repos_.begin(), repos_.end(), [](const RepoListing& r) { return r.error.empty(); })) {
         items.push_back(message("Nothing else to install from these repositories."));
     }
 
