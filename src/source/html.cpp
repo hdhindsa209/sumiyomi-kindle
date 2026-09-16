@@ -172,4 +172,44 @@ std::string Element::tag() const
     return n ? std::string(as_view(n, len)) : std::string();
 }
 
+Element Element::parent() const
+{
+    if (!node_ || !node_->parent || node_->parent->type != LXB_DOM_NODE_TYPE_ELEMENT) return {};
+    return Element(doc_, node_->parent);
+}
+
+Element Element::next_element() const
+{
+    for (lxb_dom_node_t* n = node_ ? node_->next : nullptr; n; n = n->next)
+        if (n->type == LXB_DOM_NODE_TYPE_ELEMENT) return Element(doc_, n);
+    return {};
+}
+
+Element Element::previous_element() const
+{
+    for (lxb_dom_node_t* n = node_ ? node_->prev : nullptr; n; n = n->prev)
+        if (n->type == LXB_DOM_NODE_TYPE_ELEMENT) return Element(doc_, n);
+    return {};
+}
+
+std::vector<Element> Element::children() const
+{
+    std::vector<Element> out;
+    for (lxb_dom_node_t* c = node_ ? node_->first_child : nullptr; c; c = c->next)
+        if (c->type == LXB_DOM_NODE_TYPE_ELEMENT) out.emplace_back(doc_, c);
+    return out;
+}
+
+std::string Element::data() const
+{
+    // Jsoup's data(): what's inside a <script> or <style>, untouched.
+    std::string raw;
+    for (lxb_dom_node_t* c = node_ ? node_->first_child : nullptr; c; c = c->next) {
+        if (c->type != LXB_DOM_NODE_TYPE_TEXT) continue;
+        auto* cd = static_cast<lxb_dom_character_data_t*>(static_cast<void*>(c));
+        raw.append(as_view(cd->data.data, cd->data.length));
+    }
+    return raw;
+}
+
 } // namespace sumi::source

@@ -209,8 +209,10 @@ add_library(sumi_source STATIC
   src/source/lua_api.cpp
   src/source/extension.cpp
   src/source/repo_index.cpp
-  src/source/aix.cpp)
-target_link_libraries(sumi_source PUBLIC sumi_net lua lexbor_static mbedcrypto zlib_static)
+  src/source/aix.cpp
+  src/source/postcard.cpp
+  src/source/aidoku_source.cpp)
+target_link_libraries(sumi_source PUBLIC sumi_net lua lexbor_static mbedcrypto zlib_static wasm3)
 target_include_directories(sumi_source SYSTEM PRIVATE third_party/lexbor/source)
 
 # App services: data access for the UI over worker jobs (M3 S6).
@@ -284,6 +286,10 @@ if(NOT CMAKE_CROSSCOMPILING)
   add_executable(aix_probe tools/aidoku/aix_probe.cpp)
   target_include_directories(aix_probe PRIVATE src)
   target_link_libraries(aix_probe PRIVATE sumi_source wasm3 lua)
+
+  add_executable(aix_runner tools/aidoku/aix_runner.cpp)
+  target_include_directories(aix_runner PRIVATE src)
+  target_link_libraries(aix_runner PRIVATE sumi_source wasm3 lua)
 
   add_executable(ext_runner tools/ext/ext_runner.cpp)
   target_include_directories(ext_runner PRIVATE tools/ext)

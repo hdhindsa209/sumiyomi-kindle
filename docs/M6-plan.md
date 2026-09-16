@@ -37,11 +37,11 @@ std/env/net/html/defaults runs seven of the eight.
 | Stage | What | Done when |
 |---|---|---|
 | **S1** ✅ | wasm3 vendored and building for host + Kindle; `.aix` unpacked; a module instantiated and its imports/exports read | Done 2026-09-16: `tools/aidoku/aix_probe` loads Aqua Manga and Asura Scans; zip + source.json reader unit-tested |
-| S2 | Descriptor table, memory helpers, `std` + `env` (buffers, dates, print, sleep) | Unit tests against a fixture module |
-| S3 | `net`: requests through our client, rate limits, response reading, `html()` | Tests with the recorded-fixture transport |
-| S4 | `html`: the ~40 calls mapped onto lexbor | Tests comparing against the Lua html API on the same page |
-| S5 | postcard decoder + mirrors of Aidoku's structs (Manga, Chapter, Page, MangaPageResult, …) | Round-trip tests against fixtures captured from a real source |
-| S6 | `defaults`, source settings | Tests |
+| S2 ✅ | Descriptor table, memory helpers, `std` + `env` (buffers, dates, print, sleep) | Done: real sources read their arguments |
+| S3 ✅ | `net`: requests through our client, rate limits, response reading, `html()` | Done: sources fetch live pages |
+| S4 ✅ | `html`: the calls real sources use, mapped onto lexbor | Done: 21 of 25 sampled sources load |
+| S5 ✅ | postcard decoder + mirrors of Aidoku's structs | Done: listings, details, chapters and pages decode from real sources |
+| S6 ✅ | `defaults` (settings per source) | Done (settings UI is part of S7) |
 | S7 | App integration: install `.aix` from an Aidoku repository, list beside Lua sources, run through the existing Extension interface | Shell tests; a real source browses, searches, reads |
 | S8 | Device: memory and speed of the interpreter on the Kindle's single core | Measured, written down here |
 
@@ -68,3 +68,20 @@ SDK's macro: `start`, `get_manga_list`, `get_search_manga_list`, `get_manga_upda
 - `defaults`: get, set
 
 That is the whole surface to implement for these two, and it lines up with what the app already has.
+
+## S2–S6 notes (2026-09-16)
+
+`tools/aidoku/aix_runner` drives a package end to end. Across the 25 English sources sampled from the community
+repository, 21 load and the rest say why (2 need a JavaScript engine, 1 image editing, 1 `html.kind`). Working
+end to end today, against their live sites: Guya (6 manga, 39 chapters, 20 pages), MangaBat (24/25/100),
+Drake Scans (24/119/7), EzManga (20/13/10), Danke fürs Lesen (20/1/2), Chikari, Athrea, Hive, Magus, Manga District.
+Some sites answer nothing (403 or moved) — their own doing, not the host's.
+
+Two things the SDK does that had to be matched exactly, and would have been invisible otherwise:
+
+- `read_buffer` must return **0** for success; returning the byte count makes every argument look unreadable.
+- A search query is handed over as **plain text**, not a postcard-encoded `Option<String>`; a handle of −1 means
+  "no query", which is how a source's default listing is asked for.
+
+Still to do (S7): install `.aix` packages from an Aidoku repository, keep them beside the Lua sources, give each
+its settings, and run them through the app's own Extension interface. Then S8 on the device.

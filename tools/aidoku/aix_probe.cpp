@@ -13,14 +13,33 @@ using namespace sumi::source;
 
 namespace {
 
-// Every import wasm3 found, as "module.name".
+char type_letter(u8 t)
+{
+    switch (t) {
+    case c_m3Type_i32: return 'i';
+    case c_m3Type_i64: return 'I';
+    case c_m3Type_f32: return 'f';
+    case c_m3Type_f64: return 'F';
+    case c_m3Type_none: return 'v';
+    default: return '?';
+    }
+}
+
+// Every import wasm3 found, as "module.name sig" with wasm3's signature spelling (return(args)).
 std::vector<std::string> imports_of(IM3Module mod)
 {
     std::vector<std::string> out;
     for (u32 i = 0; i < mod->numFunctions; ++i) {
         const M3Function* f = &mod->functions[i];
-        if (f->import.moduleUtf8 && f->import.fieldUtf8)
-            out.push_back(std::string(f->import.moduleUtf8) + "." + f->import.fieldUtf8);
+        if (!f->import.moduleUtf8 || !f->import.fieldUtf8) continue;
+        std::string sig;
+        if (f->funcType) {
+            sig += type_letter(f->funcType->numRets ? f->funcType->types[0] : c_m3Type_none);
+            sig += '(';
+            for (u32 a = 0; a < f->funcType->numArgs; ++a) sig += type_letter(f->funcType->types[f->funcType->numRets + a]);
+            sig += ')';
+        }
+        out.push_back(std::string(f->import.moduleUtf8) + "." + f->import.fieldUtf8 + " " + sig);
     }
     return out;
 }
@@ -65,9 +84,7 @@ int main(int argc, char** argv)
         } else if ((res = m3_LoadModule(runtime, mod))) {
             std::printf("  load failed: %s\n", res);
         } else {
-            std::string needs;
-            for (const std::string& i : imports_of(mod)) needs += (needs.empty() ? "" : " ") + i;
-            std::printf("  imports: %s\n", needs.c_str());
+            for (const std::string& i : imports_of(mod)) std::printf("  import %s\n", i.c_str());
             std::string has;
             for (const std::string& e : exports_of(mod)) has += (has.empty() ? "" : " ") + e;
             std::printf("  exports: %s\n", has.c_str());

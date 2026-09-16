@@ -32,6 +32,11 @@ public:
     std::string html() const;       // inner HTML
     std::string outer_html() const;
     std::string tag() const;
+    Element parent() const;          // the element this one sits in (invalid at the root)
+    Element next_element() const;    // the next element beside it
+    Element previous_element() const;
+    std::vector<Element> children() const;
+    std::string data() const;        // the contents of a <script> or <style>
 
     lxb_dom_node* node() const { return node_; }
 
