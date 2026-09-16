@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.2
+
+- **Fixed: the Uninstall menu entries did nothing.** They passed the mode as a KUAL `params` field, which KUAL
+  doesn't support, so the item never ran. Each mode is its own script now. The uninstaller also runs itself from
+  /tmp before deleting anything — `/bin/sh` reads a script as it goes, so deleting its own file mid-run could
+  have killed it partway — and writes what it did to `/mnt/us/sumiyomi-uninstall.log`.
+
 ## v1.0.1
 
 - **Uninstall from KUAL**: **Sumiyomi → Uninstall** removes the app, either keeping your library or deleting it
