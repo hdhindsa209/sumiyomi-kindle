@@ -119,7 +119,7 @@ size_t find_pids(const char* comm, pid_t* out, size_t cap)
 // screensaver over a page mid-read), which also means powerd will never sleep the device on its
 // own. The power button therefore does nothing unless we suspend the device ourselves.
 
-constexpr long    kSuspendPollMs  = 250;
+constexpr long    kSuspendPollMs  = 50;    // how soon after resume we notice and start repainting
 constexpr int64_t kHeldWaitMs     = 4000;    // give powerd a chance with the wakelock still held
 constexpr int64_t kReleasedWaitMs = 15000;   // and longer once we've dropped it
 constexpr int64_t kSuspendedMinMs = 1000;    // a gap this big means we really did suspend

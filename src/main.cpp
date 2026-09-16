@@ -240,8 +240,13 @@ int main(int argc, char** argv)
         for (int fd : input->fds()) input->drain(fd, events);
         events.clear();
         sleep_requested = false;
-        screen.invalidate_layout(sumi::ui::Change::NewScreen);
+        // GL16 rather than a flash: the sleep screen flashed on the way in, so the panel is already
+        // clean and there is no ghosting to clear — and waking is a second faster for it.
+        uint64_t t_wake = sumi::mono_ms();
+        screen.invalidate_layout(sumi::ui::Change::PageTurn);
         screen.frame();
+        SUMI_LOGI("main", "woke: repainted in %llums",
+                  static_cast<unsigned long long>(sumi::mono_ms() - t_wake));
     };
 
     auto drain = [&](int fd) {
