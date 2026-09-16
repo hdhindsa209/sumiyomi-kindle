@@ -5,6 +5,7 @@
 - **Fixed: waking from sleep took far longer than it should.** The app decided it had woken by watching the
   clock, which on this firmware never reports suspended time — so after the device came back it went on waiting
   instead of repainting. It now wakes on the first key or touch, which is what the user actually does.
+- Only the buttons wake the device from sleep now; a touch doesn't.
 - Mangapill reports its covers (needs Mangapill 1.1.0 from the source repository).
 
 ## v0.3.0

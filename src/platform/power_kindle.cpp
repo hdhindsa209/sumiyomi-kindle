@@ -12,6 +12,7 @@
 #include <cerrno>
 #include <csignal>
 #include <cstdlib>
+#include <algorithm>
 #include <cstring>
 #include <ctime>
 #include <dirent.h>
@@ -133,10 +134,15 @@ int64_t clock_ms(clockid_t id) noexcept
     return static_cast<int64_t>(ts.tv_sec) * 1000 + ts.tv_nsec / 1000000;
 }
 
-// Milliseconds this system has spent suspended since boot: BOOTTIME counts suspended time,
-// MONOTONIC does not, so the gap between them grows by exactly the length of each sleep. This is
-// how we know we actually suspended and came back, without depending on powerd telling us.
-int64_t suspended_ms() noexcept { return clock_ms(CLOCK_BOOTTIME) - clock_ms(CLOCK_MONOTONIC); }
+// How much time this system has lost to suspend, as best the clocks can tell. CLOCK_MONOTONIC stops
+// while suspended; both BOOTTIME (where the kernel keeps it) and REALTIME (restored from the RTC on
+// resume) keep going, so either gap growing means we really slept. Whether this Kindle's kernel does
+// either is exactly what we're measuring — hence both, and hence it is never the only wake signal.
+int64_t suspended_ms() noexcept
+{
+    int64_t mono = clock_ms(CLOCK_MONOTONIC);
+    return std::max(clock_ms(CLOCK_BOOTTIME) - mono, clock_ms(CLOCK_REALTIME) - mono);
+}
 
 bool trigger_suspend() noexcept
 {
@@ -309,9 +315,10 @@ bool PowerGuard::sleep(const std::vector<int>& wake_fds, std::string& err)
         if (set_wakelock_) lipc_set("com.lab126.powerd", "preventScreenSaver", "1");
     }
 
-    int64_t away = clock_ms(CLOCK_MONOTONIC) - t0, asleep = suspended_ms() - base;
-    SUMI_LOGI("power", "awake after %llums (%llums of it suspended, woken by %s)",
-              static_cast<unsigned long long>(away), static_cast<unsigned long long>(asleep),
+    int64_t away = clock_ms(CLOCK_MONOTONIC) - t0;
+    int64_t asleep = std::max<int64_t>(0, suspended_ms() - base);
+    SUMI_LOGI("power", "awake after %lldms (%lldms of it suspended, woken by %s)",
+              static_cast<long long>(away), static_cast<long long>(asleep),
               wake == Wake::Input ? "input" : wake == Wake::Clock ? "the clock" : "nothing");
     return true;
 }

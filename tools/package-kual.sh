@@ -29,7 +29,8 @@ cp -R "$ROOT/sources" "$PKG/sources"
 
 # Strip inside the toolchain container (paths are relative to the repo mounted at /src).
 "$ROOT/tools/kbuild.sh" sh -c 'for b in sumiyomi http_smoke page_bench aix_runner; do arm-kindlehf-linux-gnueabihf-strip -o build/package/sumiyomi/bin/$b build/kindle/bin/$b; done'
-chmod +x "$PKG/bin/sumiyomi" "$PKG/bin/http_smoke" "$PKG/bin/page_bench" "$PKG/bin/aix_runner"
+cp "$ROOT/tools/suspend-probe.sh" "$PKG/bin/suspend-probe.sh"
+chmod +x "$PKG/bin/sumiyomi" "$PKG/bin/http_smoke" "$PKG/bin/page_bench" "$PKG/bin/aix_runner" "$PKG/bin/suspend-probe.sh"
 
 # A zip to hand out: unzip it into /mnt/us/extensions/ on a jailbroken Kindle with KUAL.
 ZIP="$ROOT/build/package/sumiyomi-$VERSION.zip"
