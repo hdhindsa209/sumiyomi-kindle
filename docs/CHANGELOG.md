@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.4
+
+- **Fixed: why Uninstall did nothing.** `deploy.sh` copied a hand-written list of files when the device has no
+  rsync, and the list never gained the uninstall scripts — so the KUAL menu entries were on the device pointing
+  at files that weren't. It now sends the whole package, so nothing can be left behind again.
+
 ## v1.0.3
 
 - **Uninstall from inside the app**: **More → Uninstall Sumiyomi**, offering either removing the app and keeping

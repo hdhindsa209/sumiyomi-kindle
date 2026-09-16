@@ -23,15 +23,10 @@ ssh $SSH_OPTS "root@$HOST" "mkdir -p $DEST/bin"
 if ssh $SSH_OPTS "root@$HOST" 'command -v rsync >/dev/null'; then
     rsync -a --delete -e "ssh $SSH_OPTS" "$PKG/" "root@$HOST:$DEST/"
 else
-    # rsync isn't on the device: copy the (small) package with scp instead.
-    scp $SSH_OPTS -q -r "$PKG/config.xml" "$PKG/menu.json" "$PKG/run.sh" "$PKG/README.md" "root@$HOST:$DEST/"
-    scp $SSH_OPTS -q "$PKG/bin/sumiyomi" "$PKG/bin/http_smoke" "$PKG/bin/page_bench" "$PKG/bin/aix_runner" "root@$HOST:$DEST/bin/"
-    ssh $SSH_OPTS "root@$HOST" "mkdir -p $DEST/assets/fonts"
-    scp $SSH_OPTS -q "$PKG"/assets/fonts/* "root@$HOST:$DEST/assets/fonts/"
-    ssh $SSH_OPTS "root@$HOST" "rm -rf $DEST/sources && mkdir -p $DEST/sources"   # drop removed sources
-    scp $SSH_OPTS -q -r "$PKG/sources/." "root@$HOST:$DEST/sources/"
-    ssh $SSH_OPTS "root@$HOST" "mkdir -p $DEST/assets/certs"
-    scp $SSH_OPTS -q "$PKG/assets/certs/cacert.pem" "root@$HOST:$DEST/assets/certs/"
+    # rsync isn't on the device. Send the whole package as a tar stream rather than naming files:
+    # a hand-maintained list silently drops whatever was added since (which is how the uninstall
+    # scripts reached v1.0.2 on the device as menu entries pointing at nothing).
+    tar -C "$PKG" -cf - . | ssh $SSH_OPTS "root@$HOST" "mkdir -p $DEST && tar -C $DEST -xf -"
 fi
-ssh $SSH_OPTS "root@$HOST" "chmod +x $DEST/run.sh $DEST/bin/sumiyomi $DEST/bin/http_smoke $DEST/bin/page_bench $DEST/bin/aix_runner; ls -l $DEST $DEST/bin"
+ssh $SSH_OPTS "root@$HOST" "chmod +x $DEST/*.sh $DEST/bin/*; ls -l $DEST $DEST/bin"
 echo "deployed to $HOST:$DEST in $(( $(date +%s) - start ))s (excluding build)"
