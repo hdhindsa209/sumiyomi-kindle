@@ -294,8 +294,9 @@ bool Extension::chapters(const SManga& manga, std::vector<SChapter>& out, std::s
         err);
 }
 
-bool Extension::pages(const SChapter& chapter, std::vector<SPage>& out, std::string& err)
+bool Extension::pages(const SManga& manga, const SChapter& chapter, std::vector<SPage>& out, std::string& err)
 {
+    (void)manga;   // a Lua source's page_list takes the chapter alone
     out.clear();
     return vm_->call(
         "page_list", [&](lua_State* L) { push_chapter(L, chapter); return 1; },

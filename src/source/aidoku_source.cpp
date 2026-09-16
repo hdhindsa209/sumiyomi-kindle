@@ -735,6 +735,15 @@ AidokuSource::AidokuSource(AixPackage pkg, net::Client* http, Settings settings)
     : pkg_(std::move(pkg)), http_(http), settings_(std::move(settings)),
       limiter_(std::make_unique<net::RateLimiter>(2, 1000))
 {
+    // The app talks about sources through a manifest, whichever kind they are.
+    manifest_.id = pkg_.id;
+    manifest_.name = pkg_.name;
+    manifest_.lang = pkg_.language.empty() ? "en" : pkg_.language;
+    manifest_.version = pkg_.version_text;
+    manifest_.base_url = pkg_.base_url;
+    manifest_.api_level = Extension::kApiLevel;
+    manifest_.nsfw = pkg_.content_rating >= 2;
+    manifest_.capabilities = {"popular", "search"};
 }
 
 AidokuSource::~AidokuSource()
@@ -1138,7 +1147,7 @@ bool AidokuSource::chapters(const SManga& manga, std::vector<SChapter>& out, std
     return true;
 }
 
-bool AidokuSource::pages(const SChapter& chapter, const SManga& manga, std::vector<SPage>& out, std::string& err)
+bool AidokuSource::pages(const SManga& manga, const SChapter& chapter, std::vector<SPage>& out, std::string& err)
 {
     int32_t manga_rid = buffer_of(encode_manga(manga));
     int32_t chapter_rid = buffer_of(encode_chapter(chapter));

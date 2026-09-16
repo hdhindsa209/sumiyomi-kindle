@@ -106,7 +106,7 @@ struct Env {
         policy.set_flash_interval(0);
         std::string err;
         CHECK(db.open(":memory:", err));
-        std::vector<std::unique_ptr<source::Extension>> exts;
+        std::vector<std::unique_ptr<source::SourceRunner>> exts;
         if (auto ext = source::Extension::load(SUMI_SOURCE_DIR "/sources/weebcentral", &client, err)) exts.push_back(std::move(ext));
         Executor* exec = &inline_exec;
         if (device_loop) {
@@ -1244,11 +1244,13 @@ void test_extensions_tab()
     CHECK(env.shows("Add a repository"));
     CHECK(env.golden("extensions"));
 
-    // Sumiyomi's own repository is listed but unreachable here: remove it, then add the test one.
-    env.tap(env.find(app::AppData::kDefaultRepo));
-    CHECK(env.shows("Remove"));
-    env.tap(env.find("Remove"));
-    CHECK(!env.shows(app::AppData::kDefaultRepo));
+    // The two repositories the app starts with are unreachable in this test: remove them, then add the test one.
+    for (const char* url : {app::AppData::kDefaultRepo, app::AppData::kAidokuRepo}) {
+        env.tap(env.find(url));
+        CHECK(env.shows("Remove"));
+        env.tap(env.find("Remove"));
+        CHECK(!env.shows(url));
+    }
 
     // Add a repository: the URL keyboard has the punctuation.
     env.tap(env.find("Add a repository"));

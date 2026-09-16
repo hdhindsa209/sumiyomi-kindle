@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.0
+
+- **Aidoku sources.** Sumiyomi now runs [Aidoku](https://aidoku.app)'s WebAssembly sources as well as its own Lua
+  ones. Aidoku's community repository is offered from the start, so hundreds of sources are installable from
+  **Browse → Extensions**, and they are maintained by that community rather than by this app.
+- A source's kind is shown in the Extensions list; each Aidoku source keeps its own settings.
+- Sources that need a JavaScript engine or image editing say so plainly instead of failing oddly.
+
 ## v0.1.1
 
 - **Several source repositories at once.** Browse → Extensions keeps a list: Sumiyomi's own is there from the

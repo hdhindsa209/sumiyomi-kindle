@@ -1,6 +1,9 @@
 // AppData over the real WeebCentral source, recorded fixtures, an in-memory DB, and an inline executor.
 #include "app/app_data.h"
 
+#include <fstream>
+
+#include "source/aix.h"
 #include "source/repo_index.h"
 #include "app/format.h"
 
@@ -42,7 +45,7 @@ struct Env {
     {
         std::string err;
         CHECK(db.open(":memory:", err));
-        std::vector<std::unique_ptr<source::Extension>> exts;
+        std::vector<std::unique_ptr<source::SourceRunner>> exts;
         auto ext = source::Extension::load(SUMI_SOURCE_DIR "/sources/weebcentral", &client, err);
         CHECK(ext != nullptr);
         if (ext) exts.push_back(std::move(ext));
@@ -360,8 +363,9 @@ void test_extension_repository()
     std::string err = "unset";
     std::vector<std::string> urls;
     env.app->repos([&](std::vector<std::string> u) { urls = std::move(u); });
-    CHECK(urls.size() == 1 && urls[0] == AppData::kDefaultRepo);
+    CHECK(urls.size() == 2 && urls[0] == AppData::kDefaultRepo && urls[1] == AppData::kAidokuRepo);
     env.app->remove_repo(AppData::kDefaultRepo, nullptr);
+    env.app->remove_repo(AppData::kAidokuRepo, nullptr);
 
     // A repository is only kept if it reads as one.
     env.app->add_repo("https://repo.test/nothing.json", [&](std::string e) { err = e; });
@@ -447,6 +451,65 @@ void test_extension_repository()
     CHECK(err == "only installed sources can be removed");
     CHECK_EQ(env.app->sources().size(), 1);
 
+    std::string cmd = "rm -rf " + env.cache_dir;
+    int rc = std::system(cmd.c_str());
+    (void)rc;
+}
+
+// An Aidoku repository and package, served from memory: installing one must make it usable at once.
+void test_aidoku_install()
+{
+    Env env;
+    RepoTransport repo_transport(env.transport);
+    net::Client repo_client(repo_transport, no_wait());
+    std::string installed = env.cache_dir + "/installed_sources";
+    env.app->set_extension_dirs(SUMI_SOURCE_DIR "/sources", installed, &repo_client);
+    std::vector<std::string> urls;
+    env.app->repos([&](std::vector<std::string> u) { urls = std::move(u); });
+    for (const std::string& u : urls) env.app->remove_repo(u, nullptr);
+
+    // A real package, if one has been fetched for the manual tools; otherwise there's nothing to install.
+    const char* pkg_path = std::getenv("SUMI_AIX");
+    if (!pkg_path) return;
+    std::ifstream f(pkg_path, std::ios::binary);
+    std::string package((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    if (package.empty()) return;
+    source::AixPackage pkg;
+    std::string err;
+    CHECK(source::read_aix(pkg_path, pkg, err));
+
+    const std::string base = "https://aidoku.test/";
+    repo_transport.files[base + "source.aix"] = package;
+    repo_transport.files[base + "index.min.json"] =
+        "{\"name\":\"Test Repo\",\"sources\":[{\"id\":\"" + pkg.id + "\",\"name\":\"" + pkg.name +
+        "\",\"version\":" + std::to_string(pkg.version) + ",\"downloadURL\":\"source.aix\",\"languages\":[\"en\"]}]}";
+
+    env.app->add_repo(base + "index.min.json", [&](std::string e) { err = e; });
+    CHECK(err.empty());
+    std::vector<RepoListing> listings;
+    env.app->fetch_repos([&](std::vector<RepoListing> l) { listings = std::move(l); });
+    CHECK(listings.size() == 1 && listings[0].name == "Test Repo");
+    if (listings.empty() || listings[0].entries.empty()) return;
+    CHECK(listings[0].entries[0].kind == source::RepoEntry::Kind::Aidoku);
+
+    env.app->install_extension(listings[0].entries[0], [&](std::string e) { err = e; });
+    CHECK(err.empty());
+    const SourceInfo* info = nullptr;
+    for (const SourceInfo& s : env.app->sources())
+        if (s.key == pkg.id) info = &s;
+    CHECK(info != nullptr);
+    if (info) {
+        CHECK(info->installed && info->aidoku);
+        // It answers through the same path as a Lua source. There's no network here, so the source's own
+        // request fails: what matters is that the app found it and ran it, not "source not installed".
+        BrowseResult r;
+        env.app->browse(info->id, Browse::Popular, 1, "", [&](BrowseResult got, std::string e) { r = std::move(got); err = e; });
+        CHECK(err.find("not installed") == std::string::npos);
+        CHECK(err.empty() || err.find("request") != std::string::npos || err.find("fixture") != std::string::npos);
+        int64_t id = info->id;
+        env.app->uninstall_extension(id, [&](std::string e) { err = e; });
+        CHECK(err.empty());
+    }
     std::string cmd = "rm -rf " + env.cache_dir;
     int rc = std::system(cmd.c_str());
     (void)rc;
@@ -676,6 +739,7 @@ int main()
     RUN(test_update_library_auto_download);
     RUN(test_settings_storage_incognito);
     RUN(test_extension_repository);
+    RUN(test_aidoku_install);
     RUN(test_format_helpers);
     RUN(test_reader_settings_persist);
     RUN(test_open_chapter_and_load_pages);

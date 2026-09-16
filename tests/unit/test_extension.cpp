@@ -119,7 +119,7 @@ void test_search_details_chapters_pages()
     CHECK(chapters.back().name == "Chapter 1" && chapters.back().chapter_number == 1.0);
 
     std::vector<SPage> pages;
-    CHECK(env.ext->pages(chapters[0], pages, env.err));
+    CHECK(env.ext->pages(SManga{}, chapters[0], pages, env.err));
     CHECK_EQ(pages.size(), 33);
     if (!pages.empty()) {
         CHECK_EQ(pages[0].index, 1);
@@ -199,7 +199,7 @@ void test_extension_contract_errors()
     CHECK(!ext->chapters(SManga{"/m/1", "ok", "", "", "", "", {}, 0}, cs, err));
     CHECK(contains(err, "chapters[1]: chapter.name must be a string (got number)"));
     std::vector<SPage> ps;
-    CHECK(!ext->pages(SChapter{"/c/1", "c", "", 1, 0}, ps, err));
+    CHECK(!ext->pages(SManga{}, SChapter{"/c/1", "c", "", 1, 0}, ps, err));
     CHECK(contains(err, "pages must be an array (got string)"));
     CHECK(!ext->search(1, "q", page, err));
     CHECK(contains(err, "has no search"));

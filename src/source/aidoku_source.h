@@ -25,7 +25,7 @@ namespace sumi::source {
 //
 // Sources needing `js` or `canvas` (a JavaScript engine, image compositing) are refused at load:
 // they say so instead of failing oddly later.
-class AidokuSource {
+class AidokuSource : public SourceRunner {
 public:
     // `settings`: reads and writes the source's own settings (Aidoku's `defaults`), keyed by name.
     struct Settings {
@@ -42,12 +42,20 @@ public:
     const AixPackage& package() const { return pkg_; }
 
     // The same calls the Lua sources answer, so the app doesn't care which kind a source is.
-    bool popular(int page, SMangaPage& out, std::string& err);
-    bool latest(int page, SMangaPage& out, std::string& err);
-    bool search(int page, const std::string& query, SMangaPage& out, std::string& err);
-    bool details(const SManga& in, SManga& out, std::string& err);
-    bool chapters(const SManga& manga, std::vector<SChapter>& out, std::string& err);
-    bool pages(const SChapter& chapter, const SManga& manga, std::vector<SPage>& out, std::string& err);
+    const Manifest& manifest() const override { return manifest_; }
+    int64_t id() const override { return source_id(manifest_.id, manifest_.lang); }
+    bool popular(int page, SMangaPage& out, std::string& err) override;
+    bool latest(int page, SMangaPage& out, std::string& err) override;
+    bool search(int page, const std::string& query, SMangaPage& out, std::string& err) override;
+    bool details(const SManga& in, SManga& out, std::string& err) override;
+    bool chapters(const SManga& manga, std::vector<SChapter>& out, std::string& err) override;
+    bool pages(const SManga& manga, const SChapter& chapter, std::vector<SPage>& out, std::string& err) override;
+    void use_settings(std::function<std::string(const std::string&)> get,
+                      std::function<void(const std::string&, const std::string&)> set) override
+    {
+        settings_.get = std::move(get);
+        settings_.set = std::move(set);
+    }
 
     // --- for the host functions (public so the wasm3 callbacks can reach them) ---
     struct Value {
@@ -85,6 +93,7 @@ private:
     std::string encode_chapter(const SChapter& chapter) const;
 
     AixPackage pkg_;
+    Manifest   manifest_;
     net::Client* http_;
     Settings settings_;
     std::unique_ptr<net::RateLimiter> limiter_;

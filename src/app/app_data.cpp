@@ -48,7 +48,7 @@ std::vector<data::Chapter> to_rows(const std::vector<source::SChapter>& chapters
 
 } // namespace
 
-AppData::AppData(Executor& exec, data::Db& db, std::vector<std::unique_ptr<source::Extension>> extensions,
+AppData::AppData(Executor& exec, data::Db& db, std::vector<std::unique_ptr<source::SourceRunner>> extensions,
                  net::Client* images, image::PageCache* cache, std::string downloads_dir)
     : exec_(exec), db_(db), repo_(db), extensions_(std::move(extensions)), images_(images), cache_(cache),
       downloads_dir_(std::move(downloads_dir))
@@ -69,9 +69,15 @@ std::vector<SourceInfo> AppData::describe_sources()
     for (const auto& e : extensions_) {
         const source::Manifest& m = e->manifest();
         auto has = [&](const char* cap) { return std::find(m.capabilities.begin(), m.capabilities.end(), cap) != m.capabilities.end(); };
-        SourceInfo info{e->id(), m.id, m.name, m.lang, m.version, has("latest"), has("search"), false};
+        SourceInfo info{e->id(), m.id, m.name, m.lang, m.version, has("latest"), has("search"), false, false};
+        info.aidoku = !installed_dir_.empty() && [&] {
+            struct stat st {};
+            return stat((installed_dir_ + "/" + m.id + ".aix").c_str(), &st) == 0;
+        }();
         struct stat st {};
-        info.installed = !installed_dir_.empty() && stat((installed_dir_ + "/" + m.id + "/manifest.json").c_str(), &st) == 0;
+        info.installed = !installed_dir_.empty()
+                      && (stat((installed_dir_ + "/" + m.id + "/manifest.json").c_str(), &st) == 0
+                          || stat((installed_dir_ + "/" + m.id + ".aix").c_str(), &st) == 0);
         out.push_back(std::move(info));
     }
     std::sort(out.begin(), out.end(), [](const SourceInfo& a, const SourceInfo& b) { return a.name < b.name; });
@@ -92,6 +98,11 @@ void AppData::set_extension_dirs(std::string bundled_dir, std::string installed_
     bundled_dir_ = std::move(bundled_dir);
     installed_dir_ = std::move(installed_dir);
     source_http_ = http;
+    // Sources loaded before AppData existed (at startup) get their settings store now.
+    for (auto& e : extensions_) {
+        source::AidokuSource::Settings s = aidoku_settings(e->manifest().id);
+        e->use_settings(s.get, s.set);
+    }
     sources_ = describe_sources();
 }
 
@@ -102,7 +113,7 @@ const SourceInfo* AppData::source_info(int64_t id) const
     return nullptr;
 }
 
-source::Extension* AppData::extension(int64_t source)
+source::SourceRunner* AppData::extension(int64_t source)
 {
     for (auto& e : extensions_)
         if (e->id() == source) return e.get();
@@ -250,7 +261,7 @@ void AppData::browse(int64_t source, Browse kind, int page, std::string query,
         BrowseResult result;
         std::string err;
         source::SMangaPage p;
-        source::Extension* ext = extension(source);
+        source::SourceRunner* ext = extension(source);
         bool ok = ext && (kind == Browse::Popular ? ext->popular(page, p, err)
                          : kind == Browse::Latest ? ext->latest(page, p, err)
                                                   : ext->search(page, query, p, err));
@@ -263,7 +274,7 @@ void AppData::browse(int64_t source, Browse kind, int page, std::string query,
     });
 }
 
-void AppData::refresh(source::Extension* ext, data::Manga manga,
+void AppData::refresh(source::SourceRunner* ext, data::Manga manga,
                       const std::function<void(MangaView, bool, std::string)>& update)
 {
     // Runs on the worker. Details + chapters from the source, persisted, reported once.
@@ -358,7 +369,7 @@ void AppData::update_library(std::function<void(int, int)> done)
     exec_.submit([this, done = std::move(done)] {
         int added = 0, failed = 0;
         for (const data::LibraryItem& item : repo_.library()) {
-            source::Extension* ext = extension(item.manga.source_id);
+            source::SourceRunner* ext = extension(item.manga.source_id);
             std::vector<source::SChapter> chapters;
             std::string err;
             source::SManga seed{item.manga.url, item.manga.title, "", "", "", "", {}, 0};
@@ -413,7 +424,7 @@ void AppData::update_step(std::shared_ptr<UpdateRun> run)
     int total = static_cast<int>(run->items.size());
     if (run->progress) exec_.post([run, index, total, title = item.manga.title] { run->progress(index, total, title); });
 
-    source::Extension* ext = extension(item.manga.source_id);
+    source::SourceRunner* ext = extension(item.manga.source_id);
     std::vector<source::SChapter> chapters;
     std::string err;
     source::SManga seed{item.manga.url, item.manga.title, "", "", "", "", {}, 0};
@@ -632,6 +643,7 @@ std::vector<std::string> AppData::load_repos()
     if (!saved) {
         // First run (or an upgrade from the single-repository setting): start with Sumiyomi's own list.
         std::string first = repo_.pref("extensions.repo").value_or(kDefaultRepo);
+        first += std::string("\n") + kAidokuRepo;
         repo_.set_pref("extensions.repos", first);
         saved = first;
     }
@@ -697,12 +709,79 @@ void AppData::fetch_repos(std::function<void(std::vector<RepoListing>)> done)
             listing.url = url;
             std::string body;
             if (fetch_text(source_http_, url, body, listing.error))
-                source::parse_repo_index(body, url, listing.entries, listing.error);
+                source::parse_repo_index(body, url, listing.entries, listing.error, &listing.name);
             if (!listing.error.empty()) SUMI_LOGW("ext", "repository %s: %s", url.c_str(), listing.error.c_str());
             out.push_back(std::move(listing));
         }
         exec_.post([done, out = std::move(out)]() mutable { done(std::move(out)); });
     });
+}
+
+source::AidokuSource::Settings AppData::aidoku_settings(const std::string& id)
+{
+    // Each Aidoku source keeps its settings in the preferences table under its own name. Only the worker
+    // touches these, and only while that source is running.
+    source::AidokuSource::Settings s;
+    std::string prefix = "aidoku." + id + ".";
+    s.get = [this, prefix](const std::string& key) { return repo_.pref(prefix + key).value_or(""); };
+    s.set = [this, prefix](const std::string& key, const std::string& value) { repo_.set_pref(prefix + key, value); };
+    return s;
+}
+
+std::unique_ptr<source::SourceRunner> AppData::load_installed(const std::string& path, std::string& err)
+{
+    // A directory is a Lua source; a .aix file is an Aidoku package.
+    struct stat st {};
+    if (stat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) return source::Extension::load(path, source_http_, err);
+    source::AixPackage pkg;
+    if (!source::read_aix(path, pkg, err)) return nullptr;
+    return source::AidokuSource::load(pkg, source_http_, aidoku_settings(pkg.id), err);
+}
+
+// An Aidoku package: one file, no checksums in their index, so it's checked by loading it before it's kept.
+void AppData::install_aidoku(const source::RepoEntry& entry, std::string& err)
+{
+    std::string bytes;
+    if (!fetch_text(source_http_, entry.package_url, bytes, err)) return;
+    make_dirs(installed_dir_);
+    std::string staging = installed_dir_ + "/." + entry.id + ".aix.new";
+    std::string final_path = installed_dir_ + "/" + entry.id + ".aix";
+    if (!write_text(staging, bytes)) {
+        err = "cannot write to " + installed_dir_;
+        return;
+    }
+    source::AixPackage pkg;
+    if (!source::read_aix(staging, pkg, err)) {
+        unlink(staging.c_str());
+        return;
+    }
+    if (pkg.id != entry.id) {
+        err = "the package is for a different source (" + pkg.id + ")";
+        unlink(staging.c_str());
+        return;
+    }
+    auto loaded = source::AidokuSource::load(pkg, source_http_, aidoku_settings(pkg.id), err);
+    if (!loaded) {
+        unlink(staging.c_str());
+        return;
+    }
+    unlink(final_path.c_str());
+    if (std::rename(staging.c_str(), final_path.c_str()) != 0) {
+        err = "cannot install into " + final_path;
+        unlink(staging.c_str());
+        return;
+    }
+    SUMI_LOGI("ext", "installed %s %s (Aidoku)", pkg.name.c_str(), pkg.version_text.c_str());
+    int64_t id = loaded->id();
+    bool replaced = false;
+    for (auto& e : extensions_)
+        if (e->id() == id) {
+            e = std::move(loaded);
+            replaced = true;
+            break;
+        }
+    if (!replaced) extensions_.push_back(std::move(loaded));
+    publish_sources();
 }
 
 void AppData::install_extension(source::RepoEntry entry, std::function<void(std::string)> done)
@@ -714,6 +793,10 @@ void AppData::install_extension(source::RepoEntry entry, std::function<void(std:
             exec_.post([done, err] { if (done) done(err); });
         };
         if (installed_dir_.empty()) err = "extensions can't be installed here";
+        if (err.empty() && entry.kind == source::RepoEntry::Kind::Aidoku) {
+            install_aidoku(entry, err);
+            return finish();
+        }
         else if (entry.api_level != source::Extension::kApiLevel)
             err = entry.name + " needs a newer Sumiyomi (api level " + std::to_string(entry.api_level) + ")";
         if (!err.empty() || !fetch_text(source_http_, entry.manifest_url, manifest, err) || !fetch_text(source_http_, entry.source_url, code, err))
@@ -766,10 +849,14 @@ void AppData::uninstall_extension(int64_t source, std::function<void(std::string
         auto it = std::find_if(extensions_.begin(), extensions_.end(), [&](const auto& e) { return e->id() == source; });
         std::string key = it != extensions_.end() ? (*it)->manifest().id : "";
         struct stat st {};
-        if (key.empty() || installed_dir_.empty() || stat((installed_dir_ + "/" + key).c_str(), &st) != 0) {
+        std::string dir_path = installed_dir_ + "/" + key, aix_path = installed_dir_ + "/" + key + ".aix";
+        bool is_dir = !key.empty() && !installed_dir_.empty() && stat(dir_path.c_str(), &st) == 0;
+        bool is_aix = !key.empty() && !installed_dir_.empty() && stat(aix_path.c_str(), &st) == 0;
+        if (!is_dir && !is_aix) {
             err = "only installed sources can be removed";
         } else {
-            remove_tree(installed_dir_ + "/" + key);
+            if (is_dir) remove_tree(dir_path);
+            else unlink(aix_path.c_str());
             extensions_.erase(it);
             std::string bundled_err;
             if (!bundled_dir_.empty() && stat((bundled_dir_ + "/" + key + "/manifest.json").c_str(), &st) == 0)
@@ -932,7 +1019,7 @@ void AppData::open_chapter(int64_t chapter_id, std::function<void(ChapterView, s
         std::string err;
         auto chapter = repo_.chapter(chapter_id);
         auto manga = chapter ? repo_.manga(chapter->manga_id) : std::nullopt;
-        source::Extension* ext = manga ? extension(manga->source_id) : nullptr;
+        source::SourceRunner* ext = manga ? extension(manga->source_id) : nullptr;
         if (!chapter || !manga) {
             err = "chapter not found";
         } else if (!ext) {
@@ -944,6 +1031,8 @@ void AppData::open_chapter(int64_t chapter_id, std::function<void(ChapterView, s
             if (auto d = repo_.pref("manga." + std::to_string(manga->id) + ".direction")) view.direction = std::clamp(std::atoi(d->c_str()), 0, 2);
             std::vector<source::SPage> pages;
             source::SChapter sc{chapter->url, chapter->name, chapter->scanlator, chapter->chapter_number, chapter->date_upload};
+            source::SManga sm{manga->url, manga->title, manga->thumbnail_url, manga->artist, manga->author,
+                              manga->description, {}, static_cast<int>(manga->status)};
             // A downloaded chapter reads from its files: no network needed at all.
             auto dl = repo_.download(chapter_id);
             std::string dir = chapter_dir(manga->source_id, manga->id, chapter_id);
@@ -956,7 +1045,7 @@ void AppData::open_chapter(int64_t chapter_id, std::function<void(ChapterView, s
                     pages.push_back({i, "file://" + dir + name});
                 }
             }
-            if (!pages.empty() || ext->pages(sc, pages, err)) {
+            if (!pages.empty() || ext->pages(sm, sc, pages, err)) {
                 std::sort(pages.begin(), pages.end(), [](const auto& a, const auto& b) { return a.index < b.index; });
                 for (auto& p : pages) view.pages.push_back(std::move(p.url));
                 if (view.pages.empty()) err = "this chapter has no pages";
@@ -973,7 +1062,7 @@ net::Request AppData::image_request(int64_t source, const std::string& url)
     net::Request req;
     req.url = url;
     req.total_timeout_ms = 45000;   // §9.1: images
-    source::Extension* ext = extension(source);
+    source::SourceRunner* ext = extension(source);
     if (ext && !ext->manifest().base_url.empty()) req.headers.push_back({"Referer", ext->manifest().base_url + "/"});
     req.headers.push_back({"Accept", "image/jpeg,image/png,image/*;q=0.8"});
     return req;
@@ -1172,7 +1261,7 @@ void AppData::covers(std::vector<data::Manga> mangas, int32_t w, int32_t h,
         for (data::Manga& m : mangas) {
             if (m.thumbnail_url.empty()) {
                 // Saved before covers were recorded: ask the source once, keep the answer.
-                source::Extension* ext = extension(m.source_id);
+                source::SourceRunner* ext = extension(m.source_id);
                 source::SManga seed{m.url, m.title, "", "", "", "", {}, 0}, details;
                 std::string err;
                 if (ext && ext->details(seed, details, err) && !details.thumbnail_url.empty()) {
@@ -1194,7 +1283,7 @@ void AppData::covers(std::vector<data::Manga> mangas, int32_t w, int32_t h,
             net::Request req;
             req.url = m.thumbnail_url;
             req.total_timeout_ms = 30000;
-            source::Extension* ext = extension(m.source_id);
+            source::SourceRunner* ext = extension(m.source_id);
             if (ext && !ext->manifest().base_url.empty()) req.headers.push_back({"Referer", ext->manifest().base_url + "/"});
             net::Response res = images_->fetch(req);
             image::Gray decoded;
@@ -1334,7 +1423,7 @@ void AppData::download_step()
         if (auto now = repo_.download(d.chapter_id)) notify_download(*now);
         exec_.submit([this] { download_step(); });
     };
-    source::Extension* ext = extension(d.source_id);
+    source::SourceRunner* ext = extension(d.source_id);
     if (downloads_dir_.empty()) return fail("no download folder");
     if (!ext) return fail("source not installed");
     std::string dir = chapter_dir(d.source_id, d.manga_id, d.chapter_id);
@@ -1353,7 +1442,13 @@ void AppData::download_step()
         auto chapter = repo_.chapter(d.chapter_id);
         if (!chapter) return fail("chapter not found");
         source::SChapter sc{chapter->url, chapter->name, chapter->scanlator, chapter->chapter_number, chapter->date_upload};
-        if (!ext->pages(sc, pages, err)) return fail(err);
+        auto manga_row = repo_.manga(d.manga_id);
+        source::SManga sm;
+        if (manga_row) {
+            sm = {manga_row->url, manga_row->title, manga_row->thumbnail_url, manga_row->artist, manga_row->author,
+                  manga_row->description, {}, static_cast<int>(manga_row->status)};
+        }
+        if (!ext->pages(sm, sc, pages, err)) return fail(err);
         std::sort(pages.begin(), pages.end(), [](const auto& a, const auto& b) { return a.index < b.index; });
         std::ofstream out(dir + "/pages.txt", std::ios::trunc);
         for (auto& p : pages) {

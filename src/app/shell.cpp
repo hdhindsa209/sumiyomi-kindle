@@ -978,6 +978,7 @@ std::vector<std::unique_ptr<Node>> Shell::extension_rows()
         for (const source::RepoEntry& e : offered)
             if (e.id == s.key && source::compare_versions(e.version, s.version) > 0) update = &e;
         std::string sub = s.version + kDot + s.lang + kDot + (s.installed ? "Installed" : "Built in");
+        if (s.aidoku) sub += kDot + std::string("Aidoku");
         if (update) sub += kDot + std::string("Update to ") + update->version;
         SourceInfo copy = s;
         source::RepoEntry entry;
@@ -1001,6 +1002,7 @@ std::vector<std::unique_ptr<Node>> Shell::extension_rows()
         for (const source::RepoEntry* e : available) {
             source::RepoEntry entry = *e;
             std::string sub = entry.version + kDot + entry.lang + (entry.nsfw ? std::string(kDot) + "18+" : "");
+            if (entry.kind == source::RepoEntry::Kind::Aidoku) sub += kDot + std::string("Aidoku");
             RowSpec r{entry.name, sub, false, false, icon::download_for_offline, [this, entry] { install_extension(entry); }};
             r.leading = icon::extension;
             items.push_back(list_row(r));

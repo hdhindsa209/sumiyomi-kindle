@@ -83,7 +83,7 @@ int main(int argc, char** argv)
     }
     if (!chapters.empty()) {
         std::vector<source::SPage> pages;
-        if (step(ext->pages(chapters.front(), pages, err), "pages")) {
+        if (step(ext->pages(found.mangas[pick], chapters.front(), pages, err), "pages")) {
             std::printf("\npages: %zu\n", pages.size());
             if (!pages.empty()) std::printf("  [%d] %s\n", pages.front().index, pages.front().url.c_str());
         }

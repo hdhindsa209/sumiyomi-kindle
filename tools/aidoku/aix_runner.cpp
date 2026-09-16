@@ -75,7 +75,7 @@ int main(int argc, char** argv)
     if (chapters.empty()) return 0;
 
     std::vector<source::SPage> pages;
-    if (!src->pages(chapters.front(), seed, pages, err)) {
+    if (!src->pages(seed, chapters.front(), pages, err)) {
         std::printf("\npages FAILED: %s\n", err.c_str());
         return 1;
     }

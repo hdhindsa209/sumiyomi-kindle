@@ -11,6 +11,7 @@
 #include "data/db.h"
 #include "net/fetch_pool.h"
 #include "net/http.h"
+#include "source/aidoku_source.h"
 #include "source/extension.h"
 #include "platform/battery.h"
 #include "platform/display.h"
@@ -42,7 +43,7 @@ std::string env_or(const char* name, const char* fallback)
 // Every <dir>/<id>/ with a manifest.json + source.lua (design doc §3.3). Sources already in `out` (installed
 // from a repository) keep their place: a bundled source with the same id is skipped.
 void load_extensions(const std::string& dir, sumi::net::Client& http,
-                     std::vector<std::unique_ptr<sumi::source::Extension>>& out, bool required = true)
+                     std::vector<std::unique_ptr<sumi::source::SourceRunner>>& out, bool required = true)
 {
     DIR* d = opendir(dir.c_str());
     if (!d) {
@@ -54,9 +55,22 @@ void load_extensions(const std::string& dir, sumi::net::Client& http,
     while (dirent* e = readdir(d)) {
         if (e->d_name[0] == '.') continue;
         std::string err;
-        if (auto ext = sumi::source::Extension::load(dir + "/" + e->d_name, &http, err)) {
+        std::string path = dir + "/" + e->d_name;
+        std::string name = e->d_name;
+        bool aix = name.size() > 4 && name.compare(name.size() - 4, 4, ".aix") == 0;
+        std::unique_ptr<sumi::source::SourceRunner> loaded;
+        if (aix) {
+            sumi::source::AixPackage pkg;
+            if (sumi::source::read_aix(path, pkg, err)) {
+                sumi::source::AidokuSource::Settings settings;   // filled in by AppData once it owns the source
+                loaded = sumi::source::AidokuSource::load(pkg, &http, settings, err);
+            }
+        } else {
+            loaded = sumi::source::Extension::load(path, &http, err);
+        }
+        if (auto ext = std::move(loaded)) {
             bool have = false;
-            for (const auto& loaded : out) have = have || loaded->id() == ext->id();
+            for (const auto& other : out) have = have || other->id() == ext->id();
             if (have) continue;   // an installed source replaces the bundled one
             SUMI_LOGI("main", "source %s %s loaded from %s", ext->manifest().name.c_str(), ext->manifest().version.c_str(), dir.c_str());
             out.push_back(std::move(ext));
@@ -157,7 +171,7 @@ int main(int argc, char** argv)
     // Images share the source client: both are used only on the worker thread.
     // Installed sources first, then the ones shipped with the app.
     std::string bundled_sources = env_or("SUMI_SOURCES", SUMI_SOURCES_DIR), installed_sources = data_dir + "/sources";
-    std::vector<std::unique_ptr<sumi::source::Extension>> extensions;
+    std::vector<std::unique_ptr<sumi::source::SourceRunner>> extensions;
     load_extensions(installed_sources, http, extensions, false);
     load_extensions(bundled_sources, http, extensions);
     sumi::app::AppData app_data(worker, db, std::move(extensions), &http,

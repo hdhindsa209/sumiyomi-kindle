@@ -12,6 +12,7 @@
 #include "image/page_cache.h"
 #include "net/fetch_pool.h"
 #include "net/http.h"
+#include "source/aidoku_source.h"
 #include "source/extension.h"
 #include "source/repo_index.h"
 
@@ -23,6 +24,7 @@ struct SourceInfo {
     std::string name, lang, version;
     bool        has_latest = false, has_search = false;
     bool        installed = false;    // installed from a repository (can be uninstalled); false = shipped with the app
+    bool        aidoku = false;       // an Aidoku package rather than a Lua source
 };
 
 struct RepoListing {
@@ -118,7 +120,7 @@ public:
     // `images` fetches page images (null: pages fail with "network unavailable"); `cache` stores
     // processed pages (null: no caching). Both are used only on the worker.
     // `downloads_dir`: where downloaded chapters are kept (empty: downloads fail).
-    AppData(Executor& exec, data::Db& db, std::vector<std::unique_ptr<source::Extension>> extensions,
+    AppData(Executor& exec, data::Db& db, std::vector<std::unique_ptr<source::SourceRunner>> extensions,
             net::Client* images = nullptr, image::PageCache* cache = nullptr, std::string downloads_dir = "");
 
     // Device threading for the reader (main): `pool` fetches chapter images several at a time; `pages`
@@ -132,6 +134,8 @@ public:
     void set_extension_dirs(std::string bundled_dir, std::string installed_dir, net::Client* http);
     // Repositories the user has added (Sumiyomi's own is there to begin with; it can be removed like any other).
     static constexpr const char* kDefaultRepo = "https://raw.githubusercontent.com/hdhindsa209/sumiyomi-sources/main/index.json";
+    // Aidoku's community sources (WebAssembly), offered alongside Sumiyomi's own from the start.
+    static constexpr const char* kAidokuRepo = "https://aidoku-community.github.io/sources/index.min.json";
     void repos(std::function<void(std::vector<std::string>)> done);
     void add_repo(std::string url, std::function<void(std::string err)> done);
     void remove_repo(std::string url, std::function<void()> done);
@@ -140,6 +144,10 @@ public:
     // Install or update: files downloaded, checked against their SHA-256, loaded (api_level, required functions),
     // then swapped in without a restart. `err` empty on success.
     void install_extension(source::RepoEntry entry, std::function<void(std::string err)> done);
+    // An Aidoku source's settings live in the preferences table, one key per source.
+    source::AidokuSource::Settings aidoku_settings(const std::string& id);
+    std::unique_ptr<source::SourceRunner> load_installed(const std::string& path, std::string& err);
+    void install_aidoku(const source::RepoEntry& entry, std::string& err);   // worker
     // Only installed sources; a bundled source with the same id takes over again.
     void uninstall_extension(int64_t source, std::function<void(std::string err)> done);
 
@@ -282,7 +290,7 @@ public:
     void save_progress(int64_t chapter_id, int page, int pages_total, bool finished);
 
 private:
-    source::Extension* extension(int64_t source);
+    source::SourceRunner* extension(int64_t source);
     std::vector<SourceInfo> describe_sources();   // worker: from extensions_
     void publish_sources();                      // worker: register them and swap the UI's list
     std::string bundled_dir_, installed_dir_;
@@ -293,13 +301,13 @@ private:
     // Worker: decode + process a fetched image and cache every part.
     bool process_page_bytes(const std::string& url, const net::Response& res, uint64_t fetch_ms, const image::ProcessOptions& opt,
                             bool into_ram, std::vector<image::Gray>& parts, std::string& err);
-    void refresh(source::Extension* ext, data::Manga manga,
+    void refresh(source::SourceRunner* ext, data::Manga manga,
                  const std::function<void(MangaView, bool, std::string)>& update);
 
     Executor& exec_;
     data::Db& db_;
     data::Repo repo_;
-    std::vector<std::unique_ptr<source::Extension>> extensions_;
+    std::vector<std::unique_ptr<source::SourceRunner>> extensions_;
     std::vector<SourceInfo> sources_;
     net::Client*       images_;
     image::PageCache*  cache_;

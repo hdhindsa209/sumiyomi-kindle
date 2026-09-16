@@ -15,13 +15,21 @@ namespace sumi::source {
 // File paths are relative to the index URL (absolute URLs work too). tools/ext/build_index.py writes one from a
 // sources/ directory. Each file is checked against its SHA-256 before anything is installed.
 struct RepoEntry {
+    // Two kinds of repository are understood: Sumiyomi's own (Lua sources, checksummed) and Aidoku's
+    // (index.min.json listing .aix packages, which carry no checksums).
+    enum class Kind { Lua, Aidoku };
+    Kind        kind = Kind::Lua;
     std::string id, name, lang, version;
     int         api_level = 0;
     bool        nsfw = false;
     std::string manifest_url, manifest_sha256, source_url, source_sha256;
+    std::string package_url;      // Aidoku: the .aix
+    std::string min_app_version;  // Aidoku: the SDK it was built for
 };
 
-bool parse_repo_index(const std::string& json, const std::string& index_url, std::vector<RepoEntry>& out, std::string& err);
+// Reads either kind of index; `name` receives the repository's own name when it gives one.
+bool parse_repo_index(const std::string& json, const std::string& index_url, std::vector<RepoEntry>& out, std::string& err,
+                      std::string* name = nullptr);
 
 // `relative` against `base` (a file URL): "a/b.lua" next to it, "/a" from the host root, or absolute as is.
 std::string resolve_url(const std::string& base, const std::string& relative);

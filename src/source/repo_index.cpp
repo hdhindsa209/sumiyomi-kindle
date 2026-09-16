@@ -27,7 +27,8 @@ bool is_hex64(const std::string& s)
 
 } // namespace
 
-bool parse_repo_index(const std::string& json, const std::string& index_url, std::vector<RepoEntry>& out, std::string& err)
+bool parse_repo_index(const std::string& json, const std::string& index_url, std::vector<RepoEntry>& out, std::string& err,
+                      std::string* name)
 {
     out.clear();
     LuaVM vm(nullptr, nullptr);   // json.decode in a throwaway sandbox, as for manifests
@@ -44,6 +45,11 @@ bool parse_repo_index(const std::string& json, const std::string& index_url, std
         err = "index.json: must be an object";
         return false;
     }
+    if (name) {
+        lua_getfield(L, t, "name");
+        if (lua_type(L, -1) == LUA_TSTRING) *name = lua_tostring(L, -1);
+        lua_pop(L, 1);
+    }
     lua_getfield(L, t, "sources");
     if (!lua_istable(L, -1)) {
         err = "index.json: no sources list";
@@ -56,6 +62,33 @@ bool parse_repo_index(const std::string& json, const std::string& index_url, std
         if (lua_istable(L, e)) {
             RepoEntry r;
             r.id = field(L, e, "id");
+            // An Aidoku entry names a package to download instead of two checksummed files.
+            std::string download = field(L, e, "downloadURL");
+            if (!download.empty()) {
+                r.kind = RepoEntry::Kind::Aidoku;
+                r.package_url = resolve_url(index_url, download);
+                r.name = field(L, e, "name");
+                r.min_app_version = field(L, e, "minAppVersion");
+                lua_getfield(L, e, "version");
+                r.version = lua_type(L, -1) == LUA_TNUMBER ? std::to_string(static_cast<int>(lua_tointeger(L, -1)))
+                                                          : field(L, e, "version");
+                lua_pop(L, 1);
+                lua_getfield(L, e, "languages");
+                if (lua_istable(L, -1)) {
+                    lua_rawgeti(L, -1, 1);
+                    if (lua_type(L, -1) == LUA_TSTRING) r.lang = lua_tostring(L, -1);
+                    lua_pop(L, 1);
+                }
+                lua_pop(L, 1);
+                if (r.lang.empty()) r.lang = field(L, e, "lang");
+                lua_getfield(L, e, "contentRating");
+                r.nsfw = lua_tointeger(L, -1) >= 2;
+                lua_pop(L, 1);
+                r.api_level = 0;   // Aidoku packages carry their own SDK version instead
+                if (!r.id.empty() && !r.name.empty()) out.push_back(std::move(r));
+                lua_pop(L, 1);
+                continue;
+            }
             r.name = field(L, e, "name");
             r.lang = field(L, e, "lang");
             r.version = field(L, e, "version");

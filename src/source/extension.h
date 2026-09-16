@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -50,8 +51,31 @@ struct Manifest {
 // Stable source id (§4: "stable hash of pkg name + lang"): FNV-1a 64 of "<id>/<lang>", top bit cleared.
 int64_t source_id(const std::string& id, const std::string& lang);
 
+// What the app asks of a source, whichever kind it is: a Lua extension (Extension) or an Aidoku
+// WebAssembly package (AidokuSource). Used from the worker thread only.
+class SourceRunner {
+public:
+    virtual ~SourceRunner() = default;
+    virtual const Manifest& manifest() const = 0;
+    virtual int64_t id() const = 0;
+    virtual bool popular(int page, SMangaPage& out, std::string& err) = 0;
+    virtual bool latest(int page, SMangaPage& out, std::string& err) = 0;
+    virtual bool search(int page, const std::string& query, SMangaPage& out, std::string& err) = 0;
+    virtual bool details(const SManga& in, SManga& out, std::string& err) = 0;
+    virtual bool chapters(const SManga& manga, std::vector<SChapter>& out, std::string& err) = 0;
+    // `manga` is passed too: Aidoku sources need it to resolve a chapter's pages.
+    virtual bool pages(const SManga& manga, const SChapter& chapter, std::vector<SPage>& out, std::string& err) = 0;
+    // Where this source's own settings are kept (Aidoku's `defaults`). Lua sources have none, so this does nothing.
+    virtual void use_settings(std::function<std::string(const std::string& key)> get,
+                              std::function<void(const std::string& key, const std::string& value)> set)
+    {
+        (void)get;
+        (void)set;
+    }
+};
+
 // One loaded extension: its manifest, its sandboxed VM, and its rate limiter. Use from one thread.
-class Extension {
+class Extension : public SourceRunner {
 public:
     static constexpr int kApiLevel = 1;
 
@@ -59,15 +83,15 @@ public:
     static std::unique_ptr<Extension> load(const std::string& dir, net::Client* http, std::string& err,
                                            LuaLimits limits = {});
 
-    const Manifest& manifest() const { return manifest_; }
-    int64_t id() const { return source_id(manifest_.id, manifest_.lang); }
+    const Manifest& manifest() const override { return manifest_; }
+    int64_t id() const override { return source_id(manifest_.id, manifest_.lang); }
 
-    bool popular(int page, SMangaPage& out, std::string& err);
-    bool latest(int page, SMangaPage& out, std::string& err);
-    bool search(int page, const std::string& query, SMangaPage& out, std::string& err);
-    bool details(const SManga& in, SManga& out, std::string& err);
-    bool chapters(const SManga& manga, std::vector<SChapter>& out, std::string& err);
-    bool pages(const SChapter& chapter, std::vector<SPage>& out, std::string& err);
+    bool popular(int page, SMangaPage& out, std::string& err) override;
+    bool latest(int page, SMangaPage& out, std::string& err) override;
+    bool search(int page, const std::string& query, SMangaPage& out, std::string& err) override;
+    bool details(const SManga& in, SManga& out, std::string& err) override;
+    bool chapters(const SManga& manga, std::vector<SChapter>& out, std::string& err) override;
+    bool pages(const SManga& manga, const SChapter& chapter, std::vector<SPage>& out, std::string& err) override;
 
 private:
     Extension(Manifest m, net::Client* http, LuaLimits limits);

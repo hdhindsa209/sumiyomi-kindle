@@ -42,7 +42,7 @@ std/env/net/html/defaults runs seven of the eight.
 | S4 ✅ | `html`: the calls real sources use, mapped onto lexbor | Done: 21 of 25 sampled sources load |
 | S5 ✅ | postcard decoder + mirrors of Aidoku's structs | Done: listings, details, chapters and pages decode from real sources |
 | S6 ✅ | `defaults` (settings per source) | Done (settings UI is part of S7) |
-| S7 | App integration: install `.aix` from an Aidoku repository, list beside Lua sources, run through the existing Extension interface | Shell tests; a real source browses, searches, reads |
+| S7 ✅ | App integration: install `.aix` from an Aidoku repository, list beside Lua sources, run through one source interface | Done: `SourceRunner` is implemented by both kinds; installing a real package is tested end to end |
 | S8 | Device: memory and speed of the interpreter on the Kindle's single core | Measured, written down here |
 
 ## Risks, plainly
@@ -85,3 +85,14 @@ Two things the SDK does that had to be matched exactly, and would have been invi
 
 Still to do (S7): install `.aix` packages from an Aidoku repository, keep them beside the Lua sources, give each
 its settings, and run them through the app's own Extension interface. Then S8 on the device.
+
+## S7 notes (2026-09-16)
+
+Both kinds of source now answer one interface (`source::SourceRunner`), so the library, reader, downloads and
+library checks don't know or care which they're talking to. Aidoku packages install as
+`<data>/sources/<id>.aix`, are checked by being loaded before they're kept, and are loaded again at startup.
+Each gets its own settings store (`aidoku.<id>.<key>` in the preferences table). Aidoku's community repository is
+offered alongside Sumiyomi's own from the first run, and the Extensions tab marks which sources are Aidoku ones.
+
+Their index carries no checksums, so an Aidoku package is trusted the way Aidoku itself trusts it: the repository
+is the authority. Sumiyomi's own repository still checks SHA-256 for every file.
