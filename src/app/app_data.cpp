@@ -639,21 +639,34 @@ void remove_tree(const std::string& dir)
 
 std::vector<std::string> AppData::load_repos()
 {
-    auto saved = repo_.pref("extensions.repos");
-    if (!saved) {
-        // First run (or an upgrade from the single-repository setting): start with Sumiyomi's own list.
-        std::string first = repo_.pref("extensions.repo").value_or(kDefaultRepo);
-        first += std::string("\n") + kAidokuRepo;
-        repo_.set_pref("extensions.repos", first);
-        saved = first;
+    auto split = [](const std::string& text) {
+        std::vector<std::string> out;
+        std::string line;
+        for (char c : text + "\n") {
+            if (c != '\n' && c != '\r') line += c;
+            else if (!line.empty()) out.push_back(line), line.clear();
+        }
+        return out;
+    };
+    std::vector<std::string> list = split(repo_.pref("extensions.repos").value_or(repo_.pref("extensions.repo").value_or("")));
+
+    // The repositories the app comes with are added once each: on a first run, and on an upgrade that brings a
+    // new one. `extensions.defaults_added` records which have been offered, so removing one makes it stay gone.
+    std::string added = repo_.pref("extensions.defaults_added").value_or("");
+    bool changed = false;
+    for (const char* url : {kDefaultRepo, kAidokuRepo}) {
+        if (added.find(url) != std::string::npos) continue;
+        added += (added.empty() ? "" : "\n") + std::string(url);
+        if (std::find(list.begin(), list.end(), url) == list.end()) list.push_back(url);
+        changed = true;
     }
-    std::vector<std::string> out;
-    std::string line;
-    for (char c : *saved + "\n") {
-        if (c != '\n') line += c;
-        else if (!line.empty()) out.push_back(line), line.clear();
+    if (changed) {
+        std::string joined;
+        for (const std::string& u : list) joined += (joined.empty() ? "" : "\n") + u;
+        repo_.set_pref("extensions.repos", joined);
+        repo_.set_pref("extensions.defaults_added", added);
     }
-    return out;
+    return list;
 }
 
 void AppData::repos(std::function<void(std::vector<std::string>)> done)

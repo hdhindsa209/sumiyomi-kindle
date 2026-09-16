@@ -931,6 +931,11 @@ void Shell::show_browse()
             items.push_back(list_row(r));
         }
         if (data_.sources().empty()) items.push_back(message("No sources installed."));
+        // Where more come from: the Sources tab only lists what's installed.
+        items.push_back(message("More sources are in the Extensions tab.", "Extensions", [this] {
+            browse_tab_ = 1;
+            go({Route::TabRoot, kBrowse});
+        }));
     } else if (browse_tab_ == 1) {
         for (auto& row : extension_rows()) items.push_back(std::move(row));
     } else {

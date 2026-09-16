@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.1
+
+- **Fixed:** upgrading from an older version didn't add Aidoku's repository, because the repository list was only
+  set up on a first run. The repositories the app ships with are now offered once each, including after an
+  upgrade; one you remove stays removed.
+- The Sources tab points at the Extensions tab, since it only lists sources that are already installed.
+
 ## v0.2.0
 
 - **Aidoku sources.** Sumiyomi now runs [Aidoku](https://aidoku.app)'s WebAssembly sources as well as its own Lua

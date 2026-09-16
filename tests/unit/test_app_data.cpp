@@ -457,6 +457,26 @@ void test_extension_repository()
 }
 
 // An Aidoku repository and package, served from memory: installing one must make it usable at once.
+// Upgrading from a version that only knew one repository must offer the new one, and a repository the
+// user removed must stay removed.
+void test_repo_defaults_on_upgrade()
+{
+    Env env;
+    data::Repo repo(env.db);
+    std::vector<std::string> urls;
+
+    // As an older version left it: Sumiyomi's repository only, and no record of what's been offered.
+    CHECK(repo.set_pref("extensions.repos", AppData::kDefaultRepo));
+    env.app->repos([&](std::vector<std::string> u) { urls = std::move(u); });
+    CHECK(urls.size() == 2 && urls[1] == AppData::kAidokuRepo);   // the new one is added once
+
+    env.app->remove_repo(AppData::kAidokuRepo, nullptr);
+    env.app->repos([&](std::vector<std::string> u) { urls = std::move(u); });
+    CHECK(urls.size() == 1 && urls[0] == AppData::kDefaultRepo);  // and stays gone
+    env.app->repos([&](std::vector<std::string> u) { urls = std::move(u); });
+    CHECK_EQ(urls.size(), 1);
+}
+
 void test_aidoku_install()
 {
     Env env;
@@ -739,6 +759,7 @@ int main()
     RUN(test_update_library_auto_download);
     RUN(test_settings_storage_incognito);
     RUN(test_extension_repository);
+    RUN(test_repo_defaults_on_upgrade);
     RUN(test_aidoku_install);
     RUN(test_format_helpers);
     RUN(test_reader_settings_persist);
