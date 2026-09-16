@@ -108,3 +108,27 @@ finished. Calls then compiled from freed memory. Sources now parse from their ow
 It never failed on a development machine because the tools keep the package alive for the whole run — a reminder
 that "works here" says nothing about a different allocator. The Kindle build of `aix_runner` is statically linked
 so it can be run under `qemu-arm` locally, which is how this was finally cornered.
+
+## S8: what a source call costs on the device (2026-09-16)
+
+wasm3 interprets on the Kindle (no JIT on this kernel), so an Aidoku source does its parsing and its HTML
+walking an opcode at a time. `AidokuSource::call` now logs any call over 500 ms as
+`perf aidoku <id>.<fn>: <total>ms (<network>ms network, <interpreting>ms interpreting)`, which separates a slow
+site from a slow interpreter. Numbers from the hardware still have to be collected — run a listing and a chapter
+on the device and read `/mnt/us/sumiyomi/logs/`.
+
+## Sleeping (2026-09-16)
+
+`PowerGuard::acquire` holds powerd's `preventScreenSaver` for the whole session so the framework can't paint
+over a page, which also stops powerd sleeping the device at all: with the lock held, neither the idle timer nor
+the power button does anything. `main` therefore handles `Key::Power` itself — `app/sleep_screen.cpp` paints
+the sleep screen straight to the framebuffer (never through `ui::Screen`, so the node tree and the reader's
+state survive untouched), then `PowerGuard::sleep` suspends and returns when the device wakes.
+
+Two details worth keeping:
+
+- **Knowing we actually slept.** `CLOCK_BOOTTIME` counts suspended time and `CLOCK_MONOTONIC` doesn't, so the
+  gap between them grows by exactly the length of each sleep. That's the wake signal, rather than trusting
+  powerd to report anything.
+- **Some firmwares won't suspend while the wakelock is held.** If the device is still awake after four seconds,
+  the lock is dropped, suspend is asked for again, and the lock is taken back on the way out.

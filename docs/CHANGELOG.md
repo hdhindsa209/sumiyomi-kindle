@@ -1,7 +1,16 @@
 # Changelog
 
-## Unreleased
+## v0.3.0
 
+- **Fixed: the device couldn't be put to sleep while Sumiyomi was open.** The app holds powerd's screensaver
+  wakelock for as long as it runs, so the framework can't paint over a page mid-read — which also meant powerd
+  never slept the device, and the power button did nothing. Sumiyomi now handles the power button itself: it
+  shows a sleep screen, suspends the device, and on waking repaints the screen you were on, with the reader
+  still on its page.
+- **WebP pages and covers.** Sources that serve WebP (Mangapill's covers, among others) now display instead of
+  failing to decode. WebP is rescaled as it decodes, the way JPEG already was, so a page costs no more memory
+  than before.
+- Slow Aidoku source calls are logged with the network time separated from the interpreter time.
 - The Browse screen drops its empty "Migrate" tab; migrating a library between sources isn't built yet.
 - "Nothing else to install" no longer appears when a repository couldn't be read at all.
 - Tests clean up the throwaway sources they write, and those files are no longer in the repository.

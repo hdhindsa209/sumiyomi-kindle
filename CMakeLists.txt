@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(sumiyomi VERSION 0.2.2 LANGUAGES C CXX)
+project(sumiyomi VERSION 0.3.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -133,6 +133,20 @@ set_target_properties(jpeg_static PROPERTIES IMPORTED_LOCATION "${JPEG_LIB}"
                                              INTERFACE_INCLUDE_DIRECTORIES "${JPEG_PREFIX}/include")
 add_dependencies(jpeg_static libjpeg_turbo_ext)
 
+# libwebp, decoder only: several sources (Mangapill, Bato) serve WebP covers and pages. Its own
+# CMake build is well behaved with add_subdirectory as long as every tool and the muxer are off.
+# SIMD stays on: NEON on the Kindle is what makes WebP pages affordable there.
+foreach(opt WEBP_BUILD_ANIM_UTILS WEBP_BUILD_CWEBP WEBP_BUILD_DWEBP WEBP_BUILD_GIF2WEBP WEBP_BUILD_IMG2WEBP
+            WEBP_BUILD_VWEBP WEBP_BUILD_WEBPINFO WEBP_BUILD_LIBWEBPMUX WEBP_BUILD_WEBPMUX WEBP_BUILD_EXTRAS)
+  set(${opt} OFF CACHE BOOL "" FORCE)
+endforeach()
+add_subdirectory(third_party/libwebp EXCLUDE_FROM_ALL SYSTEM)
+# Its targets don't publish an include directory of their own (webp/decode.h lives under src/), and
+# CMake won't let us attach one to a target defined in that subdirectory, so carry it separately.
+add_library(webp_decode INTERFACE)
+target_include_directories(webp_decode SYSTEM INTERFACE "${CMAKE_SOURCE_DIR}/third_party/libwebp/src")
+target_link_libraries(webp_decode INTERFACE webpdecoder)
+
 set(SUMI_ASSETS_DIR "${CMAKE_SOURCE_DIR}/assets")
 
 # Backend-independent core: builds for host and device.
@@ -163,7 +177,7 @@ target_link_libraries(sumi_text PUBLIC sumi_core harfbuzz)
 # UI: tone scale, node tree + layout, screen host (M2 S4).
 # Image pipeline (M4): decode, process, cache.
 add_library(sumi_image STATIC src/image/decode.cpp src/image/process.cpp src/image/page_cache.cpp)
-target_link_libraries(sumi_image PUBLIC sumi_core PRIVATE jpeg_static png_static)
+target_link_libraries(sumi_image PUBLIC sumi_core PRIVATE jpeg_static png_static webp_decode)
 
 add_executable(page_bench tools/image/page_bench.cpp)
 target_link_libraries(page_bench PRIVATE sumi_image)
@@ -256,7 +270,9 @@ if(NOT CMAKE_CROSSCOMPILING)
   add_test(NAME ui COMMAND test_ui)
 
   add_executable(test_image_decode tests/unit/test_image_decode.cpp)
-  target_link_libraries(test_image_decode PRIVATE sumi_image jpeg_static png_static)
+  # The test encodes its own WebP images, so it links the full libwebp (encoder included); the app
+  # itself only ever links the decoder.
+  target_link_libraries(test_image_decode PRIVATE sumi_image jpeg_static png_static webp_decode webp)
   add_test(NAME image_decode COMMAND test_image_decode)
 
   add_executable(test_image_process tests/unit/test_image_process.cpp)
@@ -273,7 +289,7 @@ if(NOT CMAKE_CROSSCOMPILING)
   target_link_libraries(test_widgets PRIVATE sumi_ui)
   add_test(NAME widgets COMMAND test_widgets)
 
-  add_executable(test_shell tests/unit/test_shell.cpp src/app/shell.cpp src/app/reader.cpp)
+  add_executable(test_shell tests/unit/test_shell.cpp src/app/shell.cpp src/app/reader.cpp src/app/sleep_screen.cpp)
   target_include_directories(test_shell PRIVATE src tools/ext)
   target_compile_definitions(test_shell PRIVATE SUMI_ASSETS_DIR="${SUMI_ASSETS_DIR}" SUMI_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
                                                SUMI_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/tests/golden")
@@ -344,7 +360,7 @@ if(NOT CMAKE_CROSSCOMPILING)
     # §2 criterion 7: the same app on the desktop, SDL backend.
     add_library(sumi_sim_platform STATIC src/platform/signals.cpp)
     target_link_libraries(sumi_sim_platform PUBLIC sumi_sim)
-    add_executable(sumiyomi src/main.cpp src/app/shell.cpp src/app/reader.cpp)
+    add_executable(sumiyomi src/main.cpp src/app/shell.cpp src/app/reader.cpp src/app/sleep_screen.cpp)
     target_compile_definitions(sumiyomi PRIVATE SUMI_ASSETS_DIR="${SUMI_ASSETS_DIR}"
                                                 SUMI_DATA_DIR="${CMAKE_BINARY_DIR}/data"
                                                 SUMI_SOURCES_DIR="${CMAKE_SOURCE_DIR}/sources")
@@ -381,7 +397,7 @@ add_library(sumi_platform STATIC
   src/platform/input_evdev.cpp)
 target_link_libraries(sumi_platform PUBLIC sumi_core fbink)
 
-add_executable(sumiyomi src/main.cpp src/app/shell.cpp src/app/reader.cpp)
+add_executable(sumiyomi src/main.cpp src/app/shell.cpp src/app/reader.cpp src/app/sleep_screen.cpp)
 target_compile_definitions(sumiyomi PRIVATE SUMI_ASSETS_DIR="/mnt/us/extensions/sumiyomi/assets"
                                             SUMI_DATA_DIR="/mnt/us/sumiyomi"
                                             SUMI_SOURCES_DIR="/mnt/us/extensions/sumiyomi/sources")

@@ -4,6 +4,7 @@
 #include "app/app_data.h"
 #include "app/live_frames.h"
 #include "app/shell.h"
+#include "app/sleep_screen.h"
 #include "image/page_cache.h"
 #include "core/log.h"
 #include "core/loop.h"
@@ -221,10 +222,38 @@ int main(int argc, char** argv)
     std::vector<sumi::RawEvent> events;
     events.reserve(64);
     bool quit = false;
+    bool sleep_requested = false;
+
+    // The power button. We hold powerd's screensaver wakelock for the whole session, so the device
+    // can only sleep if we suspend it ourselves (platform/power.h). Sleeping never touches the node
+    // tree: the sleep screen is painted straight to the framebuffer, and waking repaints whatever
+    // screen was up — the reader keeps its chapter and its page.
+    auto go_to_sleep = [&] {
+        sleep_requested = false;
+        SUMI_LOGI("main", "power button: sleeping");
+        sumi::app::draw_sleep_screen(*display, canvas, text, fonts);
+        std::string sleep_err;
+        if (!power.sleep(sleep_err)) SUMI_LOGW("main", "sleep: %s", sleep_err.c_str());
+        // Either way the sleep screen is on the panel and has to go. Drop whatever input arrived
+        // while we were away (the wake press, stray touches in a bag) so it can't turn a page.
+        events.clear();
+        for (int fd : input->fds()) input->drain(fd, events);
+        events.clear();
+        sleep_requested = false;
+        screen.invalidate_layout(sumi::ui::Change::NewScreen);
+        screen.frame();
+    };
+
     auto drain = [&](int fd) {
         events.clear();
         input->drain(fd, events);
         for (const sumi::RawEvent& e : events) {
+            // On release: a long press is the hardware's own reset, and this way the matching
+            // release can't arrive after we wake and immediately put us back to sleep.
+            if (e.kind == sumi::RawKind::Key && e.key == sumi::Key::Power && !e.pressed) {
+                sleep_requested = true;
+                continue;
+            }
             if (e.kind == sumi::RawKind::Key && e.key == sumi::Key::Back && e.pressed) {
                 if (!shell.on_back()) quit = true;   // simulator Esc / window close at top level
                 continue;
@@ -237,6 +266,9 @@ int main(int argc, char** argv)
             SUMI_LOGI("perf", "slow frame: %llums", static_cast<unsigned long long>(ms));
         loop.arm_tick(screen.wants_tick());
         if (quit) loop.stop();
+        // After the frame, so the screen is settled before the panel goes down. Blocks here for as
+        // long as the device stays asleep; the loop resumes with the same screen repainted.
+        else if (sleep_requested) go_to_sleep();
     };
 
     if (input->fds().empty()) {

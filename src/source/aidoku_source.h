@@ -77,6 +77,9 @@ public:
     // The module's linear memory (host functions read and write the source's pointers through it).
     uint8_t* memory(size_t& size) const;
     net::RateLimiter* limiter() { return limiter_.get(); }
+    // Milliseconds spent waiting on the network inside the call that's running, so the perf log can
+    // separate "the site was slow" from "the interpreter was slow" (the Kindle runs WASM interpreted).
+    void add_network_ms(uint64_t ms) { net_ms_ += ms; }
     void set_rate_limit(int permits, int period, int unit);
     const Settings& settings() const { return settings_; }
     void log(const std::string& text);
@@ -97,6 +100,7 @@ private:
     net::Client* http_;
     Settings settings_;
     std::unique_ptr<net::RateLimiter> limiter_;
+    uint64_t   net_ms_ = 0;
     M3Environment* env_ = nullptr;
     M3Runtime* runtime_ = nullptr;
     M3Module* module_ = nullptr;

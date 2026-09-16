@@ -268,7 +268,9 @@ m3ApiRawFunction(host_net_send)
         v->request.headers.push_back({"User-Agent",
                                       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
                                       "(KHTML, like Gecko) Version/17.0 Safari/605.1.15"});
+    uint64_t t0 = mono_ms();
     v->response = self->http()->fetch(v->request, self->limiter());
+    self->add_network_ms(mono_ms() - t0);
     v->sent = true;
     trace("sent", std::to_string(v->response.status) + " " + std::to_string(v->response.body.size()) + " bytes, final "
                       + v->response.final_url);
@@ -951,7 +953,18 @@ bool AidokuSource::call(const char* fn, const std::vector<int64_t>& args, std::s
     storage.reserve(args.size());
     for (int64_t a : args) storage.push_back(static_cast<int32_t>(a));
     for (int32_t& a : storage) argv.push_back(&a);
-    if (M3Result r = m3_Call(f, static_cast<uint32_t>(argv.size()), argv.data())) {
+    net_ms_ = 0;
+    uint64_t t0 = mono_ms();
+    M3Result call_result = m3_Call(f, static_cast<uint32_t>(argv.size()), argv.data());
+    uint64_t total = mono_ms() - t0;
+    // Interpreted WASM on a single-core 1 GHz ARM: worth knowing how much of a listing is the site
+    // and how much is us. Only the slow ones, so a normal session's log stays readable.
+    if (total >= 500)
+        SUMI_LOGI("perf", "aidoku %s.%s: %llums (%llums network, %llums interpreting)", pkg_.id.c_str(), fn,
+                  static_cast<unsigned long long>(total), static_cast<unsigned long long>(net_ms_),
+                  static_cast<unsigned long long>(total - std::min(total, net_ms_)));
+    if (call_result) {
+        M3Result r = call_result;
         err = std::string("the source failed in ") + fn + ": " + r;
         M3ErrorInfo info {};
         m3_GetErrorInfo(runtime_, &info);

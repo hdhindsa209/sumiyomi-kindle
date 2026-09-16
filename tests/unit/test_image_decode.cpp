@@ -1,5 +1,5 @@
 // Image decode (M4 S1): format sniffing, JPEG (gray output, DCT scaling), PNG (gray, RGBA over white,
-// palette, 16-bit), and hostile input. Test images are encoded here with the same libraries, so no
+// palette, 16-bit), WebP (lossless, alpha over white, decode-time scaling), and hostile input. Test images are encoded here with the same libraries, so no
 // binary fixtures (or copyrighted pages) live in the repo.
 #include "image/decode.h"
 
@@ -14,6 +14,7 @@
 
 #include <jpeglib.h>
 #include <png.h>
+#include <webp/encode.h>
 
 using namespace sumi::image;
 
@@ -213,10 +214,68 @@ void test_hostile_input()
     CHECK(!decode_gray(bomb.data(), bomb.size(), limit, g, err));
     CHECK(err.find("too large") != std::string::npos);
 
-    // Formats we recognize but don't decode yet say so.
+    // A WebP header with no image data behind it.
     const uint8_t webp[] = {'R', 'I', 'F', 'F', 0, 0, 0, 0, 'W', 'E', 'B', 'P', 'V', 'P', '8', ' '};
     CHECK(!decode_gray(webp, sizeof webp, {}, g, err));
-    CHECK(err == "WebP images are not supported yet");
+    CHECK(err.rfind("webp:", 0) == 0);
+
+    // Formats we recognize but don't decode yet say so.
+    const uint8_t gif[] = {'G', 'I', 'F', '8', '9', 'a', 1, 0, 1, 0};
+    CHECK(!decode_gray(gif, sizeof gif, {}, g, err));
+    CHECK(err == "GIF images are not supported yet");
+}
+
+// --------------------------------------------------------------- WebP
+
+// RGBA (4 bytes per pixel) -> lossless WebP, so decoded values can be compared exactly.
+Bytes encode_webp(const Bytes& rgba, int w, int h)
+{
+    uint8_t* buf = nullptr;
+    size_t len = WebPEncodeLosslessRGBA(rgba.data(), w, h, w * 4, &buf);
+    Bytes out(buf, buf + len);
+    WebPFree(buf);
+    return out;
+}
+
+void test_webp()
+{
+    std::string err;
+    Gray g;
+    Info info;
+
+    // Opaque color -> luma, with the same Rec.601 weights as the JPEG path.
+    Bytes rgba(4 * 4 * 4);
+    for (size_t i = 0; i < rgba.size(); i += 4) {
+        rgba[i] = 255; rgba[i + 1] = 0; rgba[i + 2] = 0; rgba[i + 3] = 255;   // pure red
+    }
+    Bytes webp = encode_webp(rgba, 4, 4);
+    CHECK(sniff(webp.data(), webp.size()) == Format::Webp);
+    CHECK(probe(webp.data(), webp.size(), info, err));
+    CHECK(info.format == Format::Webp && info.w == 4 && info.h == 4);
+    CHECK(decode_gray(webp.data(), webp.size(), {}, g, err));
+    CHECK(g.w == 4 && g.h == 4);
+    CHECK(g.at(0, 0) == (77 * 255) >> 8);
+
+    // Transparency is composited over the white page background, not left black.
+    Bytes clear(2 * 2 * 4, 0);        // fully transparent black
+    Bytes t = encode_webp(clear, 2, 2);
+    CHECK(decode_gray(t.data(), t.size(), {}, g, err));
+    CHECK(g.at(0, 0) == 255);
+
+    // Decoding at the size the page will be shown: the output is already scaled down.
+    Bytes big(200 * 100 * 4, 255);
+    Bytes b = encode_webp(big, 200, 100);
+    DecodeOptions fit;
+    fit.fit_w = 50;
+    fit.fit_h = 50;
+    CHECK(decode_gray(b.data(), b.size(), fit, g, err));
+    CHECK(g.w == 50 && g.h == 25);
+    CHECK(static_cast<int64_t>(g.px.size()) == 50 * 25);
+
+    // A page smaller than the fit size is never scaled up here (process.cpp does the final fit).
+    Bytes s = encode_webp(Bytes(8 * 8 * 4, 255), 8, 8);
+    CHECK(decode_gray(s.data(), s.size(), fit, g, err));
+    CHECK(g.w == 8 && g.h == 8);
 }
 
 } // namespace
@@ -227,6 +286,7 @@ int main()
     RUN(test_jpeg_color_to_luma);
     RUN(test_jpeg_dct_scaling_covers_fit_size);
     RUN(test_png_variants);
+    RUN(test_webp);
     RUN(test_hostile_input);
     return check_result();
 }

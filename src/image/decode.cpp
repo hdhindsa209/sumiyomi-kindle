@@ -9,6 +9,7 @@
 // libjpeg's headers need FILE and size_t declared first.
 #include <jpeglib.h>
 #include <png.h>
+#include <webp/decode.h>
 
 namespace sumi::image {
 namespace {
@@ -136,6 +137,81 @@ bool png_dims(const uint8_t* data, size_t size, Info& info, std::string& err)
     return ok;
 }
 
+// WebP has no equivalent of JPEG's DCT scaling, but its decoder can rescale while it decodes, which
+// is nearly as good: the RGBA buffer we allocate is the scaled size, not the full page.
+void webp_fit(int32_t w, int32_t h, const DecodeOptions& opt, int& out_w, int& out_h)
+{
+    out_w = out_h = 0;
+    if (w <= 0 || h <= 0 || (opt.fit_w <= 0 && opt.fit_h <= 0)) return;
+    double s = 1.0;
+    if (opt.fit_w > 0) s = static_cast<double>(opt.fit_w) / w;
+    if (opt.fit_h > 0) s = std::min(opt.fit_w > 0 ? s : 1e9, static_cast<double>(opt.fit_h) / h);
+    if (s >= 1.0) return;   // never scale up: process.cpp does the final fit
+    out_w = std::max(1, static_cast<int>(std::lround(w * s)));
+    out_h = std::max(1, static_cast<int>(std::lround(h * s)));
+}
+
+bool decode_webp(const uint8_t* data, size_t size, const DecodeOptions& opt, Gray& out, std::string& err)
+{
+    WebPDecoderConfig config;
+    if (!WebPInitDecoderConfig(&config)) {
+        err = "webp: decoder version mismatch";
+        return false;
+    }
+    if (WebPGetFeatures(data, size, &config.input) != VP8_STATUS_OK) {
+        err = "webp: bad header";
+        return false;
+    }
+    int32_t w = config.input.width, h = config.input.height;
+    if (static_cast<int64_t>(w) * h > opt.max_pixels) {
+        err = "webp: image too large";
+        return false;
+    }
+    int sw = 0, sh = 0;
+    webp_fit(w, h, opt, sw, sh);
+    if (sw > 0) {
+        config.options.use_scaling  = 1;
+        config.options.scaled_width = sw;
+        config.options.scaled_height = sh;
+    }
+    // RGBA even for opaque images: the decoder has no luma-only output, and alpha has to be
+    // composited over white here anyway.
+    config.output.colorspace = MODE_RGBA;
+    if (WebPDecode(data, size, &config) != VP8_STATUS_OK) {
+        err = "webp: decode failed";
+        WebPFreeDecBuffer(&config.output);
+        return false;
+    }
+    const WebPRGBABuffer& rgba = config.output.u.RGBA;
+    out.w = config.output.width;
+    out.h = config.output.height;
+    out.px.resize(static_cast<size_t>(out.w) * static_cast<size_t>(out.h));
+    for (int32_t y = 0; y < out.h; ++y) {
+        const uint8_t* src = rgba.rgba + static_cast<size_t>(y) * static_cast<size_t>(rgba.stride);
+        uint8_t* dst = out.px.data() + static_cast<size_t>(y) * static_cast<size_t>(out.w);
+        for (int32_t x = 0; x < out.w; ++x, src += 4) {
+            // Rec.601 luma, then transparency composited over the white page background.
+            int luma = (77 * src[0] + 150 * src[1] + 29 * src[2]) >> 8;
+            int a = src[3];
+            dst[x] = static_cast<uint8_t>(a == 255 ? luma : 255 + (luma - 255) * a / 255);
+        }
+    }
+    WebPFreeDecBuffer(&config.output);
+    return true;
+}
+
+bool webp_dims(const uint8_t* data, size_t size, Info& info, std::string& err)
+{
+    int w = 0, h = 0;
+    if (!WebPGetInfo(data, size, &w, &h)) {
+        err = "webp: bad header";
+        return false;
+    }
+    info.w = static_cast<int32_t>(w);
+    info.h = static_cast<int32_t>(h);
+    return true;
+}
+
 } // namespace
 
 Format sniff(const uint8_t* d, size_t n)
@@ -191,8 +267,9 @@ bool probe(const uint8_t* data, size_t size, Info& out, std::string& err)
     case Format::Png:
         return png_dims(data, size, out, err);
     case Format::Webp:
+        return webp_dims(data, size, out, err);
     case Format::Gif:
-        err = std::string(format_name(out.format)) + " images are not supported yet";
+        err = "GIF images are not supported yet";
         return false;
     case Format::Unknown:
         break;
@@ -207,7 +284,7 @@ bool decode_gray(const uint8_t* data, size_t size, const DecodeOptions& opt, Gra
     switch (sniff(data, size)) {
     case Format::Jpeg: return decode_jpeg(data, size, opt, out, err);
     case Format::Png:  return decode_png(data, size, opt, out, err);
-    case Format::Webp: err = "WebP images are not supported yet"; return false;
+    case Format::Webp: return decode_webp(data, size, opt, out, err);
     case Format::Gif:  err = "GIF images are not supported yet"; return false;
     case Format::Unknown: break;
     }

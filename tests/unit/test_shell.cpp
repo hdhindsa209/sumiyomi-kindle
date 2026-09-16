@@ -9,6 +9,7 @@
 #include "app/live_frames.h"
 #include "core/log.h"
 #include "app/shell.h"
+#include "app/sleep_screen.h"
 #include "source/repo_index.h"
 #include "platform/battery.h"
 #include "platform/frontlight.h"
@@ -1332,6 +1333,25 @@ void test_settings_and_storage()
     CHECK(env.golden("storage"));
 }
 
+// The screen shown while the device is asleep. It is painted straight to the framebuffer, so the
+// node tree must be left alone: after a sleep, waking is a plain repaint of the same screen.
+void test_sleep_screen()
+{
+    Env env;
+    env.tap(env.nav_cell(4));   // any screen with content on it
+    const Node* before = env.root();
+
+    app::draw_sleep_screen(env.display, env.canvas, env.text, *g_fonts);
+    CHECK(env.golden("sleep_screen"));
+    CHECK(env.root() == before);   // the tree the app will wake back into is untouched
+
+    // Waking: one flashing repaint of the screen that was already there.
+    env.screen.invalidate_layout(Change::NewScreen);
+    env.screen.frame();
+    CHECK(env.shows("Exit Sumiyomi"));
+    CHECK(env.display.stale_pixels() == 0);   // the whole screen was refreshed, not part of it
+}
+
 void test_more_exit()
 {
     Env env;
@@ -1374,6 +1394,7 @@ int main()
     RUN(test_battery_status);
     RUN(test_extensions_tab);
     RUN(test_settings_and_storage);
+    RUN(test_sleep_screen);
     RUN(test_more_exit);
     return check_result();
 }

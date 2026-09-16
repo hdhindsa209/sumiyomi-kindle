@@ -13,6 +13,7 @@
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <dirent.h>
 #include <fcntl.h>
 #include <sys/wait.h>
@@ -113,6 +114,55 @@ size_t find_pids(const char* comm, pid_t* out, size_t cap)
     return n;
 }
 
+// --- Sleep ---------------------------------------------------------------------------------
+// We hold powerd's screensaver wakelock for the whole session (so the framework can't paint its
+// screensaver over a page mid-read), which also means powerd will never sleep the device on its
+// own. The power button therefore does nothing unless we suspend the device ourselves.
+
+constexpr long    kSuspendPollMs  = 250;
+constexpr int64_t kHeldWaitMs     = 4000;    // give powerd a chance with the wakelock still held
+constexpr int64_t kReleasedWaitMs = 15000;   // and longer once we've dropped it
+constexpr int64_t kSuspendedMinMs = 1000;    // a gap this big means we really did suspend
+
+int64_t clock_ms(clockid_t id) noexcept
+{
+    timespec ts{};
+    clock_gettime(id, &ts);
+    return static_cast<int64_t>(ts.tv_sec) * 1000 + ts.tv_nsec / 1000000;
+}
+
+// Milliseconds this system has spent suspended since boot: BOOTTIME counts suspended time,
+// MONOTONIC does not, so the gap between them grows by exactly the length of each sleep. This is
+// how we know we actually suspended and came back, without depending on powerd telling us.
+int64_t suspended_ms() noexcept { return clock_ms(CLOCK_BOOTTIME) - clock_ms(CLOCK_MONOTONIC); }
+
+bool trigger_suspend() noexcept
+{
+    // powerd's own suspend path: it brings the radio and the framework down cleanly first.
+    char exe[kExeMax];
+    if (resolve_exe("powerd_test", exe)) {
+        const char* const argv[] = {"powerd_test", "-s", nullptr};
+        if (run(exe, argv) == 0) return true;
+        SUMI_LOGW("power", "powerd_test -s failed; falling back to /sys/power/state");
+    }
+    int fd = open("/sys/power/state", O_WRONLY | O_CLOEXEC);
+    if (fd < 0) return false;
+    ssize_t n = write(fd, "mem\n", 4);   // blocks here until the device resumes
+    close(fd);
+    return n > 0;
+}
+
+// Polls until the suspended-time gap has grown, i.e. we slept and woke. Returns false on timeout.
+bool wait_for_resume(int64_t base, int64_t timeout_ms) noexcept
+{
+    for (int64_t waited = 0; waited < timeout_ms; waited += kSuspendPollMs) {
+        if (suspended_ms() - base >= kSuspendedMinMs) return true;
+        timespec nap{0, kSuspendPollMs * 1000 * 1000};
+        nanosleep(&nap, nullptr);
+    }
+    return suspended_ms() - base >= kSuspendedMinMs;
+}
+
 } // namespace
 
 bool PowerGuard::acquire(std::string& err)
@@ -207,6 +257,38 @@ void PowerGuard::restore() noexcept
     }
 
     sigprocmask(SIG_SETMASK, &prev, nullptr);
+}
+
+bool PowerGuard::sleep(std::string& err)
+{
+    if (lipc_exe_[0] == '\0') {
+        err = "power guard not acquired";
+        return false;
+    }
+    int64_t base = suspended_ms();
+    if (!trigger_suspend()) {
+        err = "cannot suspend: neither powerd_test nor /sys/power/state worked";
+        return false;
+    }
+    bool slept = wait_for_resume(base, kHeldWaitMs);
+
+    // Some firmwares refuse to suspend while preventScreenSaver is set. Drop the wakelock, ask
+    // again, and take it straight back on the way out — the sleep screen is already on the panel,
+    // so even if the framework does paint its screensaver in that window, it paints over a screen
+    // we're about to repaint anyway.
+    if (!slept && set_wakelock_) {
+        SUMI_LOGI("power", "still awake after %lldms; releasing the wakelock and asking again",
+                  static_cast<long long>(kHeldWaitMs));
+        lipc_set("com.lab126.powerd", "preventScreenSaver", "0");
+        if (trigger_suspend()) slept = wait_for_resume(base, kReleasedWaitMs);
+        lipc_set("com.lab126.powerd", "preventScreenSaver", "1");
+    }
+    if (!slept) {
+        err = "the device did not suspend";
+        return false;
+    }
+    SUMI_LOGI("power", "woke after %lldms asleep", static_cast<long long>(suspended_ms() - base));
+    return true;
 }
 
 } // namespace sumi
