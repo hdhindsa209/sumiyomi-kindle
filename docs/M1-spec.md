@@ -1,6 +1,6 @@
 # Sumiyomi M1 — Implementation Specification
 
-**Milestone 1: Skeleton.** Companion to `sumiyomi-design-doc.md`. Where the two disagree, this document wins — it was written against the real FBInk API rather than from memory.
+**Milestone 1: Skeleton.** Companion to `DESIGN.md`. Where the two disagree, this document wins — it was written against the real FBInk API rather than from memory.
 
 ---
 

@@ -71,5 +71,7 @@ Host `repo/` anywhere (a GitHub raw path works), then in the app: **Browse → E
 
 ## Documents
 
-Design `sumiyomi-design-doc (1).md`, device facts `docs/DEVICE_FACTS.md`, milestone plans `docs/M*-plan.md`,
-release steps `docs/RELEASE.md`, changes `docs/CHANGELOG.md`.
+- `DESIGN.md` — the design this was built from; `M1-spec.md` — the first milestone's spec, written against FBInk.
+- `DEVICE_FACTS.md` — what the target Kindle actually reports (measured, not assumed).
+- `M1-plan.md` … `M6-plan.md` — what each milestone set out to do, what changed, and why.
+- `RELEASE.md` — release steps and checks. `CHANGELOG.md` — what shipped.

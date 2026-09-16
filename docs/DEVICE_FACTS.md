@@ -48,7 +48,7 @@ Serial          : <redacted>
 
 ### ⚠️ CORRECTION TO DESIGN DOC AND M1 SPEC
 
-- **Only one `processor` entry → single-core**, not the dual-core i.MX7D assumed throughout `sumiyomi-design-doc.md` §2.1 and `sumiyomi-M1-implementation-spec.md` §3.2.
+- **Only one `processor` entry → single-core**, not the dual-core i.MX7D assumed throughout `DESIGN.md` §2.1 and `docs/M1-spec.md` §3.2.
 - **CPU part `0xc09` = ARM Cortex-A9**, not Cortex-A7 or A53.
 - SoC is **Freescale/NXP i.MX6 SoloLite**, a cheaper/older part than the i.MX7D the design doc assumed.
 - NEON **is** present, but as **vfpv3**, not vfpv4.
@@ -164,7 +164,7 @@ virtual_size: 1088,6144
 bits_per_pixel: 8
 rotate: 3
 ```
-`virtual_size` of 1088×6144 is almost certainly a multi-buffer/virtual allocation, not the visible panel resolution — this is exactly the situation `sumiyomi-M1-implementation-spec.md` §5.1 warns about, which is why `fbink -e`'s `screen_width`/`screen_height` (from `FBInkState`) is the value the code must use, never raw sysfs. `bits_per_pixel: 8` suggests the device may already be in 8bpp mode — worth confirming via `fbink -e`'s `bpp` field, which would let T03 skip the `fbink_set_fb_info` bpp-switch call entirely. `rotate: 3` (non-zero native rotation) *may* mean the touch coordinate transform in §6.2 of the M1 spec is not a pure passthrough here, which conflicts with the `touchSwapAxes/MirrorX/MirrorY=0` reading in the U6 section above.
+`virtual_size` of 1088×6144 is almost certainly a multi-buffer/virtual allocation, not the visible panel resolution — this is exactly the situation `docs/M1-spec.md` §5.1 warns about, which is why `fbink -e`'s `screen_width`/`screen_height` (from `FBInkState`) is the value the code must use, never raw sysfs. `bits_per_pixel: 8` suggests the device may already be in 8bpp mode — worth confirming via `fbink -e`'s `bpp` field, which would let T03 skip the `fbink_set_fb_info` bpp-switch call entirely. `rotate: 3` (non-zero native rotation) *may* mean the touch coordinate transform in §6.2 of the M1 spec is not a pure passthrough here, which conflicts with the `touchSwapAxes/MirrorX/MirrorY=0` reading in the U6 section above.
 
 **RESOLVED in T05 (corner-tap test):** no rotation, swap or mirror is needed for touch. FBInk's touch flags (all 0) are correct despite `rotate: 3`.
 
@@ -219,7 +219,7 @@ start lab126_gui
 start framework   # usually prints "Job is already running: framework" — that is success
 ```
 
-**Action for T02 / `run.sh`:** replace every `/etc/init.d/framework stop|start` reference in `sumiyomi-M1-implementation-spec.md` (§3.2, §8) with the two-job Upstart pair above. The `run.sh` template's `restore()` and the pre-launch block both need this substitution.
+**Action for T02 / `run.sh`:** replace every `/etc/init.d/framework stop|start` reference in `docs/M1-spec.md` (§3.2, §8) with the two-job Upstart pair above. The `run.sh` template's `restore()` and the pre-launch block both need this substitution.
 
 ## lipc (U4) — RESOLVED
 
@@ -288,4 +288,4 @@ lipc-get-prop com.lab126.powerd currentAmbientColor -> lipcErrNoSuchProperty
 - ~~Touch transform~~ — resolved in T05: passthrough.
 - ~~Touch digitizer range~~ — resolved in T05: X 0..1072, Y 0..1448, 1:1 with the 1072×1448 panel.
 
-Everything else needed by `sumiyomi-M1-implementation-spec.md` §13's 🔴 list is resolved above.
+Everything else needed by `docs/M1-spec.md` §13's 🔴 list is resolved above.
