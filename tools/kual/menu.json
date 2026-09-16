@@ -10,6 +10,28 @@
 			"action": "/mnt/us/extensions/sumiyomi/run.sh",
 			"status": false,
 			"internal": "status Starting Sumiyomi . . ."
+		},
+		{
+			"name": "Uninstall",
+			"priority": 9,
+			"items": [
+			{
+				"name": "Remove app, keep my library",
+				"priority": 1,
+				"action": "/mnt/us/extensions/sumiyomi/uninstall.sh",
+				"params": "app",
+				"status": false,
+				"internal": "status Removing Sumiyomi . . ."
+			},
+			{
+				"name": "Remove app AND library (cannot be undone)",
+				"priority": 2,
+				"action": "/mnt/us/extensions/sumiyomi/uninstall.sh",
+				"params": "all",
+				"status": false,
+				"internal": "status Removing Sumiyomi and its data . . ."
+			}
+			]
 		}
 		]
 	}

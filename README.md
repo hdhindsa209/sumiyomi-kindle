@@ -12,7 +12,10 @@ from the sources you install — nothing is hosted by this app.
 4. Leave the app with **More → Exit Sumiyomi**.
 
 Needs a jailbroken Kindle with [KUAL](https://www.mobileread.com/forums/showthread.php?t=203326). Your library,
-downloads and logs live in `/mnt/us/sumiyomi/`; deleting that folder resets the app.
+downloads and logs live in `/mnt/us/sumiyomi/`.
+
+To remove it: **KUAL → Sumiyomi → Uninstall**, which offers either removing the app and keeping your library
+(reinstalling carries on where you left off) or removing both. Neither touches KUAL or the jailbreak.
 
 ## Sources
 

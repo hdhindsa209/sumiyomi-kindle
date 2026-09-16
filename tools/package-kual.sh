@@ -1,6 +1,6 @@
 #!/bin/sh
 # Build the Kindle binary and assemble the KUAL extension folder:
-#   build/package/sumiyomi/{config.xml, menu.json, run.sh, bin/sumiyomi, assets/fonts/}
+#   build/package/sumiyomi/{config.xml, menu.json, run.sh, uninstall.sh, bin/sumiyomi, assets/fonts/}
 # which deploys to /mnt/us/extensions/sumiyomi on the device.
 set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -12,10 +12,11 @@ VERSION="$(sed -n 's/^project(sumiyomi VERSION \([0-9.]*\).*/\1/p' "$ROOT/CMakeL
 
 rm -rf "$PKG"
 mkdir -p "$PKG/bin"
-cp "$ROOT/tools/kual/config.xml" "$ROOT/tools/kual/menu.json" "$ROOT/tools/kual/run.sh" "$PKG/"
+cp "$ROOT/tools/kual/config.xml" "$ROOT/tools/kual/menu.json" "$ROOT/tools/kual/run.sh" \
+   "$ROOT/tools/kual/uninstall.sh" "$PKG/"
 sed -i.bak "s|<version>.*</version>|<version>$VERSION</version>|" "$PKG/config.xml" && rm -f "$PKG/config.xml.bak"
 cp "$ROOT/README.md" "$PKG/README.md"
-chmod +x "$PKG/run.sh"
+chmod +x "$PKG/run.sh" "$PKG/uninstall.sh"
 
 # UI fonts (design doc §3.3 layout: assets/fonts/), with their licenses.
 mkdir -p "$PKG/assets/fonts"

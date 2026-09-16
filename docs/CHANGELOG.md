@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.1
+
+- **Uninstall from KUAL**: **Sumiyomi → Uninstall** removes the app, either keeping your library or deleting it
+  too. It refuses while the app is running, since the binary holds the screen and the native UI is stopped.
+
 ## v1.0.0
 
 Everything in v0.1 through v0.3, with sleeping fixed. Developed and run against a jailbroken Kindle
