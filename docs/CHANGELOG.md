@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.1.1
+
+- **Several source repositories at once.** Browse → Extensions keeps a list: Sumiyomi's own is there from the
+  start, any can be removed, and anyone's can be added. Sources from every repository are offered together, with
+  the newest version of each winning.
+- **Sources move out of the app** to [sumiyomi-sources](https://github.com/hdhindsa209/sumiyomi-sources), so a
+  broken site can be fixed without an app update: **MangaDex** and **Mangapill** are there to install, and
+  WeebCentral stays inside the app so there's a source on first run.
+- Startup no longer warns when nothing is installed from a repository; `deploy.sh` copies the README.
+
 ## v0.1 — first release
 
 The whole app: library, browse and search, manga pages, reader, downloads, updates, history, categories,
