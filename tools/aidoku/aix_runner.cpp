@@ -5,7 +5,9 @@
 #include "source/aidoku_source.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <map>
 #include <string>
 
@@ -30,7 +32,15 @@ int main(int argc, char** argv)
         std::fprintf(stderr, "%s\n", err.c_str());
         return 1;
     }
-    auto transport = net::make_curl_transport({"assets/certs/cacert.pem", "", "Sumiyomi/0.1.1"}, err);
+    // The certificates sit next to the app on the device; SUMI_ASSETS overrides for other layouts.
+    std::string assets = std::getenv("SUMI_ASSETS") ? std::getenv("SUMI_ASSETS") : "";
+    std::string ca = assets.empty() ? "" : assets + "/certs/cacert.pem";
+    for (const char* guess : {"/mnt/us/extensions/sumiyomi/assets/certs/cacert.pem", "assets/certs/cacert.pem"}) {
+        if (!ca.empty()) break;
+        std::ifstream f(guess);
+        if (f) ca = guess;
+    }
+    auto transport = net::make_curl_transport({ca, "", "Sumiyomi/0.2.1"}, err);
     if (!transport) {
         std::fprintf(stderr, "network: %s\n", err.c_str());
         return 1;
