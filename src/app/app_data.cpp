@@ -522,11 +522,6 @@ void AppData::store_settings(const AppSettings& s)
     if (cache_) cache_->set_cap(static_cast<uint64_t>(mb) << 20);
 }
 
-void AppData::save_app_settings(const AppSettings& s)
-{
-    exec_.submit([this, s] { store_settings(s); });
-}
-
 void AppData::edit_app_settings(std::function<void(AppSettings&)> edit, std::function<void()> done)
 {
     exec_.submit([this, edit = std::move(edit), done = std::move(done)] {
@@ -739,16 +734,6 @@ source::AidokuSource::Settings AppData::aidoku_settings(const std::string& id)
     s.get = [this, prefix](const std::string& key) { return repo_.pref(prefix + key).value_or(""); };
     s.set = [this, prefix](const std::string& key, const std::string& value) { repo_.set_pref(prefix + key, value); };
     return s;
-}
-
-std::unique_ptr<source::SourceRunner> AppData::load_installed(const std::string& path, std::string& err)
-{
-    // A directory is a Lua source; a .aix file is an Aidoku package.
-    struct stat st {};
-    if (stat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) return source::Extension::load(path, source_http_, err);
-    source::AixPackage pkg;
-    if (!source::read_aix(path, pkg, err)) return nullptr;
-    return source::AidokuSource::load(pkg, source_http_, aidoku_settings(pkg.id), err);
 }
 
 // An Aidoku package: one file, no checksums in their index, so it's checked by loading it before it's kept.

@@ -37,7 +37,6 @@ public:
     int         i32(int col) const { return static_cast<int>(i64(col)); }
     double      f64(int col) const;
     std::string text(int col) const;
-    bool        is_null(int col) const;
 
     bool valid() const { return s_ != nullptr; }
     bool ok() const { return s_ != nullptr && !failed_; }

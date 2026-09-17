@@ -355,9 +355,6 @@ if(NOT CMAKE_CROSSCOMPILING)
     target_link_libraries(test_display_sdl PRIVATE sumi_sim)
     add_test(NAME display_sdl COMMAND test_display_sdl)
 
-    add_executable(sim_testcard tools/sim/sim_testcard.cpp)
-    target_link_libraries(sim_testcard PRIVATE sumi_sim)
-
     # §2 criterion 7: the same app on the desktop, SDL backend.
     add_library(sumi_sim_platform STATIC src/platform/signals.cpp src/platform/uninstall_stub.cpp)
     target_link_libraries(sumi_sim_platform PUBLIC sumi_sim)
@@ -366,8 +363,6 @@ if(NOT CMAKE_CROSSCOMPILING)
                                                 SUMI_DATA_DIR="${CMAKE_BINARY_DIR}/data"
                                                 SUMI_SOURCES_DIR="${CMAKE_SOURCE_DIR}/sources")
     target_link_libraries(sumiyomi PRIVATE sumi_sim_platform sumi_ui sumi_app_data)
-    add_executable(m1_testcard tools/m1/testcard_main.cpp src/app/m1_testcard.cpp)
-    target_link_libraries(m1_testcard PRIVATE sumi_sim_platform)
   else()
     message(STATUS "SDL2 not found: simulator not built (brew install sdl2)")
   endif()
@@ -407,9 +402,6 @@ target_compile_definitions(sumiyomi PRIVATE SUMI_ASSETS_DIR="/mnt/us/extensions/
                                             SUMI_SOURCES_DIR="/mnt/us/extensions/sumiyomi/sources")
 target_link_libraries(sumiyomi PRIVATE sumi_platform sumi_ui sumi_app_data)
 
-add_executable(m1_testcard tools/m1/testcard_main.cpp src/app/m1_testcard.cpp)
-target_link_libraries(m1_testcard PRIVATE sumi_platform)
-
 add_executable(m1_bench tools/bench/m1_bench.cpp)
 target_link_libraries(m1_bench PRIVATE sumi_platform)
 
@@ -424,5 +416,5 @@ add_executable(http_smoke tools/net/http_smoke.cpp)
 target_compile_definitions(http_smoke PRIVATE SUMI_ASSETS_DIR="/mnt/us/extensions/sumiyomi/assets")
 target_link_libraries(http_smoke PRIVATE sumi_net)
 
-set_target_properties(sumiyomi m1_testcard m1_bench text_smoke http_smoke PROPERTIES
+set_target_properties(sumiyomi m1_bench text_smoke http_smoke PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

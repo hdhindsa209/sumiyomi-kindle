@@ -10,7 +10,7 @@ namespace sumi {
 struct Point { int32_t x = 0, y = 0; };
 
 enum class RawKind : uint8_t { Down, Move, Up, Cancel, Key };
-enum class Key : uint8_t { None, PagePrev, PageNext, Power, Home, Menu, Back };
+enum class Key : uint8_t { None, PagePrev, PageNext, Power, Back };
 
 struct RawEvent {
     RawKind  kind = RawKind::Down;

@@ -23,8 +23,6 @@ public:
     int  page_count() const { return static_cast<int>(starts_.size()); }   // valid after layout; >= 1
     bool can_page_forward() const { return page_ + 1 < page_count(); }
     bool can_page_back() const { return page_ > 0; }
-    int  first_visible() const { return first_; }
-    int  last_visible() const { return last_; }
 
 protected:
     void paint_overlay(PaintCtx& ctx) override;

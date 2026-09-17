@@ -97,8 +97,6 @@ public:
     {
         if (fd_ < 0) return;
         if (fb_) clear_screen();
-        if (font_loaded_) fbink_free_ot_fonts();
-        font_loaded_ = false;
         if (int rc = fbink_close(fd_); rc < 0)
             SUMI_LOGW("display", "fbink_close failed (%d)", rc);
         fd_ = -1;
@@ -152,40 +150,8 @@ public:
             SUMI_LOGE("display", "fbink_cls failed (%d)", rc);
     }
 
-    bool draw_label(const Rect& area, const std::string& utf8, const char* font_path,
-                    std::string& err) override
-    {
-        if (fd_ < 0) {
-            err = "display not open";
-            return false;
-        }
-        if (!font_loaded_) {
-            if (int rc = fbink_add_ot_font(font_path, FNT_REGULAR); rc < 0) {
-                err = std::string("fbink_add_ot_font(") + font_path + ") failed (" + std::to_string(rc) + ")";
-                return false;
-            }
-            font_loaded_ = true;
-        }
-        Rect c = area.clipped({0, 0, info_.width, info_.height});
-        FBInkOTConfig ot{};
-        ot.margins.top    = static_cast<short>(c.y);
-        ot.margins.bottom = static_cast<short>(info_.height - c.bottom());
-        ot.margins.left   = static_cast<short>(c.x);
-        ot.margins.right  = static_cast<short>(info_.width - c.right());
-        ot.size_px        = static_cast<unsigned short>(std::max(8, c.h * 6 / 10));
-        ot.is_centered    = true;
-
-        FBInkConfig pc = cfg_;
-        pc.no_refresh = true;   // the caller refreshes, through the refresh policy
-        if (int rc = fbink_print_ot(fd_, utf8.c_str(), &ot, &pc, nullptr); rc < 0) {
-            err = "fbink_print_ot failed (" + std::to_string(rc) + ")";
-            return false;
-        }
-        return true;
-    }
 
 private:
-    bool        font_loaded_ = false;
     int         fd_ = -1;
     uint8_t*    fb_ = nullptr;
     FBInkConfig cfg_{};

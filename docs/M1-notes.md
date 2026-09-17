@@ -453,5 +453,6 @@ shell (8 screen goldens). Every golden was visually reviewed before it was commi
 - **Two bugs found by reviewing goldens:** `\n` drew as a missing-glyph box (wrap now treats it as a hard break,
   ellipsize as a space), and relative dates came from the real clock (the shell now takes an injectable clock).
 - Covers are still initials placeholders: image decoding is M4.
-- The package ships `bin/http_smoke` for on-device TLS/network diagnosis.
+- `http_smoke` diagnoses TLS/network problems; built for the device but no longer shipped in the package
+  (the app logs its own network errors). Copy it over when needed.
 - Stripped Kindle binary: 5.4 MB (design doc estimated 8–14 MB); package 7.6 MB.

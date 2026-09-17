@@ -212,7 +212,6 @@ void Stmt::reset()
 
 int64_t Stmt::i64(int col) const { return s_ ? sqlite3_column_int64(s_, col) : 0; }
 double Stmt::f64(int col) const { return s_ ? sqlite3_column_double(s_, col) : 0.0; }
-bool Stmt::is_null(int col) const { return !s_ || sqlite3_column_type(s_, col) == SQLITE_NULL; }
 
 std::string Stmt::text(int col) const
 {

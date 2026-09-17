@@ -56,7 +56,6 @@ public:
     static constexpr int kPagesPerFlash = 5;
     // Flash on every n-th PageTurn (1 = every turn, 0 = never). Resets the count.
     void set_pages_per_flash(int n);
-    int  pages_per_flash() const { return pages_per_flash_; }
 
     // Lay out `n` inside its current frame without repainting (pair with repaint() for a partial update).
     void layout_node(Node* n);

@@ -49,7 +49,6 @@ public:
     // Runs a snippet in the sandbox and returns its first result via tostring (tests, debugging).
     bool eval(std::string_view code, std::string& result, std::string& err);
 
-    size_t memory_used() const { return used_; }
     lua_State* state() const { return L_; }
 
     // --- used by the host API bindings ---

@@ -146,7 +146,6 @@ public:
     void install_extension(source::RepoEntry entry, std::function<void(std::string err)> done);
     // An Aidoku source's settings live in the preferences table, one key per source.
     source::AidokuSource::Settings aidoku_settings(const std::string& id);
-    std::unique_ptr<source::SourceRunner> load_installed(const std::string& path, std::string& err);
     void install_aidoku(const source::RepoEntry& entry, std::string& err);   // worker
     // Only installed sources; a bundled source with the same id takes over again.
     void uninstall_extension(int64_t source, std::function<void(std::string err)> done);
@@ -219,7 +218,6 @@ public:
     // At startup: applies saved settings (cache limit), continues interrupted downloads, and reports the settings.
     void startup(std::function<void(AppSettings)> done);
     void app_settings(std::function<void(AppSettings)> done);
-    void save_app_settings(const AppSettings& s);
     // Change settings from their current saved values (never a stale copy), then save.
     void edit_app_settings(std::function<void(AppSettings&)> edit, std::function<void()> done = nullptr);
     void edit_reader_settings(std::function<void(ReaderSettings&)> edit, std::function<void()> done = nullptr);

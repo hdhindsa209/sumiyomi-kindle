@@ -83,9 +83,6 @@ Two things the SDK does that had to be matched exactly, and would have been invi
 - A search query is handed over as **plain text**, not a postcard-encoded `Option<String>`; a handle of −1 means
   "no query", which is how a source's default listing is asked for.
 
-Still to do (S7): install `.aix` packages from an Aidoku repository, keep them beside the Lua sources, give each
-its settings, and run them through the app's own Extension interface. Then S8 on the device.
-
 ## S7 notes (2026-09-16)
 
 Both kinds of source now answer one interface (`source::SourceRunner`), so the library, reader, downloads and

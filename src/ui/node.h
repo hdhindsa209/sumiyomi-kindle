@@ -58,7 +58,6 @@ public:
     {
         return static_cast<T*>(add(std::make_unique<T>(std::forward<Args>(args)...)));
     }
-    void clear_children();
     // Detach and return all children (to move them under another parent).
     std::vector<std::unique_ptr<Node>> take_children();
     // Swap child `index` for `n`; the new node inherits the old one's frame and visibility, so a

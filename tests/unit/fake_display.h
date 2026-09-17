@@ -63,5 +63,4 @@ struct FakeDisplay final : sumi::Display {
 
     void wait(uint32_t) override { ++waits; }
     void clear_screen() override {}
-    bool draw_label(const sumi::Rect&, const std::string&, const char*, std::string&) override { return true; }
 };

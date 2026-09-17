@@ -37,8 +37,6 @@ Key map_key(uint16_t code)
     case KEY_POWER:    return Key::Power;
     case KEY_PAGEUP:   return Key::PagePrev;
     case KEY_PAGEDOWN: return Key::PageNext;
-    case KEY_HOME:     return Key::Home;
-    case KEY_MENU:     return Key::Menu;
     case KEY_BACK:     return Key::Back;
     default:           return Key::None;
     }

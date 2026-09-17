@@ -2,7 +2,8 @@
 # §2 criterion 6 on device: SIGTERM and abort() must leave the native UI restored.
 # Deploys, then runs both tests back to back over one SSH connection, checking:
 #   exit status (143 / 134), "caught signal N" + "power restored" in the log,
-#   awesome not left stopped, statusbar running (if the job exists), preventScreenSaver back to 0.
+#   awesome not left stopped, statusbar running (if the job exists), and powerd's screensaver not
+#   left prevented (the app no longer takes that lock at all, so it must never be set).
 # Prints PASS/FAIL per test and overall. Look at the screen too: it should flash clear and return home.
 set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

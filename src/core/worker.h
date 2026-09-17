@@ -53,7 +53,6 @@ public:
     // results change the UI with no input event, so nothing else would schedule a frame.
     void set_on_delivered(std::function<void()> fn) { on_delivered_ = std::move(fn); }
 
-    bool on_worker_thread() const { return std::this_thread::get_id() == thread_.get_id(); }
 
 private:
     void run();

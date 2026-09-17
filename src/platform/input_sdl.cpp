@@ -22,8 +22,6 @@ Key map_key(SDL_Keycode k)
     case SDLK_LEFT: case SDLK_PAGEUP:                    return Key::PagePrev;
     case SDLK_RIGHT: case SDLK_PAGEDOWN: case SDLK_SPACE: return Key::PageNext;
     case SDLK_ESCAPE: case SDLK_BACKSPACE:               return Key::Back;
-    case SDLK_m:                                         return Key::Menu;
-    case SDLK_h:                                         return Key::Home;
     default:                                             return Key::None;
     }
 }

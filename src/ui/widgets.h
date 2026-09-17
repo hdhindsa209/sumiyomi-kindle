@@ -108,9 +108,6 @@ std::unique_ptr<Node> tabs(const std::vector<std::string>& labels, int active, s
 // Section header (§8.3 "24 chapters", §8.5 date groups): 80 px, SemiBold label, optional trailing text.
 std::unique_ptr<Node> section_header(const std::string& title, const std::string& trailing = "");
 
-// Sticky full-width call to action (§8.3 "Resume Chapter N"): 120 px PRIMARY bar, SURFACE label + icon.
-std::unique_ptr<Node> cta_bar(char32_t icon, const std::string& label, std::function<void()> on_tap);
-
 // A row of equal options, one selected (inverted). No gray states.
 std::unique_ptr<Node> segmented(const std::vector<std::string>& labels, int selected, std::function<void(int)> on_select);
 

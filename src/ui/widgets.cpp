@@ -456,23 +456,6 @@ std::unique_ptr<Node> section_header(const std::string& title, const std::string
     return h;
 }
 
-std::unique_ptr<Node> cta_bar(char32_t icon, const std::string& label, std::function<void()> on_tap)
-{
-    auto bar = container(Layout::Row);
-    bar->height = Dim::px(120);
-    bar->opaque = true;
-    bar->background = tone::PRIMARY;
-    bar->align_main = Align::Center;
-    bar->align_cross = Align::Center;
-    bar->gap = 16;
-    bar->refresh = Wave::DU;
-    bar->bw = true;
-    bar->on_tap = std::move(on_tap);
-    bar->emplace<Icon>(icon, kIconSp, tone::SURFACE, true);
-    bar->emplace<Label>(label, type::LIST_PRIMARY, FontId::InterSemiBold, tone::SURFACE);
-    return bar;
-}
-
 // ---------------------------------------------------------------- Segmented
 
 std::unique_ptr<Node> segmented(const std::vector<std::string>& labels, int selected, std::function<void(int)> on_select)

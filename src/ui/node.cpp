@@ -19,7 +19,6 @@ Node* Node::add(std::unique_ptr<Node> child)
     return children_.back().get();
 }
 
-void Node::clear_children() { children_.clear(); }
 
 std::vector<std::unique_ptr<Node>> Node::take_children()
 {
